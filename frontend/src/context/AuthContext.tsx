@@ -41,10 +41,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Ref to track current user state inside closures (avoids stale closure in useEffect)
     const userRef = useRef<User | null>(null);
-    const updateUser = (u: User | null) => {
+    const updateUser = useCallback((u: User | null) => {
         userRef.current = u;
         setUser(u);
-    };
+    }, []);
 
     // Check for existing token on mount
     // Check for existing token on mount and listen for Supabase auth changes
@@ -58,8 +58,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const initSession = async () => {
             try {
-                // 1. Check active session (handles generic persistence AND some OAuth callbacks)
-                const { data: { session } } = await supabase.auth.getSession();
+                // 1. Check active Supabase session with a timeout
+                // If Supabase is unreachable (paused project, network issue), 
+                // fall back to local token within 4 seconds instead of hanging forever.
+                let session: any = null;
+                try {
+                    const sessionPromiseInner = supabase.auth.getSession();
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Supabase session check timed out')), 4000)
+                    );
+                    const result: any = await Promise.race([sessionPromiseInner, timeoutPromise]);
+                    session = result?.data?.session || null;
+                } catch (timeoutErr) {
+                    console.warn("Supabase session check timed out or failed. Falling back to local token.");
+                }
 
                 if (mounted) {
                     if (session) {
@@ -99,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         console.log("OAuth Callback detected. Waiting for Supabase event...");
                         // Safety timeout: If Supabase doesn't fire within 5s, unblock UI
                         setTimeout(() => {
-                            if (mounted && loading) {
+                            if (mounted) {
                                 console.warn("Supabase auth timeout. Clearing loading state.");
                                 setLoading(false);
                             }
@@ -209,9 +221,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, []);
 
-    const signInWithGoogle = async () => {
+    const signInWithGoogle = useCallback(async () => {
         try {
-            const { data, error } = await supabase.auth.signInWithOAuth({
+            const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
                     redirectTo: window.location.origin + '/auth/callback',
@@ -223,7 +235,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error("Google Sign-In Error:", error);
             throw error;
         }
-    };
+    }, []);
 
     const logout = useCallback(() => {
         localStorage.removeItem('token');
