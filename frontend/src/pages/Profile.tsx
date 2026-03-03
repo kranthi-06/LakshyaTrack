@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,111 @@ function RenderTemplate({ base, data, color }: { base: BaseTemplate; data: Resum
         case 'fresh': return <FreshTemplate {...p} />;
         default: return <ModernTemplate {...p} />;
     }
+}
+
+/* Lazy-rendered resume card — only renders the heavy template when visible */
+function LazyResumePreview({ resume, onDelete, onDownload }: {
+    resume: any;
+    onDelete: (id: string) => void;
+    onDownload: (resume: any) => void;
+}) {
+    const [isVisible, setIsVisible] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setIsVisible(true);
+                    observer.disconnect(); // only need to trigger once
+                }
+            },
+            { rootMargin: '200px' } // start rendering 200px before it enters viewport
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <div ref={containerRef} className="bg-white rounded-3xl shadow-lg border border-slate-100 overflow-hidden group">
+            {/* Action Bar */}
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                    <h4 className="font-bold text-slate-800 text-lg">{resume.resume_name}</h4>
+                    <p className="text-xs font-semibold text-slate-400">Template: <span className="uppercase text-[#5c52d2]">{resume.template_id}</span> • {new Date(resume.created_at).toLocaleDateString()}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shadow-sm text-slate-600 hover:text-[#5c52d2] hover:bg-purple-50"
+                        onClick={() => onDownload(resume)}
+                    >
+                        <Download className="w-4 h-4 mr-1.5" /> PDF
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50"
+                        onClick={() => onDelete(resume.id)}
+                        title="Delete Resume"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </Button>
+                </div>
+            </div>
+
+            {/* Visual Render — only render template when visible */}
+            <div className="bg-gray-200 p-6 flex flex-col items-center justify-center relative overscroll-contain overflow-hidden" style={{ minHeight: '600px' }}>
+                {isVisible ? (
+                    <div
+                        className="bg-white shadow-2xl overflow-hidden pointer-events-none transform origin-top"
+                        style={{ width: '794px', height: '1123px', transform: 'scale(0.5)', marginBottom: '-550px' }}
+                    >
+                        <div id={`resume-preview-${resume.id}`} className="w-full h-full">
+                            <RenderTemplate
+                                base={resume.template_id as BaseTemplate}
+                                data={resume.resume_data}
+                                color={resume.theme || '#5c52d2'}
+                            />
+                        </div>
+                    </div>
+                ) : (
+                    /* Lightweight skeleton placeholder */
+                    <div className="bg-white shadow-lg rounded-lg overflow-hidden" style={{ width: '397px', height: '280px' }}>
+                        <div className="p-6 space-y-4 animate-pulse">
+                            <div className="h-4 bg-slate-200 rounded w-2/3" />
+                            <div className="h-3 bg-slate-100 rounded w-1/2" />
+                            <div className="space-y-2 mt-6">
+                                <div className="h-2 bg-slate-100 rounded w-full" />
+                                <div className="h-2 bg-slate-100 rounded w-5/6" />
+                                <div className="h-2 bg-slate-100 rounded w-4/6" />
+                            </div>
+                            <div className="space-y-2 mt-4">
+                                <div className="h-2 bg-slate-100 rounded w-full" />
+                                <div className="h-2 bg-slate-100 rounded w-3/4" />
+                            </div>
+                            <div className="flex gap-2 mt-4">
+                                <div className="h-5 w-16 bg-purple-100 rounded" />
+                                <div className="h-5 w-14 bg-blue-100 rounded" />
+                                <div className="h-5 w-18 bg-emerald-100 rounded" />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Hover Overlay */}
+                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-4">
+                    <Button size="lg" className="bg-white text-slate-900 hover:bg-slate-50 font-bold px-8 shadow-xl" onClick={() => onDownload(resume)}>
+                        <Download className="w-5 h-5 mr-2" /> Download Document
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export default function Profile() {
@@ -463,58 +568,12 @@ export default function Profile() {
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             {savedResumes.map((resume: any) => (
-                                <div key={resume.id} className="bg-white rounded-3xl shadow-lg border border-slate-100 overflow-hidden group">
-                                    {/* Action Bar */}
-                                    <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                                        <div>
-                                            <h4 className="font-bold text-slate-800 text-lg">{resume.resume_name}</h4>
-                                            <p className="text-xs font-semibold text-slate-400">Template: <span className="uppercase text-[#5c52d2]">{resume.template_id}</span> • {new Date(resume.created_at).toLocaleDateString()}</p>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-8 shadow-sm text-slate-600 hover:text-[#5c52d2] hover:bg-purple-50"
-                                                onClick={() => handleDownloadPDF(resume)}
-                                            >
-                                                <Download className="w-4 h-4 mr-1.5" /> PDF
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50"
-                                                onClick={() => handleDeleteResume(resume.id)}
-                                                title="Delete Resume"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-
-                                    {/* Visual Render constraints */}
-                                    <div className="bg-gray-200 p-6 flex flex-col items-center justify-center relative overscroll-contain overflow-hidden" style={{ minHeight: '600px' }}>
-                                        {/* Scale trick to fit entire A4 template in the box without scroll */}
-                                        <div
-                                            className="bg-white shadow-2xl overflow-hidden pointer-events-none transform origin-top"
-                                            style={{ width: '794px', height: '1123px', transform: 'scale(0.5)', marginBottom: '-550px' }}
-                                        >
-                                            <div id={`resume-preview-${resume.id}`} className="w-full h-full">
-                                                <RenderTemplate
-                                                    base={resume.template_id as BaseTemplate}
-                                                    data={resume.resume_data}
-                                                    color={resume.theme || '#5c52d2'}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Hover Overlay */}
-                                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-4">
-                                            <Button size="lg" className="bg-white text-slate-900 hover:bg-slate-50 font-bold px-8 shadow-xl" onClick={() => handleDownloadPDF(resume)}>
-                                                <Download className="w-5 h-5 mr-2" /> Download Document
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
+                                <LazyResumePreview
+                                    key={resume.id}
+                                    resume={resume}
+                                    onDelete={handleDeleteResume}
+                                    onDownload={handleDownloadPDF}
+                                />
                             ))}
                         </div>
                     )}

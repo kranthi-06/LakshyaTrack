@@ -73,7 +73,8 @@ class AIService:
                     model="llama-3.3-70b-versatile",
                     messages=full_messages,
                     temperature=0.7,
-                    max_tokens=4096
+                    max_tokens=4096,
+                    timeout=30.0  # 30 second timeout to prevent hangs
                 )
                 logger.info("Groq Success!")
                 return response.choices[0].message.content

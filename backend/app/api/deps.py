@@ -43,7 +43,7 @@ def get_current_user(
         guest_id = uuid.uuid4()
         return User(
             id=guest_id,
-            email="guest@vidyamitra.com",
+            email="guest@vidorya.com",
             is_active=True,
             is_superuser=False,
             role="user"

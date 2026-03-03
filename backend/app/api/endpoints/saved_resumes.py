@@ -99,12 +99,30 @@ async def get_saved_resumes(
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_active_user),
 ) -> Any:
-    """Get all saved resumes for the user."""
+    """Get all saved resumes for the user, with explicit serialization."""
     resumes = db.query(SavedResume).filter(
         SavedResume.user_id == current_user.id
     ).order_by(SavedResume.created_at.desc()).all()
     
-    return {"resumes": resumes}
+    # Explicitly serialize to avoid slow ORM lazy-loading and 
+    # ensure JSON-safe output (UUIDs, datetimes, etc.)
+    serialized = []
+    for r in resumes:
+        serialized.append({
+            "id": str(r.id),
+            "user_id": str(r.user_id),
+            "resume_name": r.resume_name,
+            "resume_data": r.resume_data,
+            "template_id": r.template_id,
+            "theme": r.theme,
+            "target_role": r.target_role,
+            "ats_score": r.ats_score,
+            "is_primary": r.is_primary,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        })
+    
+    return {"resumes": serialized}
 
 @router.delete("/{resume_id}")
 async def delete_saved_resume(
