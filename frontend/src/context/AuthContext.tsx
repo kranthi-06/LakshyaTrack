@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { login as loginApi, register as registerApi, getMe, verifyOtp as verifyOtpApi, sendOtp as sendOtpApi } from '../services/auth';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -170,7 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
     }, []);
 
-    const login = async (data: any) => {
+    const login = useCallback(async (data: any) => {
         const response = await loginApi(data.username || data.email, data.password);
         if (response.access_token) {
             localStorage.setItem('token', response.access_token);
@@ -178,36 +178,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updateUser(userData);
             navigate('/dashboard');
         }
-    };
+    }, [navigate]);
 
-    const register = async (data: any) => {
+    const register = useCallback(async (data: any) => {
         const response = await registerApi(data);
         return response;
         // After signup, we DON'T auto-login. We need to verify OTP.
         // The UI should handle redirection to OTP verification page.
-    };
+    }, []);
 
-    const verifyOtp = async (email: string, otp: string) => {
+    const verifyOtp = useCallback(async (email: string, otp: string) => {
         const response = await verifyOtpApi(email, otp);
         if (response.access_token) {
             localStorage.setItem('token', response.access_token);
             const userData = await getMe();
             updateUser(userData);
         }
-    };
+    }, []);
 
-    const resendOtp = async (email: string) => {
+    const resendOtp = useCallback(async (email: string) => {
         await sendOtpApi(email);
-    };
+    }, []);
 
-    const refreshUser = async () => {
+    const refreshUser = useCallback(async () => {
         try {
             const userData = await getMe();
             updateUser(userData);
         } catch (err) {
             console.error("Failed to refresh user", err);
         }
-    };
+    }, []);
 
     const signInWithGoogle = async () => {
         try {
@@ -225,24 +225,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    const logout = () => {
+    const logout = useCallback(() => {
         localStorage.removeItem('token');
         updateUser(null);
         navigate('/login');
-    };
+    }, [navigate]);
+
+    const contextValue = useMemo(() => ({
+        user,
+        loading,
+        login,
+        register,
+        verifyOtp,
+        resendOtp,
+        signInWithGoogle,
+        logout,
+        refreshUser
+    }), [user, loading, login, register, verifyOtp, resendOtp, signInWithGoogle, logout, refreshUser]);
 
     return (
-        <AuthContext.Provider value={{
-            user,
-            loading,
-            login,
-            register,
-            verifyOtp,
-            resendOtp,
-            signInWithGoogle,
-            logout,
-            refreshUser
-        }}>
+        <AuthContext.Provider value={contextValue}>
             {children}
         </AuthContext.Provider>
     );

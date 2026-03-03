@@ -55,7 +55,7 @@ export default function AuthLoadingScreen() {
                 </div>
 
                 {/* Brand name */}
-                <h1 className="auth-loading-brand">VidyāMitra</h1>
+                <h1 className="auth-loading-brand">Vidorya</h1>
 
                 {/* Status message with fade */}
                 <div className="auth-loading-message-container">

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.core.config import settings
 from app.api.api import api_router
 
@@ -30,6 +31,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# GZip Compression — compress responses > 500 bytes
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 # Initialize Background Jobs
 from app.core.background_jobs import setup_background_jobs
 
@@ -50,6 +54,23 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s'
 )
+logger = logging.getLogger(__name__)
+
+# ── Request Timing Middleware (performance monitoring) ──
+import time
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+        response.headers["X-Response-Time"] = f"{duration_ms:.1f}ms"
+        if duration_ms > 1000:
+            logger.warning(f"SLOW REQUEST: {request.method} {request.url.path} took {duration_ms:.0f}ms")
+        return response
+
+app.add_middleware(RequestTimingMiddleware)
 
 @app.exception_handler(Exception)
 async def validation_exception_handler(request: Request, exc: Exception):

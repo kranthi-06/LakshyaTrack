@@ -152,7 +152,7 @@ export default function Register() {
                             <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center text-white">
                                 <GraduationCap size={24} />
                             </div>
-                            <span className="text-2xl font-bold tracking-tight">VidyāMitra</span>
+                            <span className="text-2xl font-bold tracking-tight">Vidorya</span>
                         </Link>
                     </div>
 
