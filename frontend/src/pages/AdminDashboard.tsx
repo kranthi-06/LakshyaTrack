@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { getAdminUsers, blacklistUser, unblacklistUser, promoteUser, demoteUser, deleteUser, AdminUser } from '../services/admin';
 import { useAuth } from '../context/AuthContext';
 import { PremiumNavbar } from '../components/PremiumNavbar';
 import { PremiumBackground } from '../components/PremiumBackground';
-import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar } from 'lucide-react';
+import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const AdminDashboard: React.FC = () => {
@@ -12,12 +12,24 @@ const AdminDashboard: React.FC = () => {
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+    const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const fetchUsers = async () => {
+    // Debounce search input to avoid firing on every keystroke
+    const handleSearchChange = useCallback((value: string) => {
+        setSearch(value);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            setDebouncedSearch(value);
+        }, 400);
+    }, []);
+
+    const fetchUsers = async (searchQuery: string) => {
         setLoading(true);
         try {
-            const data = await getAdminUsers(0, 50, search);
+            const data = await getAdminUsers(0, 50, searchQuery);
             setUsers(data.users);
         } catch (error) {
             console.error('Failed to fetch users:', error);
@@ -27,18 +39,69 @@ const AdminDashboard: React.FC = () => {
     };
 
     useEffect(() => {
-        fetchUsers();
-    }, [search]);
+        fetchUsers(debouncedSearch);
+    }, [debouncedSearch]);
+
+    // Clean up debounce timer on unmount
+    useEffect(() => {
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    }, []);
 
     const handleAction = async (actionFn: (id: string) => Promise<any>, id: string, email: string, actionName: string) => {
         if (!window.confirm(`Are you sure you want to ${actionName} user ${email}?`)) return;
 
+        setActionLoadingId(id);
         try {
             await actionFn(id);
-            alert(`Successfully ${actionName}ed ${email}`);
-            fetchUsers();
+
+            // Optimistic UI update — mutate local state instead of refetching
+            setUsers(prev => {
+                if (actionName === 'delete') {
+                    return prev.filter(u => u.id !== id);
+                }
+                return prev.map(u => {
+                    if (u.id !== id) return u;
+                    switch (actionName) {
+                        case 'blacklist':
+                            return { ...u, is_blacklisted: true };
+                        case 'unblacklist':
+                            return { ...u, is_blacklisted: false };
+                        case 'promote':
+                            return { ...u, role: 'admin' as const };
+                        case 'demote':
+                            return { ...u, role: 'user' as const };
+                        default:
+                            return u;
+                    }
+                });
+            });
+
+            // Close modal if the acted-upon user was selected
+            if (selectedUser?.id === id) {
+                if (actionName === 'delete') {
+                    setSelectedUser(null);
+                } else {
+                    setSelectedUser(prev => {
+                        if (!prev || prev.id !== id) return prev;
+                        switch (actionName) {
+                            case 'blacklist':
+                                return { ...prev, is_blacklisted: true };
+                            case 'unblacklist':
+                                return { ...prev, is_blacklisted: false };
+                            case 'promote':
+                                return { ...prev, role: 'admin' as const };
+                            case 'demote':
+                                return { ...prev, role: 'user' as const };
+                            default:
+                                return prev;
+                        }
+                    });
+                }
+            }
         } catch (error: any) {
             alert(error.response?.data?.detail || `Failed to ${actionName}`);
+        } finally {
+            setActionLoadingId(null);
         }
     };
 
@@ -87,7 +150,7 @@ const AdminDashboard: React.FC = () => {
                         type="text"
                         placeholder="Search by email..."
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => handleSearchChange(e.target.value)}
                         className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all font-light tracking-wide backdrop-blur-sm"
                     />
                 </div>
@@ -108,7 +171,12 @@ const AdminDashboard: React.FC = () => {
                             <tbody className="divide-y divide-slate-800/50">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={5} className="p-8 text-center text-slate-400">Loading users...</td>
+                                        <td colSpan={6} className="p-8 text-center text-slate-400">
+                                            <div className="flex items-center justify-center gap-3">
+                                                <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
+                                                Loading users...
+                                            </div>
+                                        </td>
                                     </tr>
                                 ) : users.map(u => (
                                     <tr key={u.id} className="hover:bg-slate-800/20 transition-colors cursor-pointer" onClick={() => setSelectedUser(u)}>
@@ -150,29 +218,35 @@ const AdminDashboard: React.FC = () => {
                                             <td className="p-5 text-right" onClick={(e) => e.stopPropagation()}>
                                                 {u.role !== 'black_admin' && (
                                                     <div className="flex justify-end gap-2">
-                                                        {u.role === 'user' ? (
-                                                            <button onClick={() => handleAction(promoteUser, u.id, u.email, 'promote')} className="p-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors border border-purple-500/20" title="Promote to Admin">
-                                                                <Crown className="w-4 h-4" />
-                                                            </button>
+                                                        {actionLoadingId === u.id ? (
+                                                            <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
                                                         ) : (
-                                                            <button onClick={() => handleAction(demoteUser, u.id, u.email, 'demote')} className="p-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 rounded-lg transition-colors border border-orange-500/20" title="Demote to User">
-                                                                <Settings className="w-4 h-4" />
-                                                            </button>
-                                                        )}
+                                                            <>
+                                                                {u.role === 'user' ? (
+                                                                    <button disabled={!!actionLoadingId} onClick={() => handleAction(promoteUser, u.id, u.email, 'promote')} className="p-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors border border-purple-500/20 disabled:opacity-40 disabled:cursor-not-allowed" title="Promote to Admin">
+                                                                        <Crown className="w-4 h-4" />
+                                                                    </button>
+                                                                ) : (
+                                                                    <button disabled={!!actionLoadingId} onClick={() => handleAction(demoteUser, u.id, u.email, 'demote')} className="p-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 rounded-lg transition-colors border border-orange-500/20 disabled:opacity-40 disabled:cursor-not-allowed" title="Demote to User">
+                                                                        <Settings className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
 
-                                                        {u.is_blacklisted ? (
-                                                            <button onClick={() => handleAction(unblacklistUser, u.id, u.email, 'unblacklist')} className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-xs font-medium transition-colors border border-emerald-500/20">
-                                                                Unblock
-                                                            </button>
-                                                        ) : (
-                                                            <button onClick={() => handleAction(blacklistUser, u.id, u.email, 'blacklist')} className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors border border-red-500/20" title="Blacklist User">
-                                                                <UserX className="w-4 h-4" />
-                                                            </button>
-                                                        )}
+                                                                {u.is_blacklisted ? (
+                                                                    <button disabled={!!actionLoadingId} onClick={() => handleAction(unblacklistUser, u.id, u.email, 'unblacklist')} className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-xs font-medium transition-colors border border-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed">
+                                                                        Unblock
+                                                                    </button>
+                                                                ) : (
+                                                                    <button disabled={!!actionLoadingId} onClick={() => handleAction(blacklistUser, u.id, u.email, 'blacklist')} className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors border border-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed" title="Blacklist User">
+                                                                        <UserX className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
 
-                                                        <button onClick={() => handleAction(deleteUser, u.id, u.email, 'delete')} className="p-2 bg-red-900/40 hover:bg-red-800/60 text-red-300 rounded-lg transition-colors border border-red-800/50" title="Permanently Delete">
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
+                                                                <button disabled={!!actionLoadingId} onClick={() => handleAction(deleteUser, u.id, u.email, 'delete')} className="p-2 bg-red-900/40 hover:bg-red-800/60 text-red-300 rounded-lg transition-colors border border-red-800/50 disabled:opacity-40 disabled:cursor-not-allowed" title="Permanently Delete">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 )}
                                             </td>

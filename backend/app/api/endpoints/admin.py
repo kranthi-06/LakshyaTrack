@@ -48,27 +48,60 @@ def list_all_users(
     search: Optional[str] = None,
 ) -> Any:
     """List all users with profile details. Accessible by admin + black_admin."""
-    query = db.query(User)
-    
+    from sqlalchemy.orm import joinedload
+    from app.models.career import Roadmap, ProgressSnapshot
+
+    query = db.query(User).options(joinedload(User.profile))
+
     if search:
         search_pattern = f"%{search}%"
         query = query.filter(
             (User.email.ilike(search_pattern))
         )
-    
+
     total = query.count()
     users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
-    
-    from app.models.career import Roadmap, ProgressSnapshot
-    
+
+    if not users:
+        return {"users": [], "total": total}
+
+    user_ids = [u.id for u in users]
+
+    # Bulk-fetch active roadmaps for all users in one query
+    roadmaps = db.query(Roadmap).filter(
+        Roadmap.user_id.in_(user_ids),
+        Roadmap.is_active == True
+    ).all()
+    roadmap_map = {r.user_id: r for r in roadmaps}
+
+    # Bulk-fetch latest progress snapshots using a subquery for max date
+    from sqlalchemy import func as sa_func
+    latest_snap_subq = (
+        db.query(
+            ProgressSnapshot.user_id,
+            sa_func.max(ProgressSnapshot.snapshot_date).label("max_date")
+        )
+        .filter(ProgressSnapshot.user_id.in_(user_ids))
+        .group_by(ProgressSnapshot.user_id)
+        .subquery()
+    )
+    snapshots = (
+        db.query(ProgressSnapshot)
+        .join(
+            latest_snap_subq,
+            (ProgressSnapshot.user_id == latest_snap_subq.c.user_id)
+            & (ProgressSnapshot.snapshot_date == latest_snap_subq.c.max_date)
+        )
+        .all()
+    )
+    snap_map = {s.user_id: s for s in snapshots}
+
     result = []
     for u in users:
-        # Get active roadmap status
-        roadmap = db.query(Roadmap).filter(Roadmap.user_id == u.id, Roadmap.is_active == True).first()
+        # Compute progress status from pre-fetched roadmap
+        roadmap = roadmap_map.get(u.id)
         progress_status = "No Roadmap"
         if roadmap and roadmap.roadmap_data and "levels" in roadmap.roadmap_data:
-            # Figure out current stage (Stage 1, Stage 2, etc.) based on completion
-            # Simple heuristic: find the lowest locked/unlocked level
             levels = roadmap.roadmap_data["levels"]
             current_stage = 1
             for idx, lvl in enumerate(levels):
@@ -77,11 +110,10 @@ def list_all_users(
                     current_stage = idx + 1
                     break
             else:
-                current_stage = len(levels) # All completed
+                current_stage = len(levels)
             progress_status = f"Stage {current_stage}: {roadmap.target_role}"
 
-        # Get latest progress snapshot
-        snap = db.query(ProgressSnapshot).filter(ProgressSnapshot.user_id == u.id).order_by(ProgressSnapshot.snapshot_date.desc()).first()
+        snap = snap_map.get(u.id)
 
         result.append({
             "id": str(u.id),
@@ -97,7 +129,7 @@ def list_all_users(
             "quizzes_passed": snap.total_quizzes_passed if snap else 0,
             "interviews_done": snap.total_interviews_done if snap else 0,
         })
-    
+
     return {"users": result, "total": total}
 
 
