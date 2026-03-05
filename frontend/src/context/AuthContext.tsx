@@ -67,10 +67,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const userData = await getMe();
             return userData;
-        } catch (err) {
-            console.warn('AuthContext: Failed to fetch user from backend', err);
-            // Token was invalid — clear it so we don't loop
-            localStorage.removeItem(TOKEN_KEY);
+        } catch (err: any) {
+            // Only clear token on GENUINE 401 (token is truly invalid/expired).
+            // Network errors, timeouts, 500s etc. should NOT log the user out.
+            const status = err?.response?.status;
+            if (status === 401) {
+                console.warn('AuthContext: Token invalid (401) — clearing.');
+                localStorage.removeItem(TOKEN_KEY);
+                return null;
+            }
+            // For any other error (network, timeout, 500), keep the token
+            // and return null without destroying the session.
+            console.warn('AuthContext: Failed to fetch user (non-auth error, keeping token)', err?.message || err);
             return null;
         }
     }, []);
