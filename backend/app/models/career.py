@@ -22,6 +22,7 @@ class Roadmap(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     target_role = Column(String, nullable=False)
+    topic_name = Column(String, nullable=True)        # User-entered topic/skill (for custom roadmaps)
     current_skills = Column(JSONB, default=[])       # ["Python", "React", ...]
     skill_gaps = Column(JSONB, default=[])            # ["Docker", "K8s", ...]
     roadmap_data = Column(JSONB, nullable=False)      # Full roadmap structure (see below)
@@ -45,6 +46,7 @@ class Roadmap(Base):
     #   ]
     # }
     is_active = Column(Boolean, default=True)
+    last_opened = Column(DateTime(timezone=True), server_default=func.now())  # When the user last opened this roadmap
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

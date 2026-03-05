@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,12 +26,19 @@ import {
     BookOpen,
     Play,
     Loader2,
-    ExternalLink
+    ExternalLink,
+    Plus,
+    X,
+    ChevronDown,
+    Trash2,
 } from 'lucide-react';
 import {
     generateRoadmap,
     getActiveRoadmap,
-    getLearningResources
+    getLearningResources,
+    getAllRoadmaps,
+    setActiveRoadmap,
+    deleteRoadmap as deleteRoadmapApi,
 } from '../services/careerPlatform';
 
 type Step = 'domains' | 'roles' | 'analysis' | 'roadmap';
@@ -127,19 +134,47 @@ const jobRoles = [
     }
 ];
 
+// ─── Types ─────────────────────────────────────────
+interface RoadmapSummary {
+    id: string;
+    target_role: string;
+    topic_name: string;
+    is_active: boolean;
+    created_at: string;
+    last_opened: string;
+}
+
 export default function CareerIntelligence() {
     const [step, setStep] = useState<Step>('domains');
     const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
-    // ── New: Roadmap state ──────────────────────
+    // ── Roadmap state ──────────────────────
     const [roadmapData, setRoadmapData] = useState<any>(null);
     const [roadmapId, setRoadmapId] = useState<string | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [learningResources, setLearningResources] = useState<any[]>([]);
     const [selectedSkillForLearn, setSelectedSkillForLearn] = useState<any>(null);
     const [loadingResources, setLoadingResources] = useState(false);
+
+    // ── Multi-roadmap state ───────────────
+    const [allRoadmaps, setAllRoadmaps] = useState<RoadmapSummary[]>([]);
+    const [showNewRoadmapModal, setShowNewRoadmapModal] = useState(false);
+    const [newTopic, setNewTopic] = useState('');
+    const [newDifficulty, setNewDifficulty] = useState('');
+    const [isSwitching, setIsSwitching] = useState(false);
+    const [activeTopicName, setActiveTopicName] = useState<string | null>(null);
+
+    // ── Fetch all roadmaps ────────────────
+    const fetchAllRoadmaps = useCallback(async () => {
+        try {
+            const res = await getAllRoadmaps();
+            setAllRoadmaps(res.roadmaps || []);
+        } catch {
+            // silent
+        }
+    }, []);
 
     // Check for existing roadmap on mount
     useEffect(() => {
@@ -150,6 +185,7 @@ export default function CareerIntelligence() {
                     setRoadmapData(res.roadmap.roadmap_data);
                     setRoadmapId(res.roadmap.id);
                     setSelectedRole(res.roadmap.target_role);
+                    setActiveTopicName(res.roadmap.topic_name || res.roadmap.target_role);
                     setStep('roadmap');
                 }
             } catch (e) {
@@ -157,7 +193,8 @@ export default function CareerIntelligence() {
             }
         };
         checkExistingRoadmap();
-    }, []);
+        fetchAllRoadmaps();
+    }, [fetchAllRoadmaps]);
 
     const filteredRoles = jobRoles.filter(role =>
         role.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -179,12 +216,97 @@ export default function CareerIntelligence() {
             );
             setRoadmapData(res.roadmap_data);
             setRoadmapId(res.id);
+            setActiveTopicName(res.topic_name || roleTitle);
+            await fetchAllRoadmaps();
         } catch (error) {
             console.error('Failed to generate roadmap:', error);
-            // Fallback: redirect to dashboard
             window.location.href = '/dashboard';
         } finally {
             setIsGenerating(false);
+        }
+    };
+
+    // ── Create a new custom roadmap from the modal ─────
+    const handleCreateNewRoadmap = async () => {
+        if (!newTopic.trim()) return;
+
+        setShowNewRoadmapModal(false);
+        setIsGenerating(true);
+        setStep('roadmap');
+        setSelectedRole(newTopic.trim());
+
+        try {
+            const res = await generateRoadmap(
+                newTopic.trim(),
+                [],
+                [],
+                newTopic.trim(),
+                newDifficulty || undefined
+            );
+            setRoadmapData(res.roadmap_data);
+            setRoadmapId(res.id);
+            setActiveTopicName(res.topic_name || newTopic.trim());
+            setSelectedRole(res.target_role);
+            await fetchAllRoadmaps();
+        } catch (error) {
+            console.error('Failed to generate custom roadmap:', error);
+        } finally {
+            setIsGenerating(false);
+            setNewTopic('');
+            setNewDifficulty('');
+        }
+    };
+
+    // ── Switch active roadmap ────────────────
+    const handleSwitchRoadmap = async (roadmap: RoadmapSummary) => {
+        if (roadmap.id === roadmapId) return; // already active
+        setIsSwitching(true);
+        try {
+            const res = await setActiveRoadmap(roadmap.id);
+            setRoadmapData(res.roadmap_data);
+            setRoadmapId(res.id);
+            setSelectedRole(res.target_role);
+            setActiveTopicName(res.topic_name || res.target_role);
+            setStep('roadmap');
+            await fetchAllRoadmaps();
+        } catch (error) {
+            console.error('Failed to switch roadmap:', error);
+        } finally {
+            setIsSwitching(false);
+        }
+    };
+
+    // ── Delete a roadmap ────────────────
+    const handleDeleteRoadmap = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!confirm('Are you sure you want to delete this roadmap? This cannot be undone.')) return;
+        try {
+            await deleteRoadmapApi(id);
+            await fetchAllRoadmaps();
+            // If we deleted the active one, reload active
+            if (id === roadmapId) {
+                try {
+                    const res = await getActiveRoadmap();
+                    if (res.roadmap) {
+                        setRoadmapData(res.roadmap.roadmap_data);
+                        setRoadmapId(res.roadmap.id);
+                        setSelectedRole(res.roadmap.target_role);
+                        setActiveTopicName(res.roadmap.topic_name || res.roadmap.target_role);
+                    } else {
+                        setRoadmapData(null);
+                        setRoadmapId(null);
+                        setSelectedRole(null);
+                        setActiveTopicName(null);
+                        setStep('domains');
+                    }
+                } catch {
+                    setRoadmapData(null);
+                    setRoadmapId(null);
+                    setStep('domains');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to delete roadmap:', error);
         }
     };
 
@@ -404,17 +526,99 @@ export default function CareerIntelligence() {
                                         <div className="space-y-2">
                                             <h1 className="text-4xl font-[900] text-slate-900 tracking-tight">Your AI Learning Roadmap</h1>
                                             <p className="text-slate-400 text-lg font-medium max-w-2xl mx-auto leading-relaxed">
-                                                Personalized path to become a <span className="text-[#5c52d2] font-black">{selectedRole}</span>. Complete skills, pass quizzes, and unlock the next level.
+                                                Personalized path to become a <span className="text-[#5c52d2] font-black">{activeTopicName || selectedRole}</span>. Complete skills, pass quizzes, and unlock the next level.
                                             </p>
                                         </div>
-                                        <Button
-                                            onClick={() => { setStep('domains'); setRoadmapData(null); setRoadmapId(null); }}
-                                            variant="outline"
-                                            className="h-12 px-8 rounded-xl border-slate-200 font-black text-slate-500 text-xs uppercase tracking-widest"
-                                        >
-                                            Change Target Role
-                                        </Button>
+
+                                        {/* ── Action Buttons: Change Target Role + Add Roadmap ── */}
+                                        <div className="flex items-center justify-center gap-3 flex-wrap">
+                                            <Button
+                                                onClick={() => { setStep('domains'); setRoadmapData(null); setRoadmapId(null); }}
+                                                variant="outline"
+                                                className="h-12 px-8 rounded-xl border-slate-200 font-black text-slate-500 text-xs uppercase tracking-widest"
+                                            >
+                                                Change Target Role
+                                            </Button>
+                                            <Button
+                                                id="add-roadmap-btn"
+                                                onClick={() => setShowNewRoadmapModal(true)}
+                                                className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] text-white shadow-lg shadow-purple-200/50 hover:shadow-purple-300/60 hover:scale-105 transition-all flex items-center justify-center p-0"
+                                                title="Add New Roadmap"
+                                            >
+                                                <Plus className="w-5 h-5" />
+                                            </Button>
+                                        </div>
                                     </div>
+
+                                    {/* ── FEATURE 4: Roadmap Switcher ─────────────── */}
+                                    {allRoadmaps.length > 0 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="relative"
+                                        >
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <Sparkles className="w-4 h-4 text-[#5c52d2]" />
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Your Roadmaps</span>
+                                            </div>
+                                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                                                {allRoadmaps.map((rm) => (
+                                                    <motion.div
+                                                        key={rm.id}
+                                                        whileHover={{ scale: 1.02 }}
+                                                        whileTap={{ scale: 0.98 }}
+                                                        onClick={() => handleSwitchRoadmap(rm)}
+                                                        className={`
+                                                            group relative flex-shrink-0 px-5 py-3 rounded-2xl cursor-pointer transition-all border-2
+                                                            ${rm.id === roadmapId
+                                                                ? 'bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] text-white border-transparent shadow-lg shadow-purple-200/50'
+                                                                : 'bg-white border-slate-100 text-slate-600 hover:border-purple-200 hover:shadow-md hover:shadow-purple-50'
+                                                            }
+                                                        `}
+                                                    >
+                                                        <div className="flex items-center gap-2.5">
+                                                            {rm.id === roadmapId && isSwitching ? (
+                                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                            ) : rm.id === roadmapId ? (
+                                                                <CheckCircle2 className="w-4 h-4" />
+                                                            ) : (
+                                                                <Map className="w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity" />
+                                                            )}
+                                                            <span className="font-black text-xs whitespace-nowrap">{rm.topic_name}</span>
+                                                        </div>
+                                                        {/* Delete button (not on the active one if it's the only one) */}
+                                                        {allRoadmaps.length > 1 && (
+                                                            <button
+                                                                onClick={(e) => handleDeleteRoadmap(rm.id, e)}
+                                                                className={`
+                                                                    absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center
+                                                                    opacity-0 group-hover:opacity-100 transition-all
+                                                                    ${rm.id === roadmapId
+                                                                        ? 'bg-white/30 hover:bg-white/50 text-white'
+                                                                        : 'bg-red-100 hover:bg-red-200 text-red-500'
+                                                                    }
+                                                                `}
+                                                                title="Delete roadmap"
+                                                            >
+                                                                <X className="w-3 h-3" />
+                                                            </button>
+                                                        )}
+                                                    </motion.div>
+                                                ))}
+
+                                                {/* Inline "+" pill to add new roadmap */}
+                                                <motion.div
+                                                    whileHover={{ scale: 1.05 }}
+                                                    whileTap={{ scale: 0.95 }}
+                                                    onClick={() => setShowNewRoadmapModal(true)}
+                                                    className="flex-shrink-0 px-4 py-3 rounded-2xl cursor-pointer bg-slate-50 border-2 border-dashed border-slate-200 text-slate-400 hover:border-purple-300 hover:text-purple-500 hover:bg-purple-50/30 transition-all flex items-center gap-2"
+                                                >
+                                                    <Plus className="w-4 h-4" />
+                                                    <span className="font-black text-xs whitespace-nowrap">Add Roadmap</span>
+                                                </motion.div>
+                                            </div>
+                                        </motion.div>
+                                    )}
 
                                     {/* Roadmap Levels */}
                                     <div className="space-y-16">
@@ -571,6 +775,113 @@ export default function CareerIntelligence() {
                     )}
                 </AnimatePresence>
             </main>
+
+            {/* ═══════════════════════════════════════════════════════════════
+                FEATURE 1: Create New Roadmap Modal
+               ═══════════════════════════════════════════════════════════════ */}
+            <AnimatePresence>
+                {showNewRoadmapModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                    >
+                        {/* Overlay */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                            onClick={() => setShowNewRoadmapModal(false)}
+                        />
+
+                        {/* Modal */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 30 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="relative bg-white rounded-[2.5rem] shadow-2xl shadow-purple-200/30 p-8 w-full max-w-lg space-y-6"
+                        >
+                            {/* Close X */}
+                            <button
+                                onClick={() => setShowNewRoadmapModal(false)}
+                                className="absolute top-6 right-6 text-slate-300 hover:text-slate-500 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+
+                            {/* Header */}
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] rounded-2xl flex items-center justify-center shadow-lg shadow-purple-200/50">
+                                    <Sparkles className="w-6 h-6 text-white" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-[900] text-slate-900 tracking-tight">Create New Learning Roadmap</h2>
+                                    <p className="text-slate-400 text-sm font-medium">AI-powered personalized learning path</p>
+                                </div>
+                            </div>
+
+                            {/* Input */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                    Topic / Skill / Role
+                                </label>
+                                <Input
+                                    id="new-roadmap-topic-input"
+                                    value={newTopic}
+                                    onChange={(e) => setNewTopic(e.target.value)}
+                                    placeholder="Enter any skill, tool, topic, or role (e.g. Machine Learning, Docker, Cybersecurity)"
+                                    className="h-14 px-5 rounded-xl border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-purple-200 focus:border-purple-300 font-medium text-slate-700 placeholder:text-slate-300"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleCreateNewRoadmap()}
+                                />
+                            </div>
+
+                            {/* Difficulty dropdown */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                    Difficulty Level <span className="text-slate-300">(optional)</span>
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        id="new-roadmap-difficulty-select"
+                                        value={newDifficulty}
+                                        onChange={(e) => setNewDifficulty(e.target.value)}
+                                        className="w-full h-12 px-5 pr-10 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-purple-200 focus:border-purple-300 font-bold text-sm text-slate-600 appearance-none cursor-pointer outline-none transition-all"
+                                    >
+                                        <option value="">Auto (All Levels)</option>
+                                        <option value="Beginner">Beginner</option>
+                                        <option value="Intermediate">Intermediate</option>
+                                        <option value="Advanced">Advanced</option>
+                                    </select>
+                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                                </div>
+                            </div>
+
+                            {/* Buttons */}
+                            <div className="flex gap-3 pt-2">
+                                <Button
+                                    onClick={() => { setShowNewRoadmapModal(false); setNewTopic(''); setNewDifficulty(''); }}
+                                    variant="outline"
+                                    className="flex-1 h-12 rounded-xl border-slate-200 font-black text-slate-500 text-xs uppercase tracking-widest"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    id="generate-roadmap-btn"
+                                    onClick={handleCreateNewRoadmap}
+                                    disabled={!newTopic.trim()}
+                                    className="flex-1 h-12 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-purple-200/50 hover:shadow-purple-300/70 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    <Sparkles className="w-4 h-4 mr-2" />
+                                    Generate Roadmap
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

@@ -1,10 +1,12 @@
 """
 AI Roadmap Engine — generates personalized skill roadmaps.
 Uses existing AIService (ai_hub) for LLM calls.
+Supports multiple roadmaps per user with active-roadmap switching.
 """
 import json
 import uuid
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.services.ai_service import ai_hub
@@ -25,11 +27,15 @@ async def generate_roadmap(
     target_role: str,
     current_skills: List[str],
     skill_gaps: List[str],
-    db: Session
+    db: Session,
+    topic_name: Optional[str] = None,
+    difficulty: Optional[str] = None,
 ) -> dict:
     """
     Generate a personalized skill roadmap using AI.
     Persists the result in the database.
+    If topic_name is provided, it's used as the learning topic (custom roadmap).
+    Difficulty can be 'Beginner', 'Intermediate', or 'Advanced' to bias the content.
     """
     system_prompt = (
         "You are an expert career coach and curriculum designer. "
@@ -38,11 +44,16 @@ async def generate_roadmap(
         "All suggestions must be real, verifiable, and role-specific."
     )
 
+    difficulty_hint = ""
+    if difficulty:
+        difficulty_hint = f"\nNote: The user has indicated they are at {difficulty} level, so adjust the difficulty of each level accordingly."
+
     prompt = f"""
     Create a detailed skill learning roadmap for someone targeting the role of "{target_role}".
 
     Their current skills are: {json.dumps(current_skills)}
     Their identified skill gaps are: {json.dumps(skill_gaps)}
+    {difficulty_hint}
 
     Generate a roadmap with exactly 3 levels: Beginner, Intermediate, Advanced.
 
@@ -119,14 +130,22 @@ async def generate_roadmap(
                 else:
                     skill["status"] = "locked"
 
+        # Deactivate ALL existing roadmaps for this user so only the new one is active
+        db.query(Roadmap).filter(
+            Roadmap.user_id == user_id,
+            Roadmap.is_active == True
+        ).update({"is_active": False})
+
         # Persist to database
         roadmap = Roadmap(
             user_id=user_id,
             target_role=target_role,
+            topic_name=topic_name or target_role,
             current_skills=current_skills,
             skill_gaps=skill_gaps,
             roadmap_data=roadmap_data,
-            is_active=True
+            is_active=True,
+            last_opened=datetime.now(timezone.utc),
         )
         db.add(roadmap)
         db.commit()
@@ -135,6 +154,7 @@ async def generate_roadmap(
         return {
             "id": str(roadmap.id),
             "target_role": target_role,
+            "topic_name": roadmap.topic_name,
             "roadmap_data": roadmap_data,
             "created_at": str(roadmap.created_at)
         }
@@ -160,12 +180,90 @@ def get_user_roadmap(user_id: str, db: Session) -> Optional[dict]:
     return {
         "id": str(roadmap.id),
         "target_role": roadmap.target_role,
+        "topic_name": roadmap.topic_name or roadmap.target_role,
         "current_skills": roadmap.current_skills,
         "skill_gaps": roadmap.skill_gaps,
         "roadmap_data": roadmap.roadmap_data,
         "created_at": str(roadmap.created_at),
         "updated_at": str(roadmap.updated_at)
     }
+
+
+def get_all_user_roadmaps(user_id: str, db: Session) -> list:
+    """Get all roadmaps for a user (for the switcher UI)."""
+    roadmaps = db.query(Roadmap).filter(
+        Roadmap.user_id == user_id,
+    ).order_by(Roadmap.last_opened.desc().nullslast(), Roadmap.created_at.desc()).all()
+
+    return [
+        {
+            "id": str(r.id),
+            "target_role": r.target_role,
+            "topic_name": r.topic_name or r.target_role,
+            "is_active": r.is_active,
+            "created_at": str(r.created_at),
+            "last_opened": str(r.last_opened) if r.last_opened else str(r.created_at),
+        }
+        for r in roadmaps
+    ]
+
+
+def set_active_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
+    """Switch the active roadmap for a user. Deactivates all others."""
+    # Deactivate all
+    db.query(Roadmap).filter(
+        Roadmap.user_id == user_id,
+        Roadmap.is_active == True
+    ).update({"is_active": False})
+
+    # Activate the selected one
+    roadmap = db.query(Roadmap).filter(
+        Roadmap.id == roadmap_id,
+        Roadmap.user_id == user_id
+    ).first()
+
+    if not roadmap:
+        raise ValueError("Roadmap not found")
+
+    roadmap.is_active = True
+    roadmap.last_opened = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(roadmap)
+
+    return {
+        "id": str(roadmap.id),
+        "target_role": roadmap.target_role,
+        "topic_name": roadmap.topic_name or roadmap.target_role,
+        "roadmap_data": roadmap.roadmap_data,
+        "created_at": str(roadmap.created_at),
+        "updated_at": str(roadmap.updated_at)
+    }
+
+
+def delete_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
+    """Delete a specific roadmap for a user."""
+    roadmap = db.query(Roadmap).filter(
+        Roadmap.id == roadmap_id,
+        Roadmap.user_id == user_id
+    ).first()
+
+    if not roadmap:
+        raise ValueError("Roadmap not found")
+
+    was_active = roadmap.is_active
+    db.delete(roadmap)
+    db.commit()
+
+    # If the deleted roadmap was active, activate the most recent remaining one
+    if was_active:
+        next_roadmap = db.query(Roadmap).filter(
+            Roadmap.user_id == user_id
+        ).order_by(Roadmap.last_opened.desc().nullslast(), Roadmap.created_at.desc()).first()
+        if next_roadmap:
+            next_roadmap.is_active = True
+            db.commit()
+
+    return {"deleted": True}
 
 
 def update_skill_status(

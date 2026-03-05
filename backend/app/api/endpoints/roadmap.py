@@ -1,6 +1,7 @@
 """
 API Endpoints for the AI Roadmap Engine.
 Integrates with the Plan page (CareerIntelligence).
+Supports multiple roadmaps per user with switcher.
 """
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,12 +17,22 @@ class RoadmapRequest(BaseModel):
     target_role: str
     current_skills: List[str] = []
     skill_gaps: List[str] = []
+    topic_name: Optional[str] = None
+    difficulty: Optional[str] = None  # "Beginner", "Intermediate", "Advanced"
 
 
 class SkillUpdateRequest(BaseModel):
     roadmap_id: str
     skill_id: str
     status: str  # "completed", "unlocked", "locked"
+
+
+class SetActiveRequest(BaseModel):
+    roadmap_id: str
+
+
+class DeleteRoadmapRequest(BaseModel):
+    roadmap_id: str
 
 
 @router.post("/generate")
@@ -37,7 +48,9 @@ async def generate_roadmap(
             target_role=request.target_role,
             current_skills=request.current_skills,
             skill_gaps=request.skill_gaps,
-            db=db
+            db=db,
+            topic_name=request.topic_name,
+            difficulty=request.difficulty,
         )
         return result
     except ValueError as e:
@@ -56,6 +69,56 @@ async def get_active_roadmap(
     if not roadmap:
         return {"roadmap": None, "message": "No active roadmap found. Generate one first."}
     return {"roadmap": roadmap}
+
+
+@router.get("/all")
+async def get_all_roadmaps(
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Get all roadmaps for the current user (for the switcher)."""
+    roadmaps = roadmap_service.get_all_user_roadmaps(str(current_user.id), db)
+    return {"roadmaps": roadmaps}
+
+
+@router.post("/set-active")
+async def set_active_roadmap(
+    request: SetActiveRequest,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Switch the active roadmap for the current user."""
+    try:
+        result = roadmap_service.set_active_roadmap(
+            user_id=str(current_user.id),
+            roadmap_id=request.roadmap_id,
+            db=db
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/delete")
+async def delete_roadmap(
+    request: DeleteRoadmapRequest,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Delete a roadmap."""
+    try:
+        result = roadmap_service.delete_roadmap(
+            user_id=str(current_user.id),
+            roadmap_id=request.roadmap_id,
+            db=db
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/update-skill")

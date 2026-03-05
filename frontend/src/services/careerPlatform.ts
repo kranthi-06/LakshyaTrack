@@ -9,17 +9,40 @@ import api from './api';
 // 1. ROADMAP ENGINE
 // ════════════════════════════════════════════
 
-export const generateRoadmap = async (targetRole: string, currentSkills: string[] = [], skillGaps: string[] = []) => {
+export const generateRoadmap = async (
+    targetRole: string,
+    currentSkills: string[] = [],
+    skillGaps: string[] = [],
+    topicName?: string,
+    difficulty?: string
+) => {
     const res = await api.post('/roadmap/generate', {
         target_role: targetRole,
         current_skills: currentSkills,
-        skill_gaps: skillGaps
+        skill_gaps: skillGaps,
+        topic_name: topicName || undefined,
+        difficulty: difficulty || undefined,
     });
     return res.data;
 };
 
 export const getActiveRoadmap = async () => {
     const res = await api.get('/roadmap/active');
+    return res.data;
+};
+
+export const getAllRoadmaps = async () => {
+    const res = await api.get('/roadmap/all');
+    return res.data;
+};
+
+export const setActiveRoadmap = async (roadmapId: string) => {
+    const res = await api.post('/roadmap/set-active', { roadmap_id: roadmapId });
+    return res.data;
+};
+
+export const deleteRoadmap = async (roadmapId: string) => {
+    const res = await api.post('/roadmap/delete', { roadmap_id: roadmapId });
     return res.data;
 };
 

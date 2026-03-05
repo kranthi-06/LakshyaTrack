@@ -31,6 +31,16 @@ with engine.connect() as conn:
         conn.execute(text("ALTER TABLE profiles ADD COLUMN profile_photo_url VARCHAR"))
         conn.commit()
 
+    # Multi-roadmap support: add new columns to roadmaps table
+    roadmap_cols = [c['name'] for c in inspector.get_columns('roadmaps')]
+    if 'topic_name' not in roadmap_cols:
+        conn.execute(text("ALTER TABLE roadmaps ADD COLUMN topic_name VARCHAR"))
+        conn.commit()
+    if 'last_opened' not in roadmap_cols:
+        conn.execute(text("ALTER TABLE roadmaps ADD COLUMN last_opened TIMESTAMPTZ DEFAULT NOW()"))
+        conn.commit()
+
+
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
