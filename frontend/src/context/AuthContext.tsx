@@ -9,15 +9,18 @@ interface User {
     profile?: {
         full_name?: string;
         profile_photo_url?: string;
+        phone_number?: string;
+        bio?: string;
+        links?: Record<string, any>;
         resume_step?: number;
         resume_completion?: number;
         skills?: string[];
-        // Add other profile fields if needed
     };
     is_active?: boolean;
     role?: 'user' | 'admin' | 'black_admin';
     is_blacklisted?: boolean;
     last_active_at?: string;
+    created_at?: string;
 }
 
 interface AuthContextType {
@@ -34,214 +37,212 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ── Constants ────────────────────────────────────────────────
+const PUBLIC_PATHS = ['/', '/login', '/register', '/verify-email', '/auth/callback'];
+const SUPABASE_TIMEOUT_MS = 4000;
+const AUTH_CALLBACK_SAFETY_TIMEOUT_MS = 8000;
+const TOKEN_KEY = 'token';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
 
-    // Ref to track current user state inside closures (avoids stale closure in useEffect)
+    // Track state inside closures to avoid stale reads
     const userRef = useRef<User | null>(null);
+    const mountedRef = useRef(true);
+    const authInProgressRef = useRef(false); // Prevents duplicate auth flows
+
     const updateUser = useCallback((u: User | null) => {
         userRef.current = u;
         setUser(u);
     }, []);
 
-    // Check for existing token on mount
-    // Check for existing token on mount and listen for Supabase auth changes
-    // Unified Supabase Auth Logic
+    /** Safely attempt to fetch the current user from backend */
+    const fetchCurrentUser = useCallback(async (): Promise<User | null> => {
+        const token = localStorage.getItem(TOKEN_KEY);
+        if (!token || token === 'undefined' || token === 'null') {
+            return null;
+        }
+        try {
+            const userData = await getMe();
+            return userData;
+        } catch (err) {
+            console.warn('AuthContext: Failed to fetch user from backend', err);
+            // Token was invalid — clear it so we don't loop
+            localStorage.removeItem(TOKEN_KEY);
+            return null;
+        }
+    }, []);
+
+    // ── Initialise auth state on mount ──────────────────────────
     useEffect(() => {
-        let mounted = true;
-        // Track whether initial session has been loaded.
-        // This prevents onAuthStateChange from redirecting to /dashboard
-        // on token refresh / tab re-focus when the user is already on a page.
-        let initialSessionLoaded = false;
+        mountedRef.current = true;
 
         const initSession = async () => {
+            if (authInProgressRef.current) return;
+            authInProgressRef.current = true;
+
             try {
-                // 1. Check active Supabase session with a timeout
-                // If Supabase is unreachable (paused project, network issue), 
-                // fall back to local token within 4 seconds instead of hanging forever.
-                let session: any = null;
+                // 1. Try Supabase session (with timeout so we don't hang on paused projects)
+                let supabaseSession: any = null;
                 try {
-                    const sessionPromiseInner = supabase.auth.getSession();
-                    const timeoutPromise = new Promise((_, reject) =>
-                        setTimeout(() => reject(new Error('Supabase session check timed out')), 4000)
-                    );
-                    const result: any = await Promise.race([sessionPromiseInner, timeoutPromise]);
-                    session = result?.data?.session || null;
-                } catch (timeoutErr) {
-                    console.warn("Supabase session check timed out or failed. Falling back to local token.");
+                    const result: any = await Promise.race([
+                        supabase.auth.getSession(),
+                        new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error('timeout')), SUPABASE_TIMEOUT_MS)
+                        ),
+                    ]);
+                    supabaseSession = result?.data?.session || null;
+                } catch {
+                    console.warn('AuthContext: Supabase session check timed out — falling back to local token.');
                 }
 
-                if (mounted) {
-                    if (session) {
-                        console.log("Session found on mount:", session.user.email);
-                        localStorage.setItem('token', session.access_token);
-                        try {
-                            const userData = await getMe();
-                            updateUser(userData);
-                        } catch (err) {
-                            console.error("Backend sync failed on mount:", err);
-                        }
-                    } else {
-                        // fallback: check if we have a custom token (not supabase) in local storage?
-                        // Our app mixes them. If getSession is null, maybe we have a legacy/custom token.
-                        const localToken = localStorage.getItem('token');
-                        if (localToken && localToken !== 'undefined') {
-                            try {
-                                const userData = await getMe();
-                                updateUser(userData);
-                            } catch (err) {
-                                // Token invalid
-                                localStorage.removeItem('token');
-                            }
-                        }
-                    }
+                if (!mountedRef.current) return;
+
+                if (supabaseSession) {
+                    // Supabase has a valid session — store the token and fetch user
+                    localStorage.setItem(TOKEN_KEY, supabaseSession.access_token);
+                    const userData = await fetchCurrentUser();
+                    if (mountedRef.current) updateUser(userData);
+                } else {
+                    // No Supabase session — try local token (custom email/password login)
+                    const userData = await fetchCurrentUser();
+                    if (mountedRef.current) updateUser(userData);
                 }
             } catch (err) {
-                console.error("Session init error:", err);
+                console.error('AuthContext: Session init error', err);
             } finally {
-                // Determine if we should clear loading state
-                if (mounted) {
-                    const isOAuthCallback = window.location.hash.includes('access_token') ||
-                        window.location.hash.includes('type=recovery') ||
-                        window.location.search.includes('code');
+                authInProgressRef.current = false;
 
-                    if (isOAuthCallback) {
-                        console.log("OAuth Callback detected. Waiting for Supabase event...");
-                        // Safety timeout: If Supabase doesn't fire within 5s, unblock UI
-                        setTimeout(() => {
-                            if (mounted) {
-                                console.warn("Supabase auth timeout. Clearing loading state.");
-                                setLoading(false);
-                            }
-                        }, 5000);
-                    } else {
-                        setLoading(false);
-                    }
+                if (!mountedRef.current) return;
+
+                // If this is an OAuth callback page, give Supabase a moment to fire
+                // the SIGNED_IN event before we clear the loading state.
+                const isOAuthCallback =
+                    window.location.hash.includes('access_token') ||
+                    window.location.hash.includes('type=recovery') ||
+                    window.location.search.includes('code') ||
+                    window.location.pathname === '/auth/callback';
+
+                if (isOAuthCallback) {
+                    // Safety net: clear loading after a generous timeout
+                    setTimeout(() => {
+                        if (mountedRef.current) setLoading(false);
+                    }, AUTH_CALLBACK_SAFETY_TIMEOUT_MS);
+                } else {
+                    setLoading(false);
                 }
-                // Mark initial session as loaded so onAuthStateChange knows
-                // any future SIGNED_IN events are just token refreshes.
-                initialSessionLoaded = true;
             }
         };
 
-        const sessionPromise = initSession();
+        initSession();
 
-        // 2. Listen for auth changes (Login, Logout, OAuth Redirects)
+        // 2. Listen for Supabase auth state changes (Google Sign‑In, token refresh, sign‑out)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log("Auth State Change:", event);
+            console.log('AuthContext: onAuthStateChange', event);
 
             if (event === 'SIGNED_IN' && session) {
-                // Always update the token in localStorage so API calls use the fresh token
-                localStorage.setItem('token', session.access_token);
+                localStorage.setItem(TOKEN_KEY, session.access_token);
 
                 try {
-                    const userData = await getMe();
+                    const userData = await fetchCurrentUser();
+                    if (!mountedRef.current) return;
                     updateUser(userData);
 
-                    // Decide whether to navigate to dashboard or stay put.
-                    // If the user is already on a protected page, they just refreshed — stay.
-                    // If they're on login/register, this is a fresh login — go to dashboard.
+                    // Navigate only when the user is on a public / callback page
                     const currentPath = window.location.pathname;
-                    const publicPaths = ['/', '/login', '/register', '/verify-email', '/auth/callback'];
-                    const isOnPublicPage = publicPaths.includes(currentPath);
-                    const isOAuthCallback = currentPath === '/auth/callback';
-
-                    if (isOAuthCallback || isOnPublicPage) {
-                        // Fresh sign-in from login/register/OAuth → go to dashboard
-                        navigate('/dashboard');
-                    } else {
-                        // User is on a protected page (e.g. /career, /quiz) → page refresh, stay put
-                        console.log("Auth event on protected page — staying on current page.");
+                    if (PUBLIC_PATHS.includes(currentPath)) {
+                        navigate('/dashboard', { replace: true });
                     }
                 } catch (err: any) {
-                    console.error("Backend sync failed on SIGNED_IN:", err);
-                    alert("Authentication Error: Failed to sync user with backend. " + (err.response?.data?.detail || err.message));
-                    localStorage.removeItem('token');
-                    await supabase.auth.signOut();
-                    updateUser(null);
-                    navigate('/login');
+                    console.error('AuthContext: Backend sync failed on SIGNED_IN', err);
+                    localStorage.removeItem(TOKEN_KEY);
+                    await supabase.auth.signOut().catch(() => { });
+                    if (mountedRef.current) {
+                        updateUser(null);
+                        navigate('/login', { replace: true });
+                    }
                 }
             } else if (event === 'TOKEN_REFRESHED' && session) {
-                // Supabase automatically refreshes tokens — just update localStorage silently.
-                console.log("Token refreshed silently.");
-                localStorage.setItem('token', session.access_token);
+                // Silent refresh — just update the token, don't navigate anywhere
+                localStorage.setItem(TOKEN_KEY, session.access_token);
             } else if (event === 'SIGNED_OUT') {
-                localStorage.removeItem('token');
-                updateUser(null);
-                navigate('/login');
+                localStorage.removeItem(TOKEN_KEY);
+                if (mountedRef.current) {
+                    updateUser(null);
+                    navigate('/login', { replace: true });
+                }
             }
-            // Ensure loading is false after any event
-            setLoading(false);
+
+            // Always ensure loading is cleared after an event
+            if (mountedRef.current) setLoading(false);
         });
 
         return () => {
-            mounted = false;
+            mountedRef.current = false;
             subscription.unsubscribe();
         };
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // ── Email + Password Login ──────────────────────────────────
     const login = useCallback(async (data: any) => {
         const response = await loginApi(data.username || data.email, data.password);
         if (response.access_token) {
-            localStorage.setItem('token', response.access_token);
+            localStorage.setItem(TOKEN_KEY, response.access_token);
             const userData = await getMe();
             updateUser(userData);
-            navigate('/dashboard');
+            navigate('/dashboard', { replace: true });
         }
-    }, [navigate]);
+    }, [navigate, updateUser]);
 
+    // ── Registration (no auto‑login — OTP verification required) ─
     const register = useCallback(async (data: any) => {
-        const response = await registerApi(data);
-        return response;
-        // After signup, we DON'T auto-login. We need to verify OTP.
-        // The UI should handle redirection to OTP verification page.
+        return await registerApi(data);
     }, []);
 
+    // ── OTP Verification ────────────────────────────────────────
     const verifyOtp = useCallback(async (email: string, otp: string) => {
         const response = await verifyOtpApi(email, otp);
         if (response.access_token) {
-            localStorage.setItem('token', response.access_token);
+            localStorage.setItem(TOKEN_KEY, response.access_token);
             const userData = await getMe();
             updateUser(userData);
         }
-    }, []);
+    }, [updateUser]);
 
+    // ── Resend OTP ──────────────────────────────────────────────
     const resendOtp = useCallback(async (email: string) => {
         await sendOtpApi(email);
     }, []);
 
+    // ── Refresh User Data ───────────────────────────────────────
     const refreshUser = useCallback(async () => {
-        try {
-            const userData = await getMe();
-            updateUser(userData);
-        } catch (err) {
-            console.error("Failed to refresh user", err);
-        }
-    }, []);
+        const userData = await fetchCurrentUser();
+        if (userData && mountedRef.current) updateUser(userData);
+    }, [fetchCurrentUser, updateUser]);
 
+    // ── Google Sign‑In via Supabase ─────────────────────────────
     const signInWithGoogle = useCallback(async () => {
-        try {
-            const { error } = await supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: {
-                    redirectTo: window.location.origin + '/auth/callback',
-                },
-            });
-            if (error) throw error;
-            // Supabase handles the redirect.
-        } catch (error) {
-            console.error("Google Sign-In Error:", error);
-            throw error;
-        }
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin + '/auth/callback',
+            },
+        });
+        if (error) throw error;
+        // Supabase handles the redirect. The onAuthStateChange listener
+        // will pick up the SIGNED_IN event on the callback page.
     }, []);
 
-    const logout = useCallback(() => {
-        localStorage.removeItem('token');
+    // ── Logout ──────────────────────────────────────────────────
+    const logout = useCallback(async () => {
+        localStorage.removeItem(TOKEN_KEY);
+        // Sign out from Supabase too (if applicable)
+        await supabase.auth.signOut().catch(() => { });
         updateUser(null);
-        navigate('/login');
-    }, [navigate]);
+        navigate('/login', { replace: true });
+    }, [navigate, updateUser]);
 
     const contextValue = useMemo(() => ({
         user,
@@ -252,7 +253,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resendOtp,
         signInWithGoogle,
         logout,
-        refreshUser
+        refreshUser,
     }), [user, loading, login, register, verifyOtp, resendOtp, signInWithGoogle, logout, refreshUser]);
 
     return (

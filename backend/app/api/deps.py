@@ -38,16 +38,6 @@ def _resolve_user_role(user: User) -> str:
 def get_current_user(
     db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
 ) -> User:
-    if token == "GUEST_TOKEN":
-        import uuid
-        guest_id = uuid.uuid4()
-        return User(
-            id=guest_id,
-            email="guest@vidorya.com",
-            is_active=True,
-            is_superuser=False,
-            role="user"
-        )
     # Define credential exception generator to allow dynamic details
     def get_credentials_exception(detail_msg: str):
         return HTTPException(
@@ -58,16 +48,14 @@ def get_current_user(
 
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, options={"verify_signature": False, "verify_aud": False})
-        print(f"DEBUG: Decoded Payload: {payload}") 
+
         user_id: str = payload.get("sub")
         email: str = payload.get("email")
         
         if user_id is None:
-            print("ERROR: Token missing 'sub' claim")
             raise get_credentials_exception("Token missing 'sub' claim")
             
     except (JWTError, ValidationError) as e:
-        print(f"ERROR: JWT Validation Failed: {e}")
         raise get_credentials_exception(f"JWT Validation Failed: {str(e)}")
         
     # 1. Try finding user by ID (Standard backend flow)
@@ -114,7 +102,6 @@ def get_current_user(
             db.commit()
             
         except Exception as e:
-            print(f"Auto-provisioning failed: {e}")
             raise get_credentials_exception(f"Auto-provisioning failed: {str(e)}")
 
     if not user:

@@ -13,7 +13,6 @@ import {
     EyeOff,
     CheckCircle2,
     ShieldCheck,
-    Linkedin,
     GraduationCap
 } from 'lucide-react';
 
@@ -34,13 +33,14 @@ export default function Login() {
     const { login, signInWithGoogle, user, loading: authLoading } = useAuth();
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [googleLoading, setGoogleLoading] = useState(false);
     const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
     const navigate = useNavigate();
 
     // Redirect if already logged in
     useEffect(() => {
         if (user) {
-            navigate('/dashboard');
+            navigate('/dashboard', { replace: true });
         }
     }, [user, navigate]);
 
@@ -51,26 +51,45 @@ export default function Login() {
 
     const showToast = (message: string, type: 'success' | 'error' | 'info') => {
         setToast({ message, type });
-        setTimeout(() => setToast(null), 3000);
+        setTimeout(() => setToast(null), 4000);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isLoading) return; // Prevent double-submit
         setIsLoading(true);
         setError('');
         try {
-            await login({ email: email, password });
+            await login({ email, password });
             showToast('Login successful! Redirecting...', 'success');
         } catch (err: any) {
-            console.error(err);
+            console.error('Login error:', err);
             let msg = 'Invalid credentials';
             if (err.response?.data?.detail) {
-                msg = err.response.data.detail;
+                msg = typeof err.response.data.detail === 'string'
+                    ? err.response.data.detail
+                    : 'Login failed. Please try again.';
+            } else if (err.message) {
+                msg = err.message;
             }
             setError(msg);
             showToast(msg, 'error');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleGoogleLogin = async () => {
+        if (googleLoading) return;
+        setGoogleLoading(true);
+        setError('');
+        try {
+            await signInWithGoogle();
+            // Supabase will redirect — the loading state will stay until redirect
+        } catch (err: any) {
+            console.error('Google Login Error:', err);
+            showToast(err.message || 'Google sign-in failed', 'error');
+            setGoogleLoading(false);
         }
     };
 
@@ -159,7 +178,16 @@ export default function Login() {
                             <p className="text-slate-500">Enter your credentials to access your account</p>
                         </div>
 
-
+                        {/* Error Banner */}
+                        {error && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium"
+                            >
+                                {error}
+                            </motion.div>
+                        )}
 
                         <form onSubmit={handleSubmit} className="space-y-5">
                             <div className="space-y-2">
@@ -176,6 +204,8 @@ export default function Login() {
                                         onChange={(e) => setEmail(e.target.value)}
                                         className="pl-11 py-6 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500 bg-slate-50 focus:bg-white transition-all"
                                         placeholder="you@example.com"
+                                        disabled={isLoading}
+                                        autoComplete="email"
                                     />
                                 </div>
                             </div>
@@ -196,6 +226,8 @@ export default function Login() {
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="pl-11 pr-11 py-6 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500 bg-slate-50 focus:bg-white transition-all"
                                         placeholder="Enter your password"
+                                        disabled={isLoading}
+                                        autoComplete="current-password"
                                     />
                                     <button
                                         type="button"
@@ -224,9 +256,17 @@ export default function Login() {
                             <Button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white py-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all"
+                                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white py-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-70"
                             >
-                                {isLoading ? "Signing In..." : "Sign In"}
+                                {isLoading ? (
+                                    <span className="flex items-center gap-2">
+                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                        </svg>
+                                        Signing In...
+                                    </span>
+                                ) : "Sign In"}
                             </Button>
 
                             <div className="relative my-8">
@@ -241,40 +281,27 @@ export default function Login() {
                             <div className="grid grid-cols-1 gap-4">
                                 <Button
                                     type="button"
-                                    onClick={async () => {
-                                        try {
-                                            await signInWithGoogle();
-                                        } catch (err: any) {
-                                            console.error("Google Login Error:", err);
-                                            showToast(err.message || 'Google sign-in failed', 'error');
-                                        }
-                                    }}
+                                    onClick={handleGoogleLogin}
+                                    disabled={googleLoading}
                                     variant="outline"
-                                    className="w-full py-6 rounded-xl border-2 border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-all flex items-center justify-center gap-3 text-slate-700 font-bold text-lg"
+                                    className="w-full py-6 rounded-xl border-2 border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-all flex items-center justify-center gap-3 text-slate-700 font-bold text-lg disabled:opacity-70"
                                 >
-                                    <GoogleIcon />
-                                    <span>Sign in with Google</span>
+                                    {googleLoading ? (
+                                        <span className="flex items-center gap-2">
+                                            <svg className="animate-spin h-5 w-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                            </svg>
+                                            Connecting...
+                                        </span>
+                                    ) : (
+                                        <>
+                                            <GoogleIcon />
+                                            <span>Sign in with Google</span>
+                                        </>
+                                    )}
                                 </Button>
                             </div>
-
-                            <Button
-                                type="button"
-                                onClick={async () => {
-                                    setIsLoading(true);
-                                    try {
-                                        // Use the special guest token mechanism we just added to backend
-                                        localStorage.setItem('token', 'GUEST_TOKEN');
-                                        // We need to force a reload or update state because AuthContext.login usually expects an API call
-                                        // Let's manually trigger a reload to pick up the token
-                                        window.location.href = '/dashboard';
-                                    } catch (err) {
-                                        setIsLoading(false);
-                                    }
-                                }}
-                                className="w-full bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 py-6 rounded-xl font-bold text-lg shadow-sm hover:shadow-md transition-all mt-4"
-                            >
-                                Continue as Guest (Dev Bypass)
-                            </Button>
                         </form>
 
                         <div className="text-center space-y-6">

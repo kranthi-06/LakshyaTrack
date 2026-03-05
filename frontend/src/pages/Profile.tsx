@@ -149,23 +149,34 @@ function LazyResumePreview({ resume, onDelete, onDownload }: {
     );
 }
 
+/** Helper: Format a date string to "MonthName Year" */
+function formatJoinDate(dateStr?: string | null): string {
+    if (!dateStr) return 'Recently joined';
+    try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    } catch {
+        return 'Recently joined';
+    }
+}
+
 export default function Profile() {
     const { user, refreshUser } = useAuth();
     const [isEditing, setIsEditing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Initial state with mock data
+    // Profile state — populated from backend user data
     const [profile, setProfile] = useState({
-        role: "Software Engineer",
-        location: "Visakhapatnam, India",
-        joined: "February 2026",
-        phone: "+91 98765 43210",
-        bio: "Passionate full-stack developer with a keen interest in AI/ML and building scalable web applications. Currently focused on mastering React and FastAPI.",
-        skills: ["React", "TypeScript", "Python", "FastAPI", "Tailwind CSS", "PostgreSQL"],
+        role: "",
+        location: "",
+        joined: "",
+        phone: "",
+        bio: "",
+        skills: [] as string[],
         socials: {
-            linkedin: "linkedin.com/in/ashokyeddula",
-            github: "github.com/ashokyeddula",
-            portfolio: "ashokyeddula.dev"
+            linkedin: "",
+            github: "",
+            portfolio: ""
         },
         image: null as string | null
     });
@@ -173,30 +184,43 @@ export default function Profile() {
     const [savedResumes, setSavedResumes] = useState<any[]>([]);
     const [loadingResumes, setLoadingResumes] = useState(false);
 
-    // Refresh user data from backend on page load to guarantee latest skills
+    // Refresh user data from backend on page load to guarantee latest data
     useEffect(() => {
         refreshUser();
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Load profile from localStorage on mount, then hydrate with DB data
+    // Hydrate profile from backend user data + localStorage overrides
     useEffect(() => {
-        if (user?.email) {
-            const savedProfile = localStorage.getItem(`user_profile_${user.email}`);
-            if (savedProfile) {
-                try {
-                    const parsed = JSON.parse(savedProfile);
-                    if (user?.profile?.skills) {
-                        parsed.skills = user.profile.skills;
-                    }
-                    setProfile(parsed);
-                } catch (e) {
-                    console.error("Failed to parse profile", e);
-                }
-            } else if (user?.profile?.skills) {
-                setProfile(prev => ({ ...prev, skills: user.profile!.skills! }));
-            }
+        if (!user?.email) return;
+
+        // Start with backend data
+        const backendProfile = user.profile;
+        const backendLinks = backendProfile?.links || {};
+
+        // Check for localStorage profile data (for fields not yet in backend)
+        let localProfile: any = null;
+        try {
+            const saved = localStorage.getItem(`user_profile_${user.email}`);
+            if (saved) localProfile = JSON.parse(saved);
+        } catch {
+            // ignore parse errors
         }
-    }, [user?.email, user?.profile?.skills]);
+
+        setProfile({
+            role: localProfile?.role || "",
+            location: localProfile?.location || "",
+            joined: formatJoinDate(user.created_at),
+            phone: backendProfile?.phone_number || localProfile?.phone || "",
+            bio: backendProfile?.bio || localProfile?.bio || "",
+            skills: backendProfile?.skills?.length ? backendProfile.skills : (localProfile?.skills || []),
+            socials: {
+                linkedin: backendLinks.linkedin || localProfile?.socials?.linkedin || "",
+                github: backendLinks.github || localProfile?.socials?.github || "",
+                portfolio: backendLinks.portfolio || localProfile?.socials?.portfolio || ""
+            },
+            image: backendProfile?.profile_photo_url || localProfile?.image || null
+        });
+    }, [user?.email, user?.profile?.skills, user?.profile?.full_name, user?.profile?.bio, user?.profile?.phone_number, user?.profile?.profile_photo_url, user?.created_at]);
 
     useEffect(() => {
         const fetchSavedResumes = async () => {
@@ -270,6 +294,11 @@ export default function Profile() {
         }));
     };
 
+    // Derived display values
+    const displayName = user?.profile?.full_name || user?.full_name || 'Your Profile';
+    const displayEmail = user?.email || '';
+    const displayInitial = (displayName !== 'Your Profile' ? displayName[0] : displayEmail[0] || 'U').toUpperCase();
+
     return (
         <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
             <PremiumNavbar />
@@ -321,7 +350,9 @@ export default function Profile() {
                                         {profile.image ? (
                                             <img src={profile.image} alt="Profile" className="w-full h-full object-cover" />
                                         ) : (
-                                            <User className="w-16 h-16 text-slate-300" />
+                                            <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                                                <span className="text-4xl font-bold text-white">{displayInitial}</span>
+                                            </div>
                                         )}
 
                                         {/* Image Upload Overlay */}
@@ -346,7 +377,7 @@ export default function Profile() {
 
                             <div className="flex-1 pb-2 space-y-2 w-full md:w-auto">
                                 <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-                                    {user?.profile?.full_name || user?.full_name || 'User Profile'}
+                                    {displayName}
                                 </h1>
 
                                 {isEditing ? (
@@ -354,13 +385,13 @@ export default function Profile() {
                                         value={profile.role}
                                         onChange={(e) => setProfile({ ...profile, role: e.target.value })}
                                         className="max-w-xs mx-auto md:mx-0 font-bold text-lg h-10 border-slate-200"
-                                        placeholder="Current Role"
+                                        placeholder="Current Role / Title"
                                     />
-                                ) : (
+                                ) : profile.role ? (
                                     <p className="text-slate-500 font-bold text-lg flex items-center justify-center md:justify-start gap-2">
                                         <Briefcase className="w-4 h-4" /> {profile.role}
                                     </p>
-                                )}
+                                ) : null}
                             </div>
                         </div>
 
@@ -374,7 +405,7 @@ export default function Profile() {
                                     <div className="space-y-3">
                                         <div className="flex items-center gap-3 text-slate-500 font-medium text-sm">
                                             <Mail className="w-4 h-4 shrink-0" />
-                                            <span className="truncate">{user?.email}</span>
+                                            <span className="truncate">{displayEmail}</span>
                                         </div>
 
                                         <div className="flex items-center gap-3 text-slate-500 font-medium text-sm">
@@ -387,7 +418,7 @@ export default function Profile() {
                                                     placeholder="Phone Number"
                                                 />
                                             ) : (
-                                                <span>{profile.phone}</span>
+                                                <span>{profile.phone || 'Not set'}</span>
                                             )}
                                         </div>
 
@@ -401,7 +432,7 @@ export default function Profile() {
                                                     placeholder="Location"
                                                 />
                                             ) : (
-                                                <span>{profile.location}</span>
+                                                <span>{profile.location || 'Not set'}</span>
                                             )}
                                         </div>
 
@@ -430,10 +461,12 @@ export default function Profile() {
                                                         className="h-8 text-sm"
                                                         placeholder="LinkedIn URL"
                                                     />
-                                                ) : (
+                                                ) : profile.socials.linkedin ? (
                                                     <a href={`https://${profile.socials.linkedin}`} target="_blank" rel="noreferrer" className="hover:text-[#0077b5] transition-colors hover:underline">
                                                         LinkedIn
                                                     </a>
+                                                ) : (
+                                                    <span className="text-slate-400">Not set</span>
                                                 )}
                                             </div>
                                         </div>
@@ -451,10 +484,12 @@ export default function Profile() {
                                                         className="h-8 text-sm"
                                                         placeholder="GitHub URL"
                                                     />
-                                                ) : (
+                                                ) : profile.socials.github ? (
                                                     <a href={`https://${profile.socials.github}`} target="_blank" rel="noreferrer" className="hover:text-slate-900 transition-colors hover:underline">
                                                         GitHub
                                                     </a>
+                                                ) : (
+                                                    <span className="text-slate-400">Not set</span>
                                                 )}
                                             </div>
                                         </div>
@@ -472,10 +507,12 @@ export default function Profile() {
                                                         className="h-8 text-sm"
                                                         placeholder="Portfolio URL"
                                                     />
-                                                ) : (
+                                                ) : profile.socials.portfolio ? (
                                                     <a href={`https://${profile.socials.portfolio}`} target="_blank" rel="noreferrer" className="hover:text-emerald-500 transition-colors hover:underline">
                                                         Portfolio
                                                     </a>
+                                                ) : (
+                                                    <span className="text-slate-400">Not set</span>
                                                 )}
                                             </div>
                                         </div>
@@ -498,7 +535,7 @@ export default function Profile() {
                                         />
                                     ) : (
                                         <p className="text-slate-500 leading-relaxed font-medium">
-                                            {profile.bio}
+                                            {profile.bio || 'No bio yet. Click "Edit Profile" to add one!'}
                                         </p>
                                     )}
                                 </div>
@@ -509,22 +546,26 @@ export default function Profile() {
                                     </h3>
 
                                     <div className="flex flex-wrap gap-2">
-                                        {profile.skills.map((skill, index) => (
-                                            <span
-                                                key={index}
-                                                className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-100 flex items-center gap-2 group cursor-default"
-                                            >
-                                                {skill}
-                                                {isEditing && (
-                                                    <button
-                                                        onClick={() => handleRemoveSkill(skill)}
-                                                        className="hover:text-red-500 transition-colors"
-                                                    >
-                                                        <X className="w-3 h-3" />
-                                                    </button>
-                                                )}
-                                            </span>
-                                        ))}
+                                        {profile.skills.length > 0 ? (
+                                            profile.skills.map((skill, index) => (
+                                                <span
+                                                    key={index}
+                                                    className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-100 flex items-center gap-2 group cursor-default"
+                                                >
+                                                    {skill}
+                                                    {isEditing && (
+                                                        <button
+                                                            onClick={() => handleRemoveSkill(skill)}
+                                                            className="hover:text-red-500 transition-colors"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                </span>
+                                            ))
+                                        ) : !isEditing ? (
+                                            <p className="text-slate-400 text-sm">No skills added yet. Click "Edit Profile" to add some!</p>
+                                        ) : null}
 
                                         {isEditing && (
                                             <div className="flex items-center gap-2">

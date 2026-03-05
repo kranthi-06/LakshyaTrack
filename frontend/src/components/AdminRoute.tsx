@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthLoadingScreen from './AuthLoadingScreen';
+
+const MAX_LOADING_MS = 10000;
 
 interface AdminRouteProps {
     children: React.ReactElement;
@@ -10,8 +12,15 @@ interface AdminRouteProps {
 
 export const AdminRoute = ({ children, requireBlackAdmin = false }: AdminRouteProps) => {
     const { user, loading } = useAuth();
+    const [timedOut, setTimedOut] = useState(false);
 
-    if (loading) {
+    useEffect(() => {
+        if (!loading) return;
+        const timer = setTimeout(() => setTimedOut(true), MAX_LOADING_MS);
+        return () => clearTimeout(timer);
+    }, [loading]);
+
+    if (loading && !timedOut) {
         return <AuthLoadingScreen />;
     }
 

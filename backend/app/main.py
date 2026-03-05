@@ -22,6 +22,15 @@ from app.models.career import (  # New career platform models
 # Create tables on startup
 Base.metadata.create_all(bind=engine)
 
+# ── Auto-migrate: add new columns that create_all won't add to existing tables ──
+from sqlalchemy import inspect, text
+with engine.connect() as conn:
+    inspector = inspect(engine)
+    existing_cols = [c['name'] for c in inspector.get_columns('profiles')]
+    if 'profile_photo_url' not in existing_cols:
+        conn.execute(text("ALTER TABLE profiles ADD COLUMN profile_photo_url VARCHAR"))
+        conn.commit()
+
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,

@@ -30,6 +30,7 @@ class Profile(Base):
     __tablename__ = "profiles"
     id = Column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
     full_name = Column(String, nullable=True)
+    profile_photo_url = Column(String, nullable=True)  # URL or base64 for profile photo
     phone_number = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
     links = Column(JSONB, default={})
