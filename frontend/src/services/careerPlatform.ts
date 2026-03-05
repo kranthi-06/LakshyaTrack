@@ -249,3 +249,119 @@ export const getViolationHistory = async () => {
     const res = await api.get('/exam/violation-history');
     return res.data;
 };
+
+// ════════════════════════════════════════════
+// 8. MULTI-STAGE INTERVIEW SYSTEM
+// ════════════════════════════════════════════
+
+export const createMultistageSession = async (
+    position: string,
+    interviewMode: string = 'resume_screening',
+    difficulty: string = 'intermediate'
+) => {
+    const res = await api.post('/interview-multistage/create-session', {
+        position,
+        interview_mode: interviewMode,
+        difficulty
+    });
+    return res.data;
+};
+
+export const getScreeningQuestion = async (
+    sessionId: string,
+    resumeSummary: string = '',
+    skills: string[] = [],
+    projects: string[] = [],
+    history: any[] = []
+) => {
+    const res = await api.post('/interview-multistage/screening-question', {
+        session_id: sessionId,
+        resume_summary: resumeSummary,
+        skills,
+        projects,
+        history
+    });
+    return res.data;
+};
+
+export const getTechnicalQuestion = async (
+    sessionId: string,
+    skills: string[] = [],
+    history: any[] = []
+) => {
+    const res = await api.post('/interview-multistage/technical-question', {
+        session_id: sessionId,
+        skills,
+        history
+    });
+    return res.data;
+};
+
+export const getCodingProblem = async (
+    sessionId: string,
+    skills: string[] = [],
+    difficulty: string = 'intermediate'
+) => {
+    const res = await api.post('/interview-multistage/coding-problem', {
+        session_id: sessionId,
+        skills,
+        difficulty
+    });
+    return res.data;
+};
+
+export const getHRQuestion = async (
+    sessionId: string,
+    history: any[] = []
+) => {
+    const res = await api.post('/interview-multistage/hr-question', {
+        session_id: sessionId,
+        history
+    });
+    return res.data;
+};
+
+export const evaluateInterviewStage = async (
+    sessionId: string,
+    stage: string,
+    data: {
+        responses?: any[];
+        resume_summary?: string;
+        skills?: string[];
+        code?: string;
+        language?: string;
+        problem?: any;
+        passed_tests?: number;
+        total_tests?: number;
+        attempts?: number;
+    }
+) => {
+    const res = await api.post('/interview-multistage/evaluate-stage', {
+        session_id: sessionId,
+        stage,
+        ...data
+    });
+    return res.data;
+};
+
+export const getMultistageFinalAnalysis = async (
+    sessionId: string,
+    screeningEval: any,
+    technicalEval: any,
+    codingEval: any,
+    hrEval: any
+) => {
+    const res = await api.post('/interview-multistage/final-analysis', {
+        session_id: sessionId,
+        screening_eval: screeningEval,
+        technical_eval: technicalEval,
+        coding_eval: codingEval,
+        hr_eval: hrEval
+    });
+    return res.data;
+};
+
+export const getMultistageHistory = async () => {
+    const res = await api.get('/interview-multistage/history');
+    return res.data;
+};

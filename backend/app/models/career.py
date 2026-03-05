@@ -113,6 +113,46 @@ class InterviewSession(Base):
     completed_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class MultiStageInterview(Base):
+    """
+    Records a multi-stage hiring-simulation interview.
+    Stages: screening → technical → coding → hr
+    """
+    __tablename__ = "multistage_interviews"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    position = Column(String, nullable=False)
+    interview_mode = Column(String, default="resume_screening")  # resume_screening | direct_skill
+    difficulty = Column(String, default="intermediate")
+
+    # Per-stage scores (0-100)
+    screening_score = Column(Float, nullable=True)
+    technical_score = Column(Float, nullable=True)
+    coding_score = Column(Float, nullable=True)
+    hr_score = Column(Float, nullable=True)
+    overall_score = Column(Float, nullable=True)
+
+    # Stage data (questions, answers, feedback per stage)
+    screening_data = Column(JSONB, default={})
+    technical_data = Column(JSONB, default={})
+    coding_data = Column(JSONB, default={})
+    hr_data = Column(JSONB, default={})
+
+    # AI summary feedback
+    strengths = Column(JSONB, default=[])
+    weaknesses = Column(JSONB, default=[])
+    overall_feedback = Column(Text, nullable=True)
+    verdict = Column(String, nullable=True)
+
+    # Status tracking
+    current_stage = Column(String, default="screening")  # screening | technical | coding | hr | completed
+    is_completed = Column(Boolean, default=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class Opportunity(Base):
     """
     Aggregated opportunities (courses, internships, jobs) from allowed public sources.

@@ -37,7 +37,8 @@ import {
     getProgressHistory,
     saveProgressSnapshot,
     getQuizHistory,
-    getAdvancedInterviewHistory
+    getAdvancedInterviewHistory,
+    getMultistageHistory
 } from '../services/careerPlatform';
 
 export default function Progress() {
@@ -99,24 +100,49 @@ export default function Progress() {
 
     const loadInterviewHistory = async () => {
         try {
-            const res = await getAdvancedInterviewHistory();
-            if (res.sessions && res.sessions.length > 0) {
-                const mapped = res.sessions.map((s: any) => ({
-                    role: s.position || 'Interview',
-                    date: new Date(s.created_at).toLocaleString('en-US', {
-                        month: 'short', day: 'numeric', year: 'numeric',
-                        hour: '2-digit', minute: '2-digit'
-                    }),
-                    overall: `${s.overall_score || 0}%`,
-                    rounds: [
-                        { type: (s.round_type || 'TECHNICAL').toUpperCase(), time: s.duration || 'N/A', score: `${s.overall_score || 0}%`, icon: Monitor }
-                    ],
-                    raw: s
-                }));
-                setInterviewHistory(mapped);
-            } else {
-                setInterviewHistory([]);
+            // Load both legacy and multi-stage interviews
+            const [advancedRes, multistageRes] = await Promise.allSettled([
+                getAdvancedInterviewHistory(),
+                getMultistageHistory()
+            ]);
+
+            const items: any[] = [];
+
+            // Legacy advanced interviews
+            if (advancedRes.status === 'fulfilled' && advancedRes.value?.sessions?.length > 0) {
+                advancedRes.value.sessions.forEach((s: any) => {
+                    items.push({
+                        role: s.position || 'Interview',
+                        date: new Date(s.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                        overall: `${s.overall_score || 0}%`,
+                        type: 'legacy',
+                        rounds: [{ type: (s.round_type || 'TECHNICAL').toUpperCase(), time: s.duration || 'N/A', score: `${s.overall_score || 0}%`, icon: Monitor }],
+                        raw: s
+                    });
+                });
             }
+
+            // Multi-stage interviews
+            if (multistageRes.status === 'fulfilled' && multistageRes.value?.sessions?.length > 0) {
+                multistageRes.value.sessions.forEach((s: any) => {
+                    items.push({
+                        role: s.position || 'Interview',
+                        date: s.created_at ? new Date(s.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A',
+                        overall: `${s.overall_score || 0}%`,
+                        type: 'multistage',
+                        verdict: s.verdict,
+                        rounds: [
+                            { type: 'SCREENING', score: `${s.screening_score || 0}%`, icon: Monitor },
+                            { type: 'TECHNICAL', score: `${s.technical_score || 0}%`, icon: Monitor },
+                            { type: 'CODING', score: `${s.coding_score || 0}%`, icon: Monitor },
+                            { type: 'HR', score: `${s.hr_score || 0}%`, icon: Monitor },
+                        ],
+                        raw: s
+                    });
+                });
+            }
+
+            setInterviewHistory(items);
         } catch (e) {
             setInterviewHistory([]);
         }

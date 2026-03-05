@@ -15,7 +15,7 @@ from app.db.session import engine
 from app.db.base_class import Base
 from app.models.user import User # Import to ensure registered
 from app.models.career import (  # New career platform models
-    Roadmap, QuizAttempt, InterviewSession,
+    Roadmap, QuizAttempt, InterviewSession, MultiStageInterview,
     Opportunity, ProgressSnapshot, LearningCache
 )
 
