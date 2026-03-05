@@ -67,7 +67,26 @@ class QuizAttempt(Base):
     total_questions = Column(Integer, nullable=False)
     correct_answers = Column(Integer, nullable=False)
     questions_data = Column(JSONB, default=[])          # Full Q&A for review
+    violation_flag = Column(Boolean, default=False)      # True if exam was terminated due to violations
+    terminated = Column(Boolean, default=False)          # True if exam was force-terminated
     attempted_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExamViolation(Base):
+    """
+    Tracks exam rule violations per user for the proctored exam system.
+    Used to enforce escalating penalty timelines.
+    """
+    __tablename__ = "exam_violations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    violation_type = Column(String, nullable=False)     # "tab_switch", "fullscreen_exit", "refresh", "terminated"
+    exam_topic = Column(String, nullable=True)
+    exam_difficulty = Column(String, nullable=True)
+    penalty_hours = Column(Float, default=1.0)          # Hours locked after this violation
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class InterviewSession(Base):

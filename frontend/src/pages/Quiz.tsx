@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,10 @@ import api from '../services/api';
 import {
     generateSkillQuiz,
     submitSkillQuiz,
-    saveProgressSnapshot
+    saveProgressSnapshot,
+    recordExamViolation,
+    checkExamEligibility,
+    checkExamCooldown,
 } from '../services/careerPlatform';
 import {
     BrainCircuit,
@@ -23,10 +26,19 @@ import {
     ArrowRight,
     Loader2,
     Shield,
-    Sparkles
+    Sparkles,
+    AlertTriangle,
+    Lock,
+    XCircle,
+    Clock,
+    ShieldAlert,
+    ShieldCheck,
+    Eye,
+    Monitor,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PremiumBackground } from '../components/PremiumBackground';
+import { useExamMode } from '../hooks/useExamMode';
 
 type QuizStep = 'setup' | 'active' | 'results';
 
@@ -92,6 +104,16 @@ const languages = [
     { name: 'C', color: 'text-slate-500', bg: 'bg-slate-50' }
 ];
 
+// ── Exam Instructions Rules ──
+const EXAM_RULES = [
+    { icon: Monitor, text: 'The exam must be taken in FULLSCREEN MODE.' },
+    { icon: Eye, text: 'Do NOT switch tabs or minimize the browser.' },
+    { icon: Lock, text: 'Copy, paste, and text selection are disabled.' },
+    { icon: AlertTriangle, text: 'Do NOT refresh the page during the exam.' },
+    { icon: XCircle, text: 'Exiting fullscreen or switching tabs may terminate the exam.' },
+    { icon: ShieldAlert, text: 'Violations may lock exams temporarily.' },
+];
+
 export default function Quiz() {
     const [step, setStep] = useState<QuizStep>('setup');
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -102,7 +124,7 @@ export default function Quiz() {
     const [quizQuestions, setQuizQuestions] = useState<any[]>(questionsByTopic['JavaScript']);
     const [isLoading, setIsLoading] = useState(false);
 
-    // ── NEW: Roadmap-linked quiz state ──────────
+    // ── Roadmap-linked quiz state ──────────
     const [isRoadmapQuiz, setIsRoadmapQuiz] = useState(false);
     const [roadmapSkillId, setRoadmapSkillId] = useState<string | null>(null);
     const [roadmapSkillName, setRoadmapSkillName] = useState<string | null>(null);
@@ -110,6 +132,30 @@ export default function Quiz() {
     const [roadmapId, setRoadmapId] = useState<string | null>(null);
     const [passThreshold, setPassThreshold] = useState<number>(70);
     const [quizResult, setQuizResult] = useState<any>(null);
+
+    // ── Exam proctoring state ──────────
+    const [showExamInstructions, setShowExamInstructions] = useState(false);
+    const [isLocked, setIsLocked] = useState(false);
+    const [lockMessage, setLockMessage] = useState('');
+    const [lockRemainingSeconds, setLockRemainingSeconds] = useState(0);
+    const [isInCooldown, setIsInCooldown] = useState(false);
+    const [cooldownMessage, setCooldownMessage] = useState('');
+    const [cooldownRemainingSeconds, setCooldownRemainingSeconds] = useState(0);
+    const [checkingEligibility, setCheckingEligibility] = useState(true);
+    const lockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // ── Exam mode hook ──────────
+    const handleExamTerminate = useCallback(async (reason: string) => {
+        // Record the violation on the server
+        try {
+            await recordExamViolation('terminated', topic, difficulty);
+        } catch (e) {
+            console.error('Failed to record violation:', e);
+        }
+    }, [topic, difficulty]);
+
+    const examMode = useExamMode(handleExamTerminate);
 
     // Check URL params for roadmap-linked quiz on mount
     useEffect(() => {
@@ -127,7 +173,6 @@ export default function Quiz() {
             setRoadmapId(rmId);
             setTopic(skillName);
 
-            // Map roadmap level to difficulty
             const diffMap: Record<string, string> = {
                 'Beginner': 'Easy',
                 'Intermediate': 'Medium',
@@ -137,11 +182,118 @@ export default function Quiz() {
         }
     }, []);
 
+    // ── Check eligibility + cooldown on mount ──
+    useEffect(() => {
+        checkEligibility();
+    }, []);
+
+    const checkEligibility = async () => {
+        setCheckingEligibility(true);
+        try {
+            const eligibility = await checkExamEligibility();
+            if (!eligibility.eligible) {
+                setIsLocked(true);
+                setLockMessage(eligibility.reason || 'Quizzes are currently locked.');
+                setLockRemainingSeconds(eligibility.remaining_seconds || 0);
+                startLockCountdown(eligibility.remaining_seconds || 0);
+            } else {
+                setIsLocked(false);
+            }
+        } catch (e) {
+            // If not logged in or error, allow quiz (fallback)
+            setIsLocked(false);
+        }
+        setCheckingEligibility(false);
+    };
+
+    const checkCooldown = async () => {
+        const skillId = roadmapSkillId || `standalone_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        try {
+            const cooldown = await checkExamCooldown(skillId);
+            if (cooldown.in_cooldown) {
+                setIsInCooldown(true);
+                setCooldownMessage(`You need more preparation before retrying this exam. Cooldown: ${cooldown.cooldown_minutes} minutes.`);
+                setCooldownRemainingSeconds(cooldown.remaining_seconds || 0);
+                startCooldownCountdown(cooldown.remaining_seconds || 0);
+                return true;
+            }
+        } catch (e) { /* ignore */ }
+        setIsInCooldown(false);
+        return false;
+    };
+
+    const startLockCountdown = (seconds: number) => {
+        if (lockTimerRef.current) clearInterval(lockTimerRef.current);
+        setLockRemainingSeconds(seconds);
+        lockTimerRef.current = setInterval(() => {
+            setLockRemainingSeconds(prev => {
+                if (prev <= 1) {
+                    if (lockTimerRef.current) clearInterval(lockTimerRef.current);
+                    setIsLocked(false);
+                    setLockMessage('');
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    const startCooldownCountdown = (seconds: number) => {
+        if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+        setCooldownRemainingSeconds(seconds);
+        cooldownTimerRef.current = setInterval(() => {
+            setCooldownRemainingSeconds(prev => {
+                if (prev <= 1) {
+                    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+                    setIsInCooldown(false);
+                    setCooldownMessage('');
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    // Cleanup timers
+    useEffect(() => {
+        return () => {
+            if (lockTimerRef.current) clearInterval(lockTimerRef.current);
+            if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+        };
+    }, []);
+
+    const formatTime = (seconds: number) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        if (h > 0) return `${h}h ${m}m ${s}s`;
+        if (m > 0) return `${m}m ${s}s`;
+        return `${s}s`;
+    };
+
+    // ── Show exam instructions popup (called when user clicks Start) ──
+    const handleStartClick = async () => {
+        if (isLocked || isInCooldown) return;
+
+        // Check cooldown for this specific skill
+        const inCooldown = await checkCooldown();
+        if (inCooldown) return;
+
+        // Show exam instructions popup
+        setShowExamInstructions(true);
+    };
+
+    // ── User agrees to exam rules → activate exam mode + start quiz ──
+    const handleAgreeAndStart = async () => {
+        setShowExamInstructions(false);
+        await examMode.activateExamMode();
+        await handleStartQuiz();
+    };
+
     const handleStartQuiz = async () => {
         setIsLoading(true);
         try {
             if (isRoadmapQuiz && roadmapSkillName && roadmapLevel) {
-                // ── Roadmap-linked quiz: use gating endpoint ──
                 const count = parseInt(numQuestions);
                 const res = await generateSkillQuiz(
                     roadmapSkillName,
@@ -156,7 +308,6 @@ export default function Quiz() {
                     setQuizQuestions(questionsByTopic[topic] || questionsByTopic['JavaScript']);
                 }
             } else {
-                // ── Standard quiz: use existing endpoint ──
                 const count = parseInt(numQuestions);
                 const res = await api.post('/quiz/generate', {
                     topic,
@@ -198,9 +349,10 @@ export default function Quiz() {
         if (currentQuestion < quizQuestions.length - 1) {
             setCurrentQuestion(prev => prev + 1);
         } else {
+            // Quiz finished — deactivate exam mode
+            examMode.deactivateExamMode();
             setStep('results');
 
-            // ── If roadmap quiz, submit to gating system ──
             if (isRoadmapQuiz && roadmapSkillId && roadmapSkillName && roadmapLevel) {
                 try {
                     const answers = Object.entries(selectedAnswers).map(([idx, selected]) => ({
@@ -219,13 +371,11 @@ export default function Quiz() {
                     );
                     setQuizResult(result);
 
-                    // Save a progress snapshot after quiz
                     try { await saveProgressSnapshot(0); } catch (_) { }
                 } catch (e) {
                     console.error("Failed to submit roadmap quiz:", e);
                 }
             } else {
-                // ── Standalone quiz: submit to tracking system ──
                 try {
                     const answers = Object.entries(selectedAnswers).map(([idx, selected]) => ({
                         question_id: parseInt(idx),
@@ -257,19 +407,30 @@ export default function Quiz() {
         }
     };
 
+    const handleRetryAfterTermination = () => {
+        setStep('setup');
+        setShowExamInstructions(true); // Rule reminder before retry
+    };
+
+    const handleBackToLearningPath = () => {
+        window.location.href = isRoadmapQuiz ? '/career' : '/dashboard';
+    };
+
     const score = Object.entries(selectedAnswers).reduce((acc, [idx, ans]) => {
         return acc + (ans === quizQuestions[parseInt(idx)].correct ? 1 : 0);
     }, 0);
 
     const scorePercent = Math.round((score / quizQuestions.length) * 100);
 
+    // ── Render ──
     return (
         <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative animated-gradient">
             <PremiumBackground />
-            <PremiumNavbar />
+            {/* Hide navbar during active exam */}
+            {!examMode.isExamActive && <PremiumNavbar />}
 
             <div className="relative z-10">
-                <main className="max-w-4xl mx-auto px-6 pt-16">
+                <main className={`max-w-4xl mx-auto px-6 ${examMode.isExamActive ? 'pt-8' : 'pt-16'}`}>
                     <AnimatePresence mode="wait">
                         {step === 'setup' && (
                             <motion.div
@@ -299,7 +460,6 @@ export default function Quiz() {
                                             }
                                         </p>
                                     </div>
-                                    {/* Roadmap quiz badge */}
                                     {isRoadmapQuiz && (
                                         <div className="flex items-center justify-center gap-2">
                                             <Shield className="w-4 h-4 text-[#5c52d2]" />
@@ -309,6 +469,48 @@ export default function Quiz() {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* ── Lockout Banner ── */}
+                                {isLocked && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="max-w-2xl mx-auto p-6 rounded-[2rem] bg-red-50 border-2 border-red-200 space-y-3"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Lock className="w-6 h-6 text-red-500" />
+                                            <span className="font-black text-red-700">Quizzes Locked</span>
+                                        </div>
+                                        <p className="text-sm font-bold text-red-600">{lockMessage}</p>
+                                        {lockRemainingSeconds > 0 && (
+                                            <div className="flex items-center gap-2 text-sm font-black text-red-500">
+                                                <Clock className="w-4 h-4" />
+                                                Unlocks in: {formatTime(lockRemainingSeconds)}
+                                            </div>
+                                        )}
+                                    </motion.div>
+                                )}
+
+                                {/* ── Cooldown Banner ── */}
+                                {isInCooldown && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="max-w-2xl mx-auto p-6 rounded-[2rem] bg-amber-50 border-2 border-amber-200 space-y-3"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Clock className="w-6 h-6 text-amber-500" />
+                                            <span className="font-black text-amber-700">Cooldown Active</span>
+                                        </div>
+                                        <p className="text-sm font-bold text-amber-600">{cooldownMessage}</p>
+                                        {cooldownRemainingSeconds > 0 && (
+                                            <div className="flex items-center gap-2 text-sm font-black text-amber-500">
+                                                <Timer className="w-4 h-4" />
+                                                Available in: {formatTime(cooldownRemainingSeconds)}
+                                            </div>
+                                        )}
+                                    </motion.div>
+                                )}
 
                                 <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[2.5rem] space-y-10 max-w-2xl mx-auto border border-white/20">
                                     {/* Topic selection: show only for standard quizzes */}
@@ -331,7 +533,7 @@ export default function Quiz() {
                                                         className="pl-14 h-16 rounded-2xl border-2 border-slate-100 bg-white/50 backdrop-blur shadow-sm font-bold text-slate-900 focus-visible:ring-0 focus-visible:border-[#5c52d2] text-lg transition-all"
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'Enter' && topic.trim()) {
-                                                                handleStartQuiz();
+                                                                handleStartClick();
                                                             }
                                                         }}
                                                     />
@@ -418,12 +620,35 @@ export default function Quiz() {
                                         </div>
                                     </div>
 
+                                    {/* ── Proctored Exam Badge ── */}
+                                    <div className="flex items-center justify-center gap-2 py-2">
+                                        <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                                            Proctored Exam Mode
+                                        </span>
+                                    </div>
+
                                     <Button
-                                        onClick={handleStartQuiz}
-                                        disabled={isLoading}
+                                        onClick={handleStartClick}
+                                        disabled={isLoading || isLocked || isInCooldown || checkingEligibility}
                                         className="w-full h-16 rounded-2xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black text-lg shadow-2xl shadow-purple-200 hover:scale-[1.02] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                                     >
-                                        {isLoading ? (
+                                        {checkingEligibility ? (
+                                            <span className="flex items-center gap-2">
+                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                Checking eligibility...
+                                            </span>
+                                        ) : isLocked ? (
+                                            <span className="flex items-center gap-2">
+                                                <Lock className="w-5 h-5" />
+                                                Locked — {formatTime(lockRemainingSeconds)}
+                                            </span>
+                                        ) : isInCooldown ? (
+                                            <span className="flex items-center gap-2">
+                                                <Clock className="w-5 h-5" />
+                                                Cooldown — {formatTime(cooldownRemainingSeconds)}
+                                            </span>
+                                        ) : isLoading ? (
                                             <span className="flex items-center gap-2">
                                                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                                 Generating {numQuestions} Questions...
@@ -448,8 +673,17 @@ export default function Quiz() {
                                     <h3 className="text-xl font-black text-slate-900 tracking-tight">
                                         Question {currentQuestion + 1} of {quizQuestions.length}
                                     </h3>
-                                    <div className="flex items-center gap-2 text-xs font-black text-blue-500 uppercase tracking-widest">
-                                        {isRoadmapQuiz ? `${roadmapSkillName} • ${roadmapLevel}` : `${topic} • ${difficulty}`}
+                                    <div className="flex items-center gap-4">
+                                        {/* Exam mode indicator */}
+                                        {examMode.isExamActive && (
+                                            <div className="flex items-center gap-1.5 text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1.5 rounded-full">
+                                                <ShieldCheck className="w-3.5 h-3.5" />
+                                                EXAM MODE
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-2 text-xs font-black text-blue-500 uppercase tracking-widest">
+                                            {isRoadmapQuiz ? `${roadmapSkillName} • ${roadmapLevel}` : `${topic} • ${difficulty}`}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -579,7 +813,7 @@ export default function Quiz() {
                                     {isRoadmapQuiz ? (
                                         <>
                                             <Button
-                                                onClick={() => setStep('setup')}
+                                                onClick={() => { checkCooldown(); setStep('setup'); }}
                                                 variant="outline"
                                                 className="h-14 px-10 rounded-2xl border-slate-100 font-black text-slate-600 hover:bg-slate-50"
                                             >
@@ -595,7 +829,7 @@ export default function Quiz() {
                                     ) : (
                                         <>
                                             <Button
-                                                onClick={() => setStep('setup')}
+                                                onClick={() => { checkCooldown(); setStep('setup'); }}
                                                 variant="outline"
                                                 className="h-14 px-10 rounded-2xl border-slate-100 font-black text-slate-600 hover:bg-slate-50"
                                             >
@@ -615,6 +849,198 @@ export default function Quiz() {
                     </AnimatePresence>
                 </main>
             </div>
+
+            {/* ═══════════════════════════════════════════════════════════ */}
+            {/* EXAM MODE OVERLAYS (Popups) — rendered on top of everything */}
+            {/* ═══════════════════════════════════════════════════════════ */}
+
+            {/* ── Exam Instructions Popup ── */}
+            <AnimatePresence>
+                {showExamInstructions && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white rounded-[2rem] max-w-lg w-full overflow-hidden shadow-2xl"
+                        >
+                            <div className="p-8 space-y-6">
+                                <div className="text-center space-y-3">
+                                    <div className="w-16 h-16 bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] rounded-2xl flex items-center justify-center mx-auto shadow-lg">
+                                        <ShieldAlert className="w-8 h-8 text-white" />
+                                    </div>
+                                    <h2 className="text-2xl font-[900] text-slate-900">Exam Instructions</h2>
+                                    <p className="text-sm font-medium text-slate-400">
+                                        Please read and acknowledge the following rules before starting.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {EXAM_RULES.map((rule, idx) => (
+                                        <div key={idx} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                            <rule.icon className="w-5 h-5 text-[#5c52d2] mt-0.5 shrink-0" />
+                                            <span className="text-sm font-bold text-slate-700">{rule.text}</span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="flex gap-3 pt-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => setShowExamInstructions(false)}
+                                        className="flex-1 h-12 rounded-xl font-black text-slate-500"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={handleAgreeAndStart}
+                                        disabled={isLoading}
+                                        className="flex-[2] h-12 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black shadow-lg"
+                                    >
+                                        {isLoading ? (
+                                            <span className="flex items-center gap-2">
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Starting...
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-2">
+                                                <ShieldCheck className="w-4 h-4" />
+                                                I Agree & Start Exam
+                                            </span>
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Fullscreen Exit Warning Popup ── */}
+            <AnimatePresence>
+                {examMode.showFullscreenWarning && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9 }}
+                            animate={{ scale: 1 }}
+                            className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
+                        >
+                            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                                <AlertTriangle className="w-10 h-10 text-red-500" />
+                            </div>
+                            <h2 className="text-xl font-[900] text-slate-900">Fullscreen Required</h2>
+                            <p className="text-sm font-medium text-slate-500">
+                                You exited exam mode. Please return to fullscreen within{' '}
+                                <span className="font-black text-red-500 text-lg">{examMode.fullscreenCountdown}</span>{' '}
+                                seconds or the exam will be terminated.
+                            </p>
+                            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                <motion.div
+                                    initial={{ width: '100%' }}
+                                    animate={{ width: `${(examMode.fullscreenCountdown / 30) * 100}%` }}
+                                    className="h-full bg-gradient-to-r from-red-500 to-red-400 rounded-full"
+                                    transition={{ duration: 0.3 }}
+                                />
+                            </div>
+                            <Button
+                                onClick={examMode.returnToFullscreen}
+                                className="w-full h-14 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black shadow-lg"
+                            >
+                                <Monitor className="w-5 h-5 mr-2" />
+                                Return to Fullscreen
+                            </Button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Tab Switch Warning Popup ── */}
+            <AnimatePresence>
+                {examMode.showTabWarning && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9 }}
+                            animate={{ scale: 1 }}
+                            className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
+                        >
+                            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+                                <Eye className="w-10 h-10 text-amber-500" />
+                            </div>
+                            <h2 className="text-xl font-[900] text-slate-900">Warning: Tab Switch Detected</h2>
+                            <p className="text-sm font-medium text-slate-500">
+                                You switched away from the exam tab. This is your{' '}
+                                <span className="font-black text-amber-600">first warning</span>.
+                                Another tab switch will <span className="font-black text-red-500">terminate the exam immediately</span>.
+                            </p>
+                            <Button
+                                onClick={examMode.dismissTabWarning}
+                                className="w-full h-14 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-white font-black shadow-lg"
+                            >
+                                I Understand — Continue Exam
+                            </Button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Exam Terminated Popup ── */}
+            <AnimatePresence>
+                {examMode.isTerminated && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9 }}
+                            animate={{ scale: 1 }}
+                            className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
+                        >
+                            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                                <XCircle className="w-10 h-10 text-red-500" />
+                            </div>
+                            <h2 className="text-2xl font-[900] text-red-600">Exam Terminated</h2>
+                            <p className="text-sm font-medium text-slate-500">
+                                You exited exam mode or violated exam rules.
+                            </p>
+                            <p className="text-xs font-bold text-slate-400">
+                                Please follow the instructions carefully before attempting again.
+                            </p>
+                            <div className="flex flex-col gap-3 pt-2">
+                                <Button
+                                    onClick={handleRetryAfterTermination}
+                                    variant="outline"
+                                    className="w-full h-12 rounded-xl font-black text-slate-600"
+                                >
+                                    Try Again
+                                </Button>
+                                <Button
+                                    onClick={handleBackToLearningPath}
+                                    className="w-full h-12 rounded-xl bg-slate-900 text-white font-black"
+                                >
+                                    Back to {isRoadmapQuiz ? 'Roadmap' : 'Dashboard'}
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

@@ -6,7 +6,9 @@ from app.api.endpoints import (
     opportunities, progress,
     saved_resumes,
     # Admin system
-    admin
+    admin,
+    # Exam proctoring
+    exam
 )
 
 api_router = APIRouter()
@@ -29,6 +31,7 @@ api_router.include_router(interview_advanced.router, prefix="/interview-advanced
 api_router.include_router(opportunities.router, prefix="/opportunities", tags=["opportunities"])
 api_router.include_router(progress.router, prefix="/progress", tags=["progress"])
 api_router.include_router(saved_resumes.router, prefix="/saved-resumes", tags=["saved-resumes"])
+api_router.include_router(exam.router, prefix="/exam", tags=["exam"])
 
 # ── Admin system ─────────────────────────────────────────
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])

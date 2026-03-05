@@ -194,3 +194,35 @@ export const getProgressHistory = async (limit: number = 30) => {
     const res = await api.get(`/progress/history?limit=${limit}`);
     return res.data;
 };
+
+// ════════════════════════════════════════════
+// 7. EXAM PROCTORING SYSTEM
+// ════════════════════════════════════════════
+
+export const recordExamViolation = async (
+    violationType: string,
+    examTopic?: string,
+    examDifficulty?: string,
+) => {
+    const res = await api.post('/exam/record-violation', {
+        violation_type: violationType,
+        exam_topic: examTopic,
+        exam_difficulty: examDifficulty,
+    });
+    return res.data;
+};
+
+export const checkExamEligibility = async () => {
+    const res = await api.get('/exam/check-eligibility');
+    return res.data;
+};
+
+export const checkExamCooldown = async (skillId: string) => {
+    const res = await api.get(`/exam/cooldown/${skillId}`);
+    return res.data;
+};
+
+export const getViolationHistory = async () => {
+    const res = await api.get('/exam/violation-history');
+    return res.data;
+};
