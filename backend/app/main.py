@@ -40,6 +40,16 @@ with engine.connect() as conn:
         conn.execute(text("ALTER TABLE roadmaps ADD COLUMN last_opened TIMESTAMPTZ DEFAULT NOW()"))
         conn.commit()
 
+    # Opportunity Portal: add new columns to opportunities table
+    if 'opportunities' in inspector.get_table_names():
+        opp_cols = [c['name'] for c in inspector.get_columns('opportunities')]
+        if 'category' not in opp_cols:
+            conn.execute(text("ALTER TABLE opportunities ADD COLUMN category VARCHAR"))
+            conn.commit()
+        if 'provider' not in opp_cols:
+            conn.execute(text("ALTER TABLE opportunities ADD COLUMN provider VARCHAR"))
+            conn.commit()
+
 
 # CORS Configuration
 app.add_middleware(

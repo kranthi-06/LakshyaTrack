@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,207 +11,255 @@ import {
     Star,
     Globe,
     Clock,
-    IndianRupee,
     ChevronDown,
     Loader2,
     Sparkles,
-    RefreshCw
+    RefreshCw,
+    GraduationCap,
+    Award,
+    BookOpen,
+    Filter,
+    X,
+    ArrowRight,
+    TrendingUp,
+    Zap,
+    Calendar,
+    Tag,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { PremiumBackground } from '../components/PremiumBackground';
 import {
+    browseOpportunities,
+    getFilterOptions,
+    getRecommendations,
     discoverOpportunities,
-    getMatchedOpportunities
+    fetchExternalSources,
 } from '../services/careerPlatform';
 
-// Static fallback data
-const fallbackJobs = [
-    {
-        title: 'Python Tutor',
-        company: 'CodeAcademy',
-        platform: 'LinkedIn',
-        location: 'Remote',
-        score: 54,
-        status: 'FAIR MATCH',
-        desc: 'Teach Python programming online...',
-        type: 'Remote, Part-time',
-        salary: '₹600/hr',
-        platformLogo: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png'
-    },
-    {
-        title: 'Full Stack Engineer',
-        company: 'TechCorp',
-        platform: 'Naukri',
-        location: 'Remote',
-        score: 48,
-        status: 'DEVELOPING',
-        desc: 'Build scalable web applications using modern tech stack...',
-        type: 'Remote, Full-time',
-        salary: '₹15-25 LPA',
-        platformLogo: 'https://static.naukimg.com/s/4/100/i/naukri_Logo.png'
-    },
-    {
-        title: 'Senior Backend Engineer',
-        company: 'CloudSystems',
-        platform: 'LinkedIn',
-        location: 'Remote',
-        score: 48,
-        status: 'DEVELOPING',
-        desc: 'Design distributed systems and microservices...',
-        type: 'Remote, Full-time',
-        salary: '₹20-35 LPA',
-        platformLogo: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png'
-    },
-    {
-        title: 'Frontend Developer',
-        company: 'WebInnovate',
-        platform: 'Naukri',
-        location: 'Remote',
-        score: 48,
-        status: 'DEVELOPING',
-        desc: 'Create responsive user interfaces with React...',
-        type: 'Remote, Full-time',
-        salary: '₹12-20 LPA',
-        platformLogo: 'https://static.naukimg.com/s/4/100/i/naukri_Logo.png'
-    },
-    {
-        title: 'Frontend Consultant',
-        company: 'Freelance Corp',
-        platform: 'Naukri',
-        location: 'Remote',
-        score: 48,
-        status: 'DEVELOPING',
-        desc: 'Build scalable frontend development consulting...',
-        type: 'Remote, Part-time',
-        salary: '₹800/hr',
-        platformLogo: 'https://static.naukimg.com/s/4/100/i/naukri_Logo.png'
-    },
-    {
-        title: 'Data Science Contractor',
-        company: 'Analytics Co',
-        platform: 'Naukri',
-        location: 'Remote',
-        score: 48,
-        status: 'DEVELOPING',
-        desc: 'Part-time data analysis projects...',
-        type: 'Remote, Part-time',
-        salary: '₹1000/hr',
-        platformLogo: 'https://static.naukimg.com/s/4/100/i/naukri_Logo.png'
-    },
-    {
-        title: 'Contract Python Developer',
-        company: 'TempWork',
-        platform: 'LinkedIn',
-        location: 'Remote',
-        score: 48,
-        status: 'DEVELOPING',
-        desc: 'Backend development contract role...',
-        type: 'Remote, Contract',
-        salary: '₹1000-1300/hr',
-        platformLogo: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png'
-    }
+// ════════════════════════════════════════════════════════════
+// TYPES
+// ════════════════════════════════════════════════════════════
+
+interface Opportunity {
+    id: string;
+    title: string;
+    company: string;
+    provider: string;
+    opportunity_type: string;
+    category: string;
+    description: string;
+    url: string;
+    source: string;
+    skill_tags: string[];
+    level: string;
+    location: string;
+    salary_range: string;
+    deadline: string | null;
+    created_at: string;
+    match_score?: number;
+}
+
+interface FilterOptions {
+    locations: string[];
+    categories: Record<string, number>;
+    top_skills: string[];
+}
+
+// ════════════════════════════════════════════════════════════
+// CATEGORY CONFIG
+// ════════════════════════════════════════════════════════════
+
+const CATEGORIES = [
+    { key: 'all', label: 'All', icon: Globe, color: '#5c52d2' },
+    { key: 'course', label: 'Courses', icon: BookOpen, color: '#3b82f6' },
+    { key: 'internship', label: 'Internships', icon: TrendingUp, color: '#f59e0b' },
+    { key: 'certification', label: 'Certifications', icon: Award, color: '#10b981' },
+    { key: 'job', label: 'Jobs', icon: Briefcase, color: '#8b5cf6' },
 ];
 
-export default function Jobs() {
-    const [searchTerm, setSearchTerm] = useState('android, api, css, data, python');
-    const [location, setLocation] = useState('Nationwide');
-    const [jobType, setJobType] = useState('All Types');
-    const [jobData, setJobData] = useState<any[]>(fallbackJobs);
-    const [isLoading, setIsLoading] = useState(false);
-    const [isAiPowered, setIsAiPowered] = useState(false);
+const getCategoryIcon = (cat: string) => {
+    const found = CATEGORIES.find(c => c.key === cat);
+    return found?.icon || Globe;
+};
 
-    const handleApply = (title: string, platform: string, link?: string) => {
-        if (link) {
-            window.open(link, '_blank');
-            return;
-        }
-        const query = encodeURIComponent(title);
-        if (platform === 'Naukri') {
-            window.open(`https://www.naukri.com/${query.replace(/%20/g, '-')}-jobs`, '_blank');
-        } else {
-            window.open(`https://www.linkedin.com/jobs/search/?keywords=${query}`, '_blank');
-        }
+const getCategoryColor = (cat: string) => {
+    const found = CATEGORIES.find(c => c.key === cat);
+    return found?.color || '#5c52d2';
+};
+
+const getCategoryBg = (cat: string) => {
+    const colors: Record<string, string> = {
+        course: 'bg-blue-50 text-blue-700 border-blue-200',
+        internship: 'bg-amber-50 text-amber-700 border-amber-200',
+        certification: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        job: 'bg-violet-50 text-violet-700 border-violet-200',
     };
+    return colors[cat] || 'bg-slate-50 text-slate-700 border-slate-200';
+};
 
-    // ── AI-Powered Search ──────────────────────
-    const handleAISearch = async () => {
+// ════════════════════════════════════════════════════════════
+// COMPONENT
+// ════════════════════════════════════════════════════════════
+
+export default function Jobs() {
+    // ── State ────────────────────────────────────────────
+    const [activeCategory, setActiveCategory] = useState('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [locationFilter, setLocationFilter] = useState('');
+    const [skillFilter, setSkillFilter] = useState('');
+    const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+    const [recommendations, setRecommendations] = useState<Opportunity[]>([]);
+    const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isRecommending, setIsRecommending] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalCount, setTotalCount] = useState(0);
+    const [hasInitialLoad, setHasInitialLoad] = useState(false);
+    const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // ── Load opportunities ───────────────────────────────
+    const loadOpportunities = useCallback(async (resetPage = false) => {
         setIsLoading(true);
+        const currentPage = resetPage ? 1 : page;
+        if (resetPage) setPage(1);
+
         try {
-            const skills = searchTerm.split(',').map(s => s.trim()).filter(Boolean);
-
-            // First try getting matched opportunities
-            const matchedRes = await getMatchedOpportunities(
-                skills,
-                undefined,
-                jobType === 'All Types' ? undefined : jobType.toLowerCase()
-            );
-
-            if (matchedRes.opportunities && matchedRes.opportunities.length > 0) {
-                const mapped = matchedRes.opportunities.map((opp: any) => ({
-                    title: opp.title,
-                    company: opp.company || 'Unknown Company',
-                    platform: opp.source || 'Web',
-                    location: opp.location || location,
-                    score: opp.match_score || 50,
-                    status: opp.match_score > 70 ? 'STRONG MATCH' : opp.match_score > 50 ? 'FAIR MATCH' : 'DEVELOPING',
-                    desc: opp.description || 'Click to view details on the original platform.',
-                    type: opp.opportunity_type || 'Full-time',
-                    salary: opp.salary || 'Not disclosed',
-                    platformLogo: opp.source?.toLowerCase()?.includes('linkedin')
-                        ? 'https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png'
-                        : 'https://static.naukimg.com/s/4/100/i/naukri_Logo.png',
-                    link: opp.link
-                }));
-                setJobData(mapped);
-                setIsAiPowered(true);
-            } else {
-                // Discover new opportunities via AI
-                const discoverRes = await discoverOpportunities(
-                    'Software Engineer',
-                    skills
-                );
-                if (discoverRes.opportunities && discoverRes.opportunities.length > 0) {
-                    const mapped = discoverRes.opportunities.map((opp: any) => ({
-                        title: opp.title,
-                        company: opp.company || 'Unknown Company',
-                        platform: opp.source || 'Web',
-                        location: opp.location || location,
-                        score: opp.match_score || 50,
-                        status: opp.match_score > 70 ? 'STRONG MATCH' : opp.match_score > 50 ? 'FAIR MATCH' : 'DEVELOPING',
-                        desc: opp.description || 'Click to view details on the original platform.',
-                        type: opp.opportunity_type || 'Full-time',
-                        salary: opp.salary || 'Not disclosed',
-                        platformLogo: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png',
-                        link: opp.link
-                    }));
-                    setJobData(mapped);
-                    setIsAiPowered(true);
-                } else {
-                    // Keep fallback data
-                    setJobData(fallbackJobs);
-                    setIsAiPowered(false);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to fetch AI opportunities:', error);
-            setJobData(fallbackJobs);
-            setIsAiPowered(false);
+            const data = await browseOpportunities({
+                category: activeCategory !== 'all' ? activeCategory : undefined,
+                skill: skillFilter || undefined,
+                location: locationFilter || undefined,
+                search: searchQuery || undefined,
+                page: currentPage,
+                per_page: 18,
+            });
+            setOpportunities(data.opportunities || []);
+            setTotalPages(data.total_pages || 1);
+            setTotalCount(data.total || 0);
+        } catch (err) {
+            console.error('Failed to load opportunities:', err);
+            setOpportunities([]);
         } finally {
             setIsLoading(false);
+            setHasInitialLoad(true);
+        }
+    }, [activeCategory, searchQuery, locationFilter, skillFilter, page]);
+
+    // ── Load filter options ──────────────────────────────
+    const loadFilterOptions = useCallback(async () => {
+        try {
+            const data = await getFilterOptions();
+            setFilterOptions(data);
+        } catch (err) {
+            console.error('Failed to load filter options:', err);
+        }
+    }, []);
+
+    // ── Load AI recommendations ──────────────────────────
+    const loadRecommendations = useCallback(async () => {
+        setIsRecommending(true);
+        try {
+            const skills = searchQuery
+                ? searchQuery.split(',').map(s => s.trim()).filter(Boolean)
+                : ['Python', 'JavaScript', 'React'];
+            const data = await getRecommendations(skills, 'Software Engineer', 6);
+            setRecommendations(data.opportunities || []);
+        } catch (err) {
+            console.error('Failed to load recommendations:', err);
+        } finally {
+            setIsRecommending(false);
+        }
+    }, [searchQuery]);
+
+    // ── Initial load ─────────────────────────────────────
+    useEffect(() => {
+        loadOpportunities(true);
+        loadFilterOptions();
+    }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Reload on filter change ──────────────────────────
+    useEffect(() => {
+        if (hasInitialLoad) {
+            loadOpportunities(true);
+        }
+    }, [activeCategory, locationFilter, skillFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Reload on page change ────────────────────────────
+    useEffect(() => {
+        if (hasInitialLoad && page > 1) {
+            loadOpportunities(false);
+        }
+    }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Debounced search ─────────────────────────────────
+    useEffect(() => {
+        if (!hasInitialLoad) return;
+        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = setTimeout(() => {
+            loadOpportunities(true);
+        }, 500);
+        return () => {
+            if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+        };
+    }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Refresh: fetch external + reload ─────────────────
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            await fetchExternalSources();
+            await loadOpportunities(true);
+            await loadFilterOptions();
+        } catch (err) {
+            console.error('Refresh failed:', err);
+        } finally {
+            setIsRefreshing(false);
         }
     };
 
-    const getScoreColor = (score: number) => {
-        if (score >= 70) return 'bg-emerald-500';
-        if (score >= 50) return 'bg-orange-400';
-        return 'bg-red-500';
+    // ── AI Discover ──────────────────────────────────────
+    const handleAIDiscover = async () => {
+        setIsRecommending(true);
+        try {
+            const skills = searchQuery
+                ? searchQuery.split(',').map(s => s.trim()).filter(Boolean)
+                : ['Python', 'JavaScript', 'React'];
+            const data = await discoverOpportunities('Software Engineer', skills);
+            if (data.opportunities?.length) {
+                setRecommendations(data.opportunities);
+            }
+            // Also reload main grid
+            await loadOpportunities(true);
+        } catch (err) {
+            console.error('AI discover failed:', err);
+        } finally {
+            setIsRecommending(false);
+        }
     };
 
-    const getStatusColor = (status: string) => {
-        if (status === 'STRONG MATCH') return 'text-emerald-500';
-        if (status === 'FAIR MATCH') return 'text-orange-500';
-        return 'text-red-500';
+    // ── Open opportunity ─────────────────────────────────
+    const handleOpen = (opp: Opportunity) => {
+        if (opp.url) {
+            window.open(opp.url, '_blank', 'noopener,noreferrer');
+        }
     };
+
+    const clearFilters = () => {
+        setSearchQuery('');
+        setLocationFilter('');
+        setSkillFilter('');
+        setActiveCategory('all');
+    };
+
+    const hasActiveFilters = searchQuery || locationFilter || skillFilter || activeCategory !== 'all';
+
+    // ════════════════════════════════════════════════════════════
+    // RENDER
+    // ════════════════════════════════════════════════════════════
 
     return (
         <div className="min-h-screen font-sans pb-20 relative overflow-hidden animated-gradient">
@@ -219,166 +267,410 @@ export default function Jobs() {
             <div className="relative z-10">
                 <PremiumNavbar />
 
-                <main className="max-w-[1240px] mx-auto px-6 pt-4">
-                    <div className="space-y-2 mb-10">
-                        <h1 className="text-3xl font-[900] text-slate-900 tracking-tight">Job Opportunities</h1>
-                        <p className="text-slate-400 font-medium">
-                            Find jobs matching your skills and experience from Naukri and LinkedIn
-                            {isAiPowered && <span className="ml-2 text-[#5c52d2] font-black text-xs uppercase tracking-widest">• AI Powered</span>}
-                        </p>
+                <main className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-6">
+
+                    {/* ── Header ───────────────────────────────────── */}
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+                        <div className="space-y-1">
+                            <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#5c52d2] to-[#8b5cf6] flex items-center justify-center shadow-lg shadow-purple-200">
+                                    <Zap className="w-5 h-5 text-white" />
+                                </div>
+                                Opportunity Portal
+                            </h1>
+                            <p className="text-slate-500 font-medium text-sm sm:text-base">
+                                Discover courses, internships, certifications, & jobs — powered by AI
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Button
+                                onClick={handleRefresh}
+                                disabled={isRefreshing}
+                                variant="outline"
+                                className="h-10 px-4 rounded-xl border-slate-200 text-slate-500 text-xs font-bold uppercase tracking-wider hover:border-[#5c52d2] hover:text-[#5c52d2] transition-all"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                Refresh Sources
+                            </Button>
+                            <Button
+                                onClick={handleAIDiscover}
+                                disabled={isRecommending}
+                                className="h-10 px-5 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#8b5cf6] text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-purple-200/50 hover:shadow-purple-300/50 transition-all"
+                            >
+                                <Sparkles className={`w-3.5 h-3.5 mr-2 ${isRecommending ? 'animate-pulse' : ''}`} />
+                                AI Discover
+                            </Button>
+                        </div>
                     </div>
 
-                    {/* Search Bar Section */}
-                    <Card className="p-8 rounded-[2rem] border-2 border-slate-100 bg-white/90 backdrop-blur-sm shadow-xl shadow-slate-100/50 mb-12 border-white/20">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            <div className="md:col-span-2 space-y-2">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-1">Your Skills *</label>
+                    {/* ── Search + Filter Bar ─────────────────────── */}
+                    <Card className="p-4 sm:p-6 rounded-2xl border border-white/30 bg-white/80 backdrop-blur-md shadow-xl shadow-slate-100/50 mb-6">
+                        <div className="flex flex-col lg:flex-row gap-4">
+                            {/* Search */}
+                            <div className="flex-1 relative">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
                                 <Input
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="h-14 rounded-xl border-slate-100 bg-slate-50/50 font-bold focus:bg-white transition-all shadow-inner"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search skills, technologies, roles, or companies..."
+                                    className="h-12 pl-11 rounded-xl border-slate-100 bg-slate-50/50 font-medium focus:bg-white focus:border-[#5c52d2] transition-all text-sm"
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-1">Location</label>
-                                <div className="relative group">
-                                    <select
-                                        className="w-full h-14 pl-5 pr-10 rounded-xl border-2 border-slate-100 bg-slate-50/50 font-bold appearance-none focus:border-[#5c52d2] outline-none transition-all"
-                                        value={location}
-                                        onChange={(e) => setLocation(e.target.value)}
-                                    >
-                                        <option>Nationwide</option>
-                                        <option>Remote</option>
-                                        <option>Bangalore</option>
-                                        <option>Mumbai</option>
-                                        <option>Delhi NCR</option>
-                                        <option>Hyderabad</option>
-                                        <option>Pune</option>
-                                        <option>Chennai</option>
-                                        <option>Kolkata</option>
-                                        <option>Ahmedabad</option>
-                                        <option>Gurugram</option>
-                                        <option>Noida</option>
-                                    </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors pointer-events-none" />
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-1">Job Type</label>
-                                <div className="relative group">
-                                    <select
-                                        className="w-full h-14 pl-5 pr-10 rounded-xl border-2 border-slate-100 bg-slate-50/50 font-bold appearance-none focus:border-[#5c52d2] outline-none transition-all"
-                                        value={jobType}
-                                        onChange={(e) => setJobType(e.target.value)}
-                                    >
-                                        <option>All Types</option>
-                                        <option>Full-time</option>
-                                        <option>Part-time</option>
-                                        <option>Contract</option>
-                                        <option>Freelance</option>
-                                    </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors pointer-events-none" />
-                                </div>
-                            </div>
-                        </div>
-                        <Button
-                            onClick={handleAISearch}
-                            disabled={isLoading}
-                            className="w-full h-14 mt-8 rounded-xl bg-[#b195ff] hover:bg-[#a284ff] text-white font-black text-sm uppercase tracking-[0.2em] shadow-lg shadow-purple-100 transition-all flex items-center gap-3 disabled:opacity-70"
-                        >
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 animate-spin" /> Finding AI-Matched Jobs...
-                                </>
-                            ) : (
-                                <>
-                                    <Sparkles className="w-4 h-4" /> AI-Powered Job Search
-                                </>
-                            )}
-                        </Button>
-                    </Card>
 
-                    {/* Results Section */}
-                    <div className="space-y-1 mb-8">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-2xl font-[900] text-slate-800">Found {jobData.length} Jobs</h2>
-                            {isAiPowered && (
-                                <Button
-                                    onClick={handleAISearch}
-                                    variant="outline"
-                                    className="h-9 px-4 rounded-lg border-slate-200 text-slate-400 text-[10px] font-black uppercase tracking-widest"
+                            {/* Location */}
+                            <div className="relative w-full lg:w-52">
+                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none z-10" />
+                                <select
+                                    value={locationFilter}
+                                    onChange={(e) => setLocationFilter(e.target.value)}
+                                    className="w-full h-12 pl-9 pr-10 rounded-xl border border-slate-100 bg-slate-50/50 font-medium appearance-none focus:border-[#5c52d2] outline-none transition-all text-sm text-slate-700"
                                 >
-                                    <RefreshCw className="w-3 h-3 mr-1.5" /> Refresh
+                                    <option value="">All Locations</option>
+                                    <option value="Remote">Remote</option>
+                                    {filterOptions?.locations.map(loc => (
+                                        <option key={loc} value={loc}>{loc}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            </div>
+
+                            {/* Skill Filter Dropdown */}
+                            <div className="relative w-full lg:w-52">
+                                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none z-10" />
+                                <select
+                                    value={skillFilter}
+                                    onChange={(e) => setSkillFilter(e.target.value)}
+                                    className="w-full h-12 pl-9 pr-10 rounded-xl border border-slate-100 bg-slate-50/50 font-medium appearance-none focus:border-[#5c52d2] outline-none transition-all text-sm text-slate-700"
+                                >
+                                    <option value="">All Skills</option>
+                                    {filterOptions?.top_skills.map(s => (
+                                        <option key={s} value={s}>{s}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            </div>
+
+                            {/* Filter toggle + Clear */}
+                            {hasActiveFilters && (
+                                <Button
+                                    onClick={clearFilters}
+                                    variant="ghost"
+                                    className="h-12 px-4 text-sm text-slate-400 hover:text-red-500 font-bold"
+                                >
+                                    <X className="w-4 h-4 mr-1" /> Clear
                                 </Button>
                             )}
                         </div>
-                        <p className="text-slate-400 text-sm font-bold">Matching skills: <span className="text-blue-500">{searchTerm}</span></p>
-                    </div>
+                    </Card>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {jobData.map((job, i) => (
-                            <motion.div
-                                key={i}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: i * 0.1 }}
-                            >
-                                <Card className="p-8 rounded-[2.5rem] border-none shadow-xl shadow-slate-200/40 bg-white/90 backdrop-blur-sm hover:scale-[1.02] transition-all flex flex-col h-full relative overflow-hidden group border border-white/20">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <h3 className="text-xl font-black text-slate-800 leading-tight pr-12">{job.title}</h3>
-                                        <div className={`absolute top-6 right-6 px-3 py-1 rounded-lg flex items-center gap-1.5 shadow-sm ${getScoreColor(job.score)} text-white`}>
-                                            <Star className="w-3 h-3 fill-current" />
-                                            <span className="text-xs font-black">{job.score}%</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 mb-6 text-slate-500 font-bold text-sm">
-                                        <div className="w-5 h-5 bg-slate-50 rounded-sm flex items-center justify-center p-0.5">
-                                            <img src={job.platformLogo} alt={job.platform} className="w-full h-full object-contain" />
-                                        </div>
-                                        <span className="text-slate-400 text-xs tracking-tight">{job.company}</span>
-                                        <span className="mx-1 opacity-20">•</span>
-                                        <Globe className="w-3 h-3 text-slate-300" />
-                                        <span className="text-slate-400 text-xs tracking-tight">{job.platform}</span>
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <MapPin className="w-3.5 h-3.5 text-[#5c52d2]" />
-                                        <span className="text-xs font-black text-slate-400">{job.location}</span>
-                                    </div>
-
-                                    <div className="mb-4">
-                                        <span className={`text-[10px] font-black uppercase tracking-widest ${getStatusColor(job.status)}`}>
-                                            {job.status}
+                    {/* ── Category Tabs ────────────────────────────── */}
+                    <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
+                        {CATEGORIES.map(cat => {
+                            const isActive = activeCategory === cat.key;
+                            const count = cat.key === 'all'
+                                ? totalCount
+                                : filterOptions?.categories[cat.key] || 0;
+                            return (
+                                <motion.button
+                                    key={cat.key}
+                                    onClick={() => setActiveCategory(cat.key)}
+                                    className={`
+                                        flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm whitespace-nowrap transition-all border
+                                        ${isActive
+                                            ? 'bg-white text-slate-800 border-slate-200 shadow-lg shadow-slate-200/50'
+                                            : 'bg-transparent text-slate-500 border-transparent hover:bg-white/60 hover:border-slate-100'
+                                        }
+                                    `}
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                >
+                                    <cat.icon className="w-4 h-4" style={{ color: isActive ? cat.color : undefined }} />
+                                    {cat.label}
+                                    {typeof count === 'number' && count > 0 && (
+                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isActive ? 'bg-slate-100 text-slate-600' : 'bg-slate-100/50 text-slate-400'}`}>
+                                            {count}
                                         </span>
-                                        <p className="text-slate-500 text-sm font-medium mt-1 mb-6 leading-relaxed">
-                                            {job.desc}
-                                        </p>
-                                    </div>
-
-                                    <div className="mt-auto space-y-6">
-                                        <div className="flex flex-wrap gap-2">
-                                            <div className="px-4 py-1.5 bg-slate-50 rounded-full text-[10px] font-black text-slate-400 flex items-center gap-2">
-                                                <Clock className="w-3 h-3" /> {job.type}
-                                            </div>
-                                            <div className="px-4 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black flex items-center gap-2">
-                                                <IndianRupee className="w-3 h-3" /> {job.salary}
-                                            </div>
-                                        </div>
-
-                                        <Button
-                                            onClick={() => handleApply(job.title, job.platform, job.link)}
-                                            className="w-full h-14 rounded-2xl bg-[#b195ff] hover:bg-[#a284ff] text-white font-black text-sm transition-all group shadow-lg shadow-purple-50"
-                                        >
-                                            Apply Now <ExternalLink className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform opacity-50" />
-                                        </Button>
-                                    </div>
-                                </Card>
-                            </motion.div>
-                        ))}
+                                    )}
+                                </motion.button>
+                            );
+                        })}
                     </div>
+
+                    {/* ── AI Recommendations Section ──────────────── */}
+                    <AnimatePresence>
+                        {recommendations.length > 0 && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mb-10"
+                            >
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md">
+                                        <Sparkles className="w-4 h-4 text-white" />
+                                    </div>
+                                    <h2 className="text-xl font-[900] text-slate-800">AI Recommendations</h2>
+                                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                                        Personalized
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {recommendations.slice(0, 6).map((opp, i) => (
+                                        <motion.div
+                                            key={opp.id || i}
+                                            initial={{ opacity: 0, y: 16 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: i * 0.06 }}
+                                        >
+                                            <OpportunityCard opp={opp} onOpen={handleOpen} isRecommendation />
+                                        </motion.div>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* ── Results Header ───────────────────────────── */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-xl sm:text-2xl font-[900] text-slate-800">
+                                {isLoading ? 'Loading...' : `${totalCount} Opportunities`}
+                            </h2>
+                            {hasActiveFilters && (
+                                <span className="text-[10px] font-black text-[#5c52d2] uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-full border border-purple-200">
+                                    Filtered
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ── Loading State ────────────────────────────── */}
+                    {isLoading && (
+                        <div className="flex items-center justify-center py-24">
+                            <div className="text-center space-y-4">
+                                <Loader2 className="w-10 h-10 text-[#5c52d2] animate-spin mx-auto" />
+                                <p className="text-slate-400 font-bold text-sm">Searching opportunities...</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Empty State ──────────────────────────────── */}
+                    {!isLoading && opportunities.length === 0 && hasInitialLoad && (
+                        <div className="flex items-center justify-center py-24">
+                            <div className="text-center space-y-4 max-w-md">
+                                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto">
+                                    <Search className="w-7 h-7 text-slate-300" />
+                                </div>
+                                <h3 className="text-xl font-bold text-slate-700">No opportunities found</h3>
+                                <p className="text-slate-400 text-sm">
+                                    Try adjusting your filters or use AI Discover to generate fresh opportunities tailored to your skills.
+                                </p>
+                                <Button
+                                    onClick={handleAIDiscover}
+                                    className="h-11 px-6 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#8b5cf6] text-white font-bold text-sm"
+                                >
+                                    <Sparkles className="w-4 h-4 mr-2" /> AI Discover
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Opportunities Grid ──────────────────────── */}
+                    {!isLoading && opportunities.length > 0 && (
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                                {opportunities.map((opp, i) => (
+                                    <motion.div
+                                        key={opp.id || i}
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: i * 0.04 }}
+                                    >
+                                        <OpportunityCard opp={opp} onOpen={handleOpen} />
+                                    </motion.div>
+                                ))}
+                            </div>
+
+                            {/* ── Pagination ─────────────────────────── */}
+                            {totalPages > 1 && (
+                                <div className="flex items-center justify-center gap-3 mt-10">
+                                    <Button
+                                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                                        disabled={page <= 1}
+                                        variant="outline"
+                                        className="h-10 px-4 rounded-xl border-slate-200 text-slate-400 font-bold text-xs disabled:opacity-30"
+                                    >
+                                        <ChevronLeft className="w-4 h-4 mr-1" /> Prev
+                                    </Button>
+                                    <span className="text-sm font-bold text-slate-500">
+                                        Page {page} of {totalPages}
+                                    </span>
+                                    <Button
+                                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={page >= totalPages}
+                                        variant="outline"
+                                        className="h-10 px-4 rounded-xl border-slate-200 text-slate-400 font-bold text-xs disabled:opacity-30"
+                                    >
+                                        Next <ChevronRight className="w-4 h-4 ml-1" />
+                                    </Button>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </main>
             </div>
         </div>
+    );
+}
+
+
+// ════════════════════════════════════════════════════════════
+// OPPORTUNITY CARD COMPONENT
+// ════════════════════════════════════════════════════════════
+
+function OpportunityCard({
+    opp,
+    onOpen,
+    isRecommendation = false
+}: {
+    opp: Opportunity;
+    onOpen: (opp: Opportunity) => void;
+    isRecommendation?: boolean;
+}) {
+    const category = opp.category || opp.opportunity_type || 'job';
+    const CatIcon = getCategoryIcon(category);
+    const catColor = getCategoryColor(category);
+
+    const formatDeadline = (d: string | null) => {
+        if (!d) return null;
+        try {
+            const date = new Date(d);
+            const now = new Date();
+            const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            if (diffDays < 0) return 'Expired';
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Tomorrow';
+            if (diffDays <= 7) return `${diffDays} days left`;
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } catch {
+            return null;
+        }
+    };
+
+    const deadline = formatDeadline(opp.deadline);
+
+    return (
+        <Card className={`
+            group relative flex flex-col h-full overflow-hidden rounded-2xl transition-all duration-300
+            bg-white/90 backdrop-blur-sm border hover:shadow-xl
+            ${isRecommendation
+                ? 'border-amber-200/60 hover:border-amber-300 shadow-md shadow-amber-50'
+                : 'border-white/30 hover:border-slate-200 shadow-lg shadow-slate-100/40'
+            }
+            hover:scale-[1.01] hover:-translate-y-0.5
+        `}>
+            {/* Category badge + Recommendation star */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-2">
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${getCategoryBg(category)}`}>
+                    <CatIcon className="w-3 h-3" />
+                    {category}
+                </div>
+                {isRecommendation && (
+                    <div className="flex items-center gap-1 text-amber-500">
+                        <Star className="w-3.5 h-3.5 fill-amber-400" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">AI Pick</span>
+                    </div>
+                )}
+                {opp.match_score && opp.match_score > 0 && !isRecommendation && (
+                    <div className="flex items-center gap-1 text-emerald-500">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-black">{opp.match_score}% match</span>
+                    </div>
+                )}
+            </div>
+
+            {/* Content */}
+            <div className="px-5 pb-5 flex flex-col flex-1">
+                {/* Title */}
+                <h3 className="text-base font-[800] text-slate-800 leading-snug mb-2 line-clamp-2 group-hover:text-[#5c52d2] transition-colors">
+                    {opp.title}
+                </h3>
+
+                {/* Provider + Source */}
+                <div className="flex items-center gap-2 mb-3 text-xs text-slate-400 font-semibold">
+                    <div className="w-5 h-5 rounded-md flex items-center justify-center text-white text-[9px] font-black" style={{ backgroundColor: catColor }}>
+                        {(opp.provider || opp.company || '?')[0]?.toUpperCase()}
+                    </div>
+                    <span className="truncate max-w-[140px]">{opp.provider || opp.company || 'Unknown'}</span>
+                    {opp.source && (
+                        <>
+                            <span className="opacity-30">•</span>
+                            <Globe className="w-3 h-3 text-slate-300" />
+                            <span className="truncate max-w-[80px]">{opp.source}</span>
+                        </>
+                    )}
+                </div>
+
+                {/* Description */}
+                <p className="text-slate-500 text-xs font-medium leading-relaxed mb-4 line-clamp-2 flex-grow">
+                    {opp.description || 'Click to view details on the original platform.'}
+                </p>
+
+                {/* Skills */}
+                {opp.skill_tags && opp.skill_tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                        {opp.skill_tags.slice(0, 4).map(skill => (
+                            <span
+                                key={skill}
+                                className="px-2.5 py-0.5 bg-slate-50 text-slate-500 rounded-md text-[10px] font-bold border border-slate-100"
+                            >
+                                {skill}
+                            </span>
+                        ))}
+                        {opp.skill_tags.length > 4 && (
+                            <span className="px-2 py-0.5 text-slate-400 text-[10px] font-bold">
+                                +{opp.skill_tags.length - 4}
+                            </span>
+                        )}
+                    </div>
+                )}
+
+                {/* Meta row */}
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    {opp.location && (
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                            <MapPin className="w-3 h-3 text-[#5c52d2]" />
+                            {opp.location}
+                        </div>
+                    )}
+                    {deadline && (
+                        <div className={`flex items-center gap-1 text-[10px] font-bold ${deadline === 'Expired' ? 'text-red-400' : 'text-slate-400'}`}>
+                            <Calendar className="w-3 h-3" />
+                            {deadline}
+                        </div>
+                    )}
+                    {opp.salary_range && (
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
+                            <span>{opp.salary_range}</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* CTA */}
+                <Button
+                    onClick={() => onOpen(opp)}
+                    className="w-full h-10 rounded-xl text-white font-bold text-xs uppercase tracking-wider transition-all group/btn shadow-md"
+                    style={{ background: `linear-gradient(135deg, ${catColor}, ${catColor}dd)` }}
+                >
+                    <span className="flex items-center gap-2">
+                        {category === 'course' ? 'Enroll Now' :
+                            category === 'certification' ? 'Get Certified' :
+                                category === 'internship' ? 'Apply Now' : 'Apply Now'}
+                        <ExternalLink className="w-3.5 h-3.5 opacity-60 group-hover/btn:translate-x-0.5 transition-transform" />
+                    </span>
+                </Button>
+            </div>
+        </Card>
     );
 }

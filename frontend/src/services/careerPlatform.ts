@@ -170,8 +170,32 @@ export const getAdvancedInterviewHistory = async () => {
 };
 
 // ════════════════════════════════════════════
-// 5. OPPORTUNITY INTELLIGENCE
+// 5. OPPORTUNITY PORTAL
 // ════════════════════════════════════════════
+
+export const browseOpportunities = async (params: {
+    category?: string;
+    skill?: string;
+    location?: string;
+    search?: string;
+    page?: number;
+    per_page?: number;
+}) => {
+    const searchParams = new URLSearchParams();
+    if (params.category) searchParams.set('category', params.category);
+    if (params.skill) searchParams.set('skill', params.skill);
+    if (params.location) searchParams.set('location', params.location);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.page) searchParams.set('page', String(params.page));
+    if (params.per_page) searchParams.set('per_page', String(params.per_page));
+    const res = await api.get(`/opportunities/browse?${searchParams.toString()}`);
+    return res.data;
+};
+
+export const getFilterOptions = async () => {
+    const res = await api.get('/opportunities/filters');
+    return res.data;
+};
 
 export const discoverOpportunities = async (targetRole: string, skills: string[] = [], level: string = 'Beginner') => {
     const res = await api.post('/opportunities/discover', {
@@ -194,6 +218,20 @@ export const getMatchedOpportunities = async (
         opportunity_type: opportunityType,
         limit
     });
+    return res.data;
+};
+
+export const getRecommendations = async (skills: string[] = [], targetRole: string = 'Software Engineer', limit: number = 12) => {
+    const res = await api.post('/opportunities/recommend', {
+        skills,
+        target_role: targetRole,
+        limit,
+    });
+    return res.data;
+};
+
+export const fetchExternalSources = async () => {
+    const res = await api.post('/opportunities/fetch-external');
     return res.data;
 };
 

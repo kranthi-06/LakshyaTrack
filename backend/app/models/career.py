@@ -155,24 +155,27 @@ class MultiStageInterview(Base):
 
 class Opportunity(Base):
     """
-    Aggregated opportunities (courses, internships, jobs) from allowed public sources.
+    Aggregated opportunities (courses, internships, jobs, certifications)
+    from allowed public sources.
     Matched to user roadmaps and skill levels.
     """
     __tablename__ = "opportunities"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=False)
-    company = Column(String, nullable=True)
-    opportunity_type = Column(String, nullable=False)   # "job", "internship", "course"
+    company = Column(String, nullable=True)              # Provider / company name
+    opportunity_type = Column(String, nullable=False)    # "job", "internship", "course", "certification"
+    category = Column(String, nullable=True)             # Portal section: course|internship|certification|job
     description = Column(Text, nullable=True)
     url = Column(String, nullable=False)
-    source = Column(String, nullable=True)              # "coursera", "linkedin_public", etc.
+    source = Column(String, nullable=True)               # "coursera", "udemy", "github_jobs", etc.
     skill_tags = Column(JSONB, default=[])               # ["Python", "React", ...]
     level = Column(String, nullable=True)                # "Beginner", "Intermediate", "Advanced"
     deadline = Column(DateTime(timezone=True), nullable=True)
     is_expired = Column(Boolean, default=False)
     location = Column(String, nullable=True)
     salary_range = Column(String, nullable=True)
+    provider = Column(String, nullable=True)             # Explicit provider name
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

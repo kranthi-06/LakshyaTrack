@@ -31,7 +31,7 @@ export const PremiumNavbar = () => {
         { label: 'Plan', path: '/career', icon: BookOpen },
         { label: 'Quiz', path: '/quiz', icon: BrainCircuit },
         { label: 'Interview', path: '/interview', icon: Mic2 },
-        { label: 'Jobs', path: '/jobs', icon: Briefcase },
+        { label: 'Opportunities', path: '/jobs', icon: Briefcase },
         { label: 'Progress', path: '/progress', icon: LineChart },
     ];
 
