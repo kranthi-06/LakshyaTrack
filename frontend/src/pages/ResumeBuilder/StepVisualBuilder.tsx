@@ -457,11 +457,10 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                         <div className="flex items-center gap-1.5">
                             <FileStack className="w-3.5 h-3.5 text-gray-400" />
                             <span className="text-[10px] font-bold text-gray-400">Pages:</span>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
-                                pageCount > 1
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${pageCount > 1
                                     ? 'bg-amber-100 text-amber-600'
                                     : 'bg-emerald-50 text-emerald-600'
-                            }`}>
+                                }`}>
                                 {pageCount}
                             </span>
                         </div>
@@ -608,23 +607,32 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.25 }}
                         className="fixed inset-0 z-[100] flex flex-col"
-                        style={{ backgroundColor: 'rgba(15, 15, 25, 0.92)', backdropFilter: 'blur(8px)' }}
+                        style={{ backgroundColor: 'rgba(15, 15, 25, 0.95)', backdropFilter: 'blur(12px)' }}
                     >
-                        {/* ── Modal Header ── */}
-                        <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-white/5 border-b border-white/10 flex-shrink-0">
-                            <div className="flex items-center gap-3">
-                                <Eye className="w-5 h-5 text-[#5c52d2]" />
-                                <span className="text-white text-sm font-black">Resume Preview</span>
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                                    pageCount > 1
+                        {/* ── Close Button — absolute top-right ── */}
+                        <motion.button
+                            whileHover={{ scale: 1.15, rotate: 90 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => setShowFullPreview(false)}
+                            className="absolute top-4 right-4 z-[110] w-10 h-10 flex items-center justify-center rounded-full bg-white/15 hover:bg-red-500/80 text-white/80 hover:text-white transition-all duration-200 shadow-lg backdrop-blur-sm border border-white/10 hover:border-red-400/50"
+                            title="Close Preview (ESC)"
+                        >
+                            <X className="w-5 h-5" strokeWidth={2.5} />
+                        </motion.button>
+
+                        {/* ── Small header info bar ── */}
+                        <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                                <Eye className="w-4 h-4 text-[#5c52d2]" />
+                                <span className="text-white/80 text-xs font-bold">Resume Preview</span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${pageCount > 1
                                         ? 'bg-amber-500/20 text-amber-400'
                                         : 'bg-emerald-500/20 text-emerald-400'
-                                }`}>
+                                    }`}>
                                     {pageCount} {pageCount === 1 ? 'page' : 'pages'}
                                 </span>
                             </div>
-                            <div className="flex items-center gap-3">
-                                {/* Export shortcuts */}
+                            <div className="flex items-center gap-2 ml-auto mr-12">
                                 <motion.button
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
@@ -643,21 +651,12 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                                 >
                                     <FileType2 className="w-3 h-3" /> Word
                                 </motion.button>
-                                {/* Close button */}
-                                <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    onClick={() => setShowFullPreview(false)}
-                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
-                                >
-                                    <X className="w-4 h-4" />
-                                </motion.button>
                             </div>
                         </div>
 
-                        {/* ── Overflow warning inside modal ── */}
+                        {/* ── Overflow warning ── */}
                         {pageCount > 1 && (
-                            <div className="mx-auto mt-3 flex items-center gap-2 px-4 py-2 bg-amber-500/15 border border-amber-500/30 rounded-xl max-w-lg">
+                            <div className="mx-auto flex items-center gap-2 px-4 py-2 bg-amber-500/15 border border-amber-500/30 rounded-xl max-w-lg flex-shrink-0">
                                 <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
                                 <p className="text-[10px] text-amber-300 font-medium">
                                     Your resume exceeds one page. Recruiters usually prefer one-page resumes.
@@ -665,21 +664,29 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                             </div>
                         )}
 
-                        {/* ── Preview Body — device-adaptive ── */}
-                        <div className="flex-1 overflow-auto flex items-start justify-center py-6 px-4">
-                            {/* Desktop: A4 centered at full size */}
-                            {/* Tablet: A4 scaled down to fit */}
-                            {/* Mobile: full-width responsive layout */}
+                        {/* ── Preview Body — dynamically fit to screen ── */}
+                        <div
+                            className="flex-1 overflow-auto flex items-start justify-center py-4 sm:py-6 px-4"
+                            style={{ WebkitOverflowScrolling: 'touch' }}
+                        >
                             <div
-                                className="fullscreen-resume-wrapper relative"
-                                style={{ maxWidth: '100%' }}
+                                className="relative mx-auto"
+                                style={{
+                                    /* 
+                                     * Dynamic fit-to-screen: the A4 resume is 794px wide.
+                                     * We scale it to fit the viewport width (minus padding)
+                                     * and cap the scale at 1 for large screens.
+                                     */
+                                    width: '794px',
+                                    transformOrigin: 'top center',
+                                    transform: `scale(var(--fs-preview-scale, 0.6))`,
+                                }}
                             >
                                 <div
-                                    className="bg-white shadow-2xl mx-auto"
+                                    className="bg-white shadow-2xl rounded-sm"
                                     style={{
                                         width: '794px',
                                         minHeight: `${A4_PAGE_HEIGHT}px`,
-                                        transformOrigin: 'top center',
                                     }}
                                 >
                                     <RenderTemplate base={selected.base} data={data} color={accentColor} />
@@ -711,41 +718,22 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                 )}
             </AnimatePresence>
 
-            {/* ── Responsive CSS for fullscreen preview ── */}
+            {/* ── Dynamic scale CSS for fullscreen preview ── */}
             <style>{`
-                .fullscreen-resume-wrapper {
-                    transform-origin: top center;
+                /* 
+                 * Calculate --fs-preview-scale as a CSS custom property.
+                 * The A4 resume is 794px wide. We fit it to the viewport
+                 * with 32px horizontal padding on each side.
+                 */
+                :root {
+                    --fs-preview-scale: min(1, calc((100vw - 64px) / 794));
                 }
 
-                /* Desktop (>1024px): show A4 at full size, centered */
-                @media (min-width: 1025px) {
-                    .fullscreen-resume-wrapper {
-                        transform: scale(1);
-                    }
-                }
-
-                /* Tablet (768px–1024px): scale A4 down to fit */
-                @media (min-width: 768px) and (max-width: 1024px) {
-                    .fullscreen-resume-wrapper {
-                        transform: scale(0.75);
-                        margin-bottom: -25%;
-                    }
-                }
-
-                /* Mobile (<768px): scale to fit screen width */
-                @media (max-width: 767px) {
-                    .fullscreen-resume-wrapper {
-                        transform: scale(0.48);
-                        transform-origin: top center;
-                        margin-bottom: -52%;
-                    }
-                }
-
-                /* Very small mobile (<420px) */
-                @media (max-width: 420px) {
-                    .fullscreen-resume-wrapper {
-                        transform: scale(0.38);
-                        margin-bottom: -62%;
+                /* For very tall screens, also consider height to ensure 
+                   the full A4 page is visible without scrolling */
+                @media (min-height: 900px) and (min-width: 860px) {
+                    :root {
+                        --fs-preview-scale: min(1, calc((100vh - 180px) / ${A4_PAGE_HEIGHT}), calc((100vw - 64px) / 794));
                     }
                 }
             `}</style>

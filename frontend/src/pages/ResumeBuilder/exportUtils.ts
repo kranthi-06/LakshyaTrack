@@ -205,6 +205,11 @@ export async function exportToPDF(elementId: string, _filename: string = 'resume
 /**
  * CSS properties that matter for Word rendering.
  * We inline only these to keep the file size reasonable.
+ *
+ * NOTE: Border properties are intentionally EXCLUDED.
+ * The live preview uses decorative borders (section separators, colored
+ * accent lines, etc.) that render as ugly box outlines in Word.
+ * Word tables/cells already have border: none set in the global CSS.
  */
 const IMPORTANT_CSS_PROPS: string[] = [
     'color', 'background-color', 'background',
@@ -213,9 +218,7 @@ const IMPORTANT_CSS_PROPS: string[] = [
     'line-height', 'white-space',
     'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
     'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-    'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
-    'border-color', 'border-style', 'border-width',
-    'border-radius',
+    // NO border properties — they cause ugly lines in Word
     'width', 'max-width', 'min-width',
     'height', 'min-height',
     'display', 'flex-direction', 'flex-wrap', 'justify-content', 'align-items', 'gap',
@@ -259,6 +262,37 @@ function inlineComputedStyles(sourceEl: Element, cloneEl: Element): void {
 }
 
 /**
+ * Post-processing: strip any remaining border styles from every element.
+ * This catches borders that might have been set via inline style attributes
+ * on the original template elements (not just computed styles).
+ */
+function stripAllBorders(el: HTMLElement): void {
+    const style = el.getAttribute('style') || '';
+    if (style) {
+        // Remove any border-related declarations
+        const cleaned = style
+            .replace(/border[^;]*;?/gi, '')
+            .replace(/outline[^;]*;?/gi, '')
+            .replace(/box-shadow[^;]*;?/gi, '')
+            .replace(/;;+/g, ';')
+            .replace(/^;|;$/g, '')
+            .trim();
+        el.setAttribute('style', cleaned);
+    }
+
+    // Force border: none on table elements
+    const tag = el.tagName.toUpperCase();
+    if (tag === 'TABLE' || tag === 'TD' || tag === 'TR' || tag === 'TH' || tag === 'TBODY') {
+        const current = el.getAttribute('style') || '';
+        el.setAttribute('style', `${current}; border: none !important; border-collapse: collapse;`);
+    }
+
+    Array.from(el.children).forEach(child => {
+        if (child instanceof HTMLElement) stripAllBorders(child);
+    });
+}
+
+/**
  * Convert flex layout to table-based layout for Word compatibility.
  * Word doesn't understand CSS flex, so we replace flex containers
  * with table equivalents that achieve the same visual result.
@@ -270,18 +304,26 @@ function convertFlexToTable(el: HTMLElement): void {
     if (style.includes('display: flex') && !style.includes('flex-direction: column')) {
         const children = Array.from(el.children) as HTMLElement[];
         if (children.length >= 2) {
-            // Create a table-based layout
+            // Create a table-based layout with NO borders
             const table = document.createElement('table');
-            table.setAttribute('style', `width: 100%; border-collapse: collapse; ${style.replace(/display:\s*flex[^;]*;?/g, '').replace(/gap[^;]*;?/g, '').replace(/align-items[^;]*;?/g, '').replace(/justify-content[^;]*;?/g, '')}`);
+            const cleanStyle = style
+                .replace(/display:\s*flex[^;]*;?/g, '')
+                .replace(/gap[^;]*;?/g, '')
+                .replace(/align-items[^;]*;?/g, '')
+                .replace(/justify-content[^;]*;?/g, '')
+                .replace(/border[^;]*;?/gi, '');
+            table.setAttribute('style', `width: 100%; border-collapse: collapse; border: none; border-spacing: 0; ${cleanStyle}`);
             table.setAttribute('cellpadding', '0');
             table.setAttribute('cellspacing', '0');
+            table.setAttribute('border', '0');
 
             const tr = document.createElement('tr');
+            tr.setAttribute('style', 'border: none;');
 
             children.forEach(child => {
                 const td = document.createElement('td');
-                const childStyle = child.getAttribute('style') || '';
-                td.setAttribute('style', `vertical-align: top; ${childStyle}`);
+                const childStyle = (child.getAttribute('style') || '').replace(/border[^;]*;?/gi, '');
+                td.setAttribute('style', `vertical-align: top; border: none; ${childStyle}`);
                 td.innerHTML = child.innerHTML;
                 tr.appendChild(td);
             });
@@ -293,7 +335,7 @@ function convertFlexToTable(el: HTMLElement): void {
             el.appendChild(table);
 
             // Remove the flex display from the parent
-            el.setAttribute('style', style.replace(/display:\s*flex[^;]*;?/g, 'display: block;').replace(/gap[^;]*;?/g, ''));
+            el.setAttribute('style', style.replace(/display:\s*flex[^;]*;?/g, 'display: block;').replace(/gap[^;]*;?/g, '').replace(/border[^;]*;?/gi, ''));
         }
     }
 
@@ -380,6 +422,11 @@ export async function exportToDOCX(elementId: string, filename: string = 'resume
     convertFlexWrapToInline(clone);
     convertFlexToTable(clone);
 
+    // ── 4b. Strip ALL borders from every element ────────────────────
+    //  This removes decorative borders from the template that translate
+    //  into ugly box outlines in Word.
+    stripAllBorders(clone);
+
     // ── 5. Build a complete Word-compatible HTML document ───────────
     const docHtml = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -401,7 +448,7 @@ export async function exportToDOCX(elementId: string, filename: string = 'resume
     <style>
         @page {
             size: A4;
-            margin: 0.5in 0.5in 0.5in 0.5in;
+            margin: 0.4in 0.4in 0.4in 0.4in;
             mso-page-orientation: portrait;
         }
         body {
@@ -411,15 +458,30 @@ export async function exportToDOCX(elementId: string, filename: string = 'resume
             margin: 0;
             padding: 0;
             background: white;
+            width: 100%;
+        }
+        /* Kill ALL borders globally — Word loves adding them */
+        *, *::before, *::after {
+            border: none !important;
+            border-color: transparent !important;
+            outline: none !important;
+            box-shadow: none !important;
         }
         table {
             border-collapse: collapse;
-            border: none;
+            border: none !important;
+            border-spacing: 0;
+            width: 100%;
         }
-        td {
+        td, tr, th, tbody {
             vertical-align: top;
-            border: none;
+            border: none !important;
+            padding: 0;
         }
+        div, span, section, article, header, footer, main, aside, nav {
+            border: none !important;
+        }
+        /* Content layout */
         ul { padding-left: 20px; margin: 4px 0; }
         li { margin-bottom: 2px; }
         p { margin: 2px 0; }
@@ -427,7 +489,9 @@ export async function exportToDOCX(elementId: string, filename: string = 'resume
     </style>
 </head>
 <body>
-    ${clone.outerHTML}
+    <div style="width: 100%; margin: 0; padding: 0; border: none;">
+        ${clone.outerHTML}
+    </div>
 </body>
 </html>`;
 
