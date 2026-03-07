@@ -14,11 +14,22 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// ── Response Interceptor: handle auth errors safely ───────
-// Debounce redirect — prevents multiple concurrent 401s from racing
-let redirectScheduled = false;
+// ── Flag: is the auth system still initializing? ──────────
+// When true, 401s will NOT remove the token (prevents race conditions
+// during slow network startup). AuthContext sets this to false
+// once the full init pipeline has completed.
+let _authInitializing = true;
 
-// Background / non-critical endpoints that should NEVER trigger a redirect
+export function setAuthInitialized() {
+    _authInitializing = false;
+}
+
+export function isAuthInitializing() {
+    return _authInitializing;
+}
+
+// ── Response Interceptor: handle auth errors safely ───────
+// Background / non-critical endpoints that should NEVER trigger token removal
 const SILENT_ENDPOINTS = [
     '/progress',
     '/interview-multistage/history',
@@ -51,22 +62,19 @@ api.interceptors.response.use(
                 return Promise.reject(error);
             }
 
-            // Clear the token
-            localStorage.removeItem('token');
-
-            // Debounced redirect — wait 300ms so concurrent calls don't
-            // each independently trigger a page reload.
-            if (!redirectScheduled) {
-                redirectScheduled = true;
-                setTimeout(() => {
-                    redirectScheduled = false;
-                    const currentPath = window.location.pathname;
-                    const PUBLIC = ['/', '/login', '/register', '/verify-email', '/auth/callback'];
-                    if (!PUBLIC.includes(currentPath)) {
-                        window.location.href = '/login';
-                    }
-                }, 300);
+            // During auth initialization, do NOT clear the token.
+            // The initial /users/me call can race with Supabase token
+            // exchange, producing a transient 401 that resolves itself.
+            if (_authInitializing) {
+                console.warn('api: Ignoring 401 during auth initialization (token kept).');
+                return Promise.reject(error);
             }
+
+            // Clear the token — the ProtectedRoute / AuthContext will
+            // handle the redirect to /login naturally. We do NOT do a
+            // hard window.location redirect here because that causes
+            // race conditions with multiple concurrent 401 responses.
+            localStorage.removeItem('token');
         }
 
         return Promise.reject(error);

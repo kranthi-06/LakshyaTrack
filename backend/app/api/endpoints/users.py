@@ -1,11 +1,23 @@
-from typing import Any, List
+from typing import Any, List, Optional, Dict
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
 from app.api import deps
 
 router = APIRouter()
+
+
+# ── Schema for profile update request ────────────────────────
+class ProfileUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    bio: Optional[str] = None
+    links: Optional[Dict[str, Any]] = None
+    skills: Optional[List[str]] = None
+    profile_photo_url: Optional[str] = None
+
 
 @router.post("/", response_model=schemas.user.User)
 def create_user(
@@ -25,6 +37,7 @@ def create_user(
     user = crud.crud_user.create_user(db, user_in=user_in)
     return user
 
+
 @router.get("/me", response_model=schemas.user.User)
 def read_user_me(
     current_user: models.user.User = Depends(deps.get_current_active_user),
@@ -32,4 +45,38 @@ def read_user_me(
     """
     Get current user.
     """
+    return current_user
+
+
+@router.put("/me/profile", response_model=schemas.user.User)
+def update_my_profile(
+    *,
+    db: Session = Depends(deps.get_db),
+    current_user: models.user.User = Depends(deps.get_current_active_user),
+    profile_in: ProfileUpdateRequest,
+) -> Any:
+    """
+    Update the current user's profile (name, phone, bio, links, skills, photo).
+    Creates the profile row if it doesn't exist yet.
+    """
+    profile = current_user.profile
+
+    # Create profile if it doesn't exist
+    if not profile:
+        profile = models.user.Profile(id=current_user.id)
+        db.add(profile)
+        db.flush()
+        # Re-fetch so the relationship is populated
+        db.refresh(current_user)
+        profile = current_user.profile
+
+    # Patch only fields that were explicitly sent
+    update_data = profile_in.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(profile, field, value)
+
+    db.add(profile)
+    db.commit()
+    db.refresh(current_user)
+
     return current_user

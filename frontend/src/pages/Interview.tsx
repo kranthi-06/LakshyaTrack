@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,8 @@ import {
     Mic2, MessageSquare, Monitor, BarChart3, Users, Send, StopCircle,
     CheckCircle2, Target, Zap, ArrowRight, BrainCircuit, Award,
     Loader2, Sparkles, Shield, FileText, Code2, UserCircle2, Play,
-    ChevronRight, Lock, Unlock, Trophy, Star, Heart, Lightbulb, Terminal
+    ChevronRight, Lock, Unlock, Trophy, Star, Heart, Lightbulb, Terminal,
+    Volume2, VolumeX, Pause, RotateCcw, Gauge
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PremiumBackground } from '../components/PremiumBackground';
@@ -71,9 +72,75 @@ export default function Interview() {
     const [projects, setProjects] = useState<string[]>([]);
     // Speech recognition
     const recognitionRef = useRef<any>(null);
+    // Voice reading state (Web Speech API - speechSynthesis)
+    const [voiceMuted, setVoiceMuted] = useState(false);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
+    const [speechSpeed, setSpeechSpeed] = useState<number>(1);
+    const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+    const lastSpokenQuestion = useRef<string>('');
 
     const currentStage = STAGES[currentStageIdx];
     const completedStages = Object.keys(stageEvals);
+
+    // ── Voice reading helpers ─────────────────────────────────────
+    const speakText = useCallback((text: string) => {
+        if (!speechSupported || !text) return;
+        speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = speechSpeed;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        utterance.lang = 'en-US';
+        utterance.onstart = () => { setIsSpeaking(true); setIsPaused(false); };
+        utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); };
+        utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); };
+        speechSynthesis.speak(utterance);
+    }, [speechSpeed, speechSupported]);
+
+    const pauseSpeech = useCallback(() => {
+        if (speechSupported && speechSynthesis.speaking) {
+            speechSynthesis.pause();
+            setIsPaused(true);
+        }
+    }, [speechSupported]);
+
+    const resumeSpeech = useCallback(() => {
+        if (speechSupported && speechSynthesis.paused) {
+            speechSynthesis.resume();
+            setIsPaused(false);
+        }
+    }, [speechSupported]);
+
+    const stopSpeech = useCallback(() => {
+        if (speechSupported) {
+            speechSynthesis.cancel();
+            setIsSpeaking(false);
+            setIsPaused(false);
+        }
+    }, [speechSupported]);
+
+    // Auto-speak when a new question appears (and not muted)
+    useEffect(() => {
+        if (
+            currentQuestion &&
+            !isLoading &&
+            !voiceMuted &&
+            speechSupported &&
+            currentQuestion !== lastSpokenQuestion.current &&
+            (step === 'screening' || step === 'technical' || step === 'hr')
+        ) {
+            lastSpokenQuestion.current = currentQuestion;
+            // Small delay to let the UI animate in first
+            const timer = setTimeout(() => speakText(currentQuestion), 400);
+            return () => clearTimeout(timer);
+        }
+    }, [currentQuestion, isLoading, voiceMuted, speechSupported, step, speakText]);
+
+    // Cancel speech when leaving interview or restarting
+    useEffect(() => {
+        return () => { if (speechSupported) speechSynthesis.cancel(); };
+    }, [speechSupported]);
 
     // Load resume data on mount
     useEffect(() => {
@@ -307,6 +374,7 @@ export default function Interview() {
     };
 
     const restartInterview = () => {
+        stopSpeech();
         setStep('landing');
         setSessionId('');
         setCurrentStageIdx(0);
@@ -470,6 +538,97 @@ export default function Interview() {
                                                         <span className="text-[#5c52d2] font-black not-italic block mb-3 uppercase text-xs tracking-[0.2em]">Interviewer:</span>
                                                         "{currentQuestion}"
                                                     </p>
+
+                                                    {/* ── Voice Controls ── */}
+                                                    {speechSupported && (
+                                                        <div className="mt-5 flex items-center gap-2 flex-wrap">
+                                                            {/* Speak / Replay */}
+                                                            <button
+                                                                onClick={() => speakText(currentQuestion)}
+                                                                title="Speak Question"
+                                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-[#5c52d2]/10 text-[#5c52d2] hover:bg-[#5c52d2]/20 transition-all"
+                                                            >
+                                                                <Volume2 className="w-3.5 h-3.5" />
+                                                                {isSpeaking ? 'Replay' : 'Speak'}
+                                                            </button>
+
+                                                            {/* Pause */}
+                                                            {isSpeaking && !isPaused && (
+                                                                <button
+                                                                    onClick={pauseSpeech}
+                                                                    title="Pause"
+                                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-amber-50 text-amber-600 hover:bg-amber-100 transition-all"
+                                                                >
+                                                                    <Pause className="w-3.5 h-3.5" />
+                                                                    Pause
+                                                                </button>
+                                                            )}
+
+                                                            {/* Resume */}
+                                                            {isPaused && (
+                                                                <button
+                                                                    onClick={resumeSpeech}
+                                                                    title="Resume"
+                                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all"
+                                                                >
+                                                                    <Play className="w-3.5 h-3.5" />
+                                                                    Resume
+                                                                </button>
+                                                            )}
+
+                                                            {/* Repeat */}
+                                                            <button
+                                                                onClick={() => speakText(currentQuestion)}
+                                                                title="Repeat Question"
+                                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all"
+                                                            >
+                                                                <RotateCcw className="w-3.5 h-3.5" />
+                                                                Repeat
+                                                            </button>
+
+                                                            {/* Divider */}
+                                                            <div className="w-px h-5 bg-slate-200 mx-1" />
+
+                                                            {/* Speed Control */}
+                                                            <div className="flex items-center gap-1">
+                                                                <Gauge className="w-3.5 h-3.5 text-slate-400" />
+                                                                {[
+                                                                    { label: '0.8×', value: 0.8 },
+                                                                    { label: '1×', value: 1 },
+                                                                    { label: '1.2×', value: 1.2 },
+                                                                ].map(s => (
+                                                                    <button
+                                                                        key={s.value}
+                                                                        onClick={() => setSpeechSpeed(s.value)}
+                                                                        className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
+                                                                            speechSpeed === s.value
+                                                                                ? 'bg-[#5c52d2] text-white shadow-sm'
+                                                                                : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                                                                        }`}
+                                                                    >
+                                                                        {s.label}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+
+                                                            {/* Divider */}
+                                                            <div className="w-px h-5 bg-slate-200 mx-1" />
+
+                                                            {/* Mute toggle */}
+                                                            <button
+                                                                onClick={() => { setVoiceMuted(m => !m); if (!voiceMuted) stopSpeech(); }}
+                                                                title={voiceMuted ? 'Unmute Auto-Read' : 'Mute Auto-Read'}
+                                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all ${
+                                                                    voiceMuted
+                                                                        ? 'bg-rose-50 text-rose-500 hover:bg-rose-100'
+                                                                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                                }`}
+                                                            >
+                                                                {voiceMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                                                                {voiceMuted ? 'Muted' : 'Auto'}
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="flex-1" />

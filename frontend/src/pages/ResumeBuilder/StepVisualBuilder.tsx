@@ -1,9 +1,10 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Palette, Download, FileText, FileType2, Eye, Sparkles,
     CheckCircle2, Loader2, Wand2, PanelRightOpen, PanelRightClose,
-    ChevronDown, ChevronRight, Search, Filter, GripVertical, Save
+    ChevronDown, ChevronRight, Search, Filter, GripVertical, Save,
+    Maximize2, X, AlertTriangle, FileStack
 } from 'lucide-react';
 import { SectionCard } from './components';
 import {
@@ -88,6 +89,9 @@ function MiniThumb({ base, color }: { base: BaseTemplate; color: string }) {
     );
 }
 
+/* A4 page height in pixels at 96dpi (794px width) */
+const A4_PAGE_HEIGHT = 1122;
+
 export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
     const [selectedId, setSelectedId] = useState('ats-modern');
     const [customColor, setCustomColor] = useState<string | null>(null);
@@ -100,6 +104,8 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
     const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set(TEMPLATE_CATEGORIES));
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [showFullPreview, setShowFullPreview] = useState(false);
+    const [pageCount, setPageCount] = useState(1);
     const previewRef = useRef<HTMLDivElement>(null);
 
     const selected = useMemo(() => TEMPLATE_CATALOG.find(t => t.template_id === selectedId) || TEMPLATE_CATALOG[0], [selectedId]);
@@ -117,6 +123,48 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
             t.layout_type.includes(q)
         );
     }, [searchQuery]);
+
+    // ── PAGE COUNT: measure resume height and compute pages ───────
+    const measurePages = useCallback(() => {
+        if (previewRef.current) {
+            const h = previewRef.current.scrollHeight;
+            setPageCount(Math.max(1, Math.ceil(h / A4_PAGE_HEIGHT)));
+        }
+    }, []);
+
+    // Re-measure whenever data, template, or color changes
+    useEffect(() => {
+        // Small delay to allow React to render the updated template
+        const timer = setTimeout(measurePages, 200);
+        return () => clearTimeout(timer);
+    }, [data, selectedId, customColor, measurePages]);
+
+    // Also observe resize changes in the preview container
+    useEffect(() => {
+        const el = previewRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(() => measurePages());
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [measurePages]);
+
+    // Lock body scroll when fullscreen preview is open + ESC key handler
+    useEffect(() => {
+        if (showFullPreview) {
+            document.body.style.overflow = 'hidden';
+            const handleKey = (e: KeyboardEvent) => {
+                if (e.key === 'Escape') setShowFullPreview(false);
+            };
+            window.addEventListener('keydown', handleKey);
+            return () => {
+                document.body.style.overflow = '';
+                window.removeEventListener('keydown', handleKey);
+            };
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => { document.body.style.overflow = ''; };
+    }, [showFullPreview]);
 
     const toggleCategory = (cat: string) => {
         setExpandedCats(prev => {
@@ -163,7 +211,7 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
         setExporting('docx');
         try {
             const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
-            await exportToDOCX(data, `${name}_Resume.docx`);
+            await exportToDOCX('resume-preview-container', `${name}_Resume.doc`);
         } catch (e) { console.error('DOCX export error:', e); }
         setExporting(null);
     };
@@ -359,17 +407,63 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                     )}
                 </div>
 
+                {/* ── PAGE OVERFLOW WARNING ── */}
+                {pageCount > 1 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200"
+                    >
+                        <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-amber-800">Your resume exceeds one page</p>
+                            <p className="text-[10px] text-amber-600 mt-0.5">Recruiters usually prefer one-page resumes. Consider trimming content or using a more compact template.</p>
+                        </div>
+                        <span className="text-[10px] font-black text-amber-500 bg-amber-100 px-2.5 py-1 rounded-lg whitespace-nowrap">
+                            {pageCount} pages
+                        </span>
+                    </motion.div>
+                )}
+
                 {/* ── LIVE PREVIEW HEADER ── */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                         <Eye className="w-4 h-4 text-[#5c52d2]" />
                         <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Live Preview & Editor</h3>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        {/* Preview Button */}
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => setShowFullPreview(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white rounded-lg text-[10px] font-bold shadow-md shadow-purple-200 hover:shadow-lg transition-all"
+                        >
+                            <Maximize2 className="w-3 h-3" />
+                            Preview
+                        </motion.button>
+
+                        {/* Zoom Control */}
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] text-gray-400 font-bold">Zoom:</span>
                             <input type="range" min="0.3" max="1" step="0.05" value={previewScale} onChange={e => setPreviewScale(parseFloat(e.target.value))} className="w-20 h-1 accent-[#5c52d2]" />
                             <span className="text-[10px] font-bold text-gray-500 w-8">{Math.round(previewScale * 100)}%</span>
+                        </div>
+
+                        {/* Divider */}
+                        <div className="w-px h-4 bg-gray-200" />
+
+                        {/* Page Indicator */}
+                        <div className="flex items-center gap-1.5">
+                            <FileStack className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-[10px] font-bold text-gray-400">Pages:</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                pageCount > 1
+                                    ? 'bg-amber-100 text-amber-600'
+                                    : 'bg-emerald-50 text-emerald-600'
+                            }`}>
+                                {pageCount}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -377,7 +471,7 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                 {/* ── LIVE PREVIEW AREA ── */}
                 <div className={`bg-gray-100 rounded-2xl p-4 overflow-auto border border-gray-200 shadow-inner transition-all duration-300 ${showPanel ? 'max-h-[750px]' : 'max-h-[700px]'}`}>
                     <div
-                        className="mx-auto shadow-2xl border border-gray-200 rounded-lg overflow-hidden"
+                        className="mx-auto shadow-2xl border border-gray-200 rounded-lg overflow-hidden relative"
                         style={{ width: `${794 * previewScale}px`, transformOrigin: 'top center' }}
                     >
                         <div
@@ -387,6 +481,22 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                         >
                             <RenderTemplate base={selected.base} data={data} color={accentColor} />
                         </div>
+
+                        {/* ── PAGE BREAK INDICATORS ── */}
+                        {pageCount > 1 && Array.from({ length: pageCount - 1 }, (_, i) => (
+                            <div
+                                key={`page-break-${i}`}
+                                className="absolute left-0 right-0 pointer-events-none z-10"
+                                style={{ top: `${(i + 1) * A4_PAGE_HEIGHT * previewScale}px` }}
+                            >
+                                <div className="relative">
+                                    <div className="w-full border-t-2 border-dashed border-red-300" />
+                                    <span className="absolute right-2 -top-3 bg-red-100 text-red-500 text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                                        Page {i + 2} starts here
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
@@ -485,6 +595,160 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                     </motion.button>
                 )}
             </AnimatePresence>
+
+            {/* ═══════════════════════════════════════════════════ */}
+            {/* FULLSCREEN PREVIEW MODAL                            */}
+            {/* ═══════════════════════════════════════════════════ */}
+            <AnimatePresence>
+                {showFullPreview && (
+                    <motion.div
+                        key="fullscreen-preview"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="fixed inset-0 z-[100] flex flex-col"
+                        style={{ backgroundColor: 'rgba(15, 15, 25, 0.92)', backdropFilter: 'blur(8px)' }}
+                    >
+                        {/* ── Modal Header ── */}
+                        <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-white/5 border-b border-white/10 flex-shrink-0">
+                            <div className="flex items-center gap-3">
+                                <Eye className="w-5 h-5 text-[#5c52d2]" />
+                                <span className="text-white text-sm font-black">Resume Preview</span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                    pageCount > 1
+                                        ? 'bg-amber-500/20 text-amber-400'
+                                        : 'bg-emerald-500/20 text-emerald-400'
+                                }`}>
+                                    {pageCount} {pageCount === 1 ? 'page' : 'pages'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {/* Export shortcuts */}
+                                <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={handleExportPDF}
+                                    disabled={!!exporting}
+                                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                >
+                                    <FileText className="w-3 h-3" /> PDF
+                                </motion.button>
+                                <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={handleExportDOCX}
+                                    disabled={!!exporting}
+                                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                >
+                                    <FileType2 className="w-3 h-3" /> Word
+                                </motion.button>
+                                {/* Close button */}
+                                <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={() => setShowFullPreview(false)}
+                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                                >
+                                    <X className="w-4 h-4" />
+                                </motion.button>
+                            </div>
+                        </div>
+
+                        {/* ── Overflow warning inside modal ── */}
+                        {pageCount > 1 && (
+                            <div className="mx-auto mt-3 flex items-center gap-2 px-4 py-2 bg-amber-500/15 border border-amber-500/30 rounded-xl max-w-lg">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                                <p className="text-[10px] text-amber-300 font-medium">
+                                    Your resume exceeds one page. Recruiters usually prefer one-page resumes.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* ── Preview Body — device-adaptive ── */}
+                        <div className="flex-1 overflow-auto flex items-start justify-center py-6 px-4">
+                            {/* Desktop: A4 centered at full size */}
+                            {/* Tablet: A4 scaled down to fit */}
+                            {/* Mobile: full-width responsive layout */}
+                            <div
+                                className="fullscreen-resume-wrapper relative"
+                                style={{ maxWidth: '100%' }}
+                            >
+                                <div
+                                    className="bg-white shadow-2xl mx-auto"
+                                    style={{
+                                        width: '794px',
+                                        minHeight: `${A4_PAGE_HEIGHT}px`,
+                                        transformOrigin: 'top center',
+                                    }}
+                                >
+                                    <RenderTemplate base={selected.base} data={data} color={accentColor} />
+                                </div>
+
+                                {/* Page break lines in fullscreen */}
+                                {pageCount > 1 && Array.from({ length: pageCount - 1 }, (_, i) => (
+                                    <div
+                                        key={`fs-page-break-${i}`}
+                                        className="absolute left-0 right-0 pointer-events-none z-10"
+                                        style={{ top: `${(i + 1) * A4_PAGE_HEIGHT}px` }}
+                                    >
+                                        <div className="relative">
+                                            <div className="w-full border-t-2 border-dashed border-red-400/60" />
+                                            <span className="absolute right-3 -top-3 bg-red-500/80 text-white text-[9px] font-black px-2.5 py-0.5 rounded-full shadow">
+                                                Page {i + 2}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* ── Keyboard hint ── */}
+                        <div className="text-center pb-3 flex-shrink-0">
+                            <span className="text-[10px] text-white/30 font-medium">Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50 text-[9px] font-bold">ESC</kbd> to close</span>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Responsive CSS for fullscreen preview ── */}
+            <style>{`
+                .fullscreen-resume-wrapper {
+                    transform-origin: top center;
+                }
+
+                /* Desktop (>1024px): show A4 at full size, centered */
+                @media (min-width: 1025px) {
+                    .fullscreen-resume-wrapper {
+                        transform: scale(1);
+                    }
+                }
+
+                /* Tablet (768px–1024px): scale A4 down to fit */
+                @media (min-width: 768px) and (max-width: 1024px) {
+                    .fullscreen-resume-wrapper {
+                        transform: scale(0.75);
+                        margin-bottom: -25%;
+                    }
+                }
+
+                /* Mobile (<768px): scale to fit screen width */
+                @media (max-width: 767px) {
+                    .fullscreen-resume-wrapper {
+                        transform: scale(0.48);
+                        transform-origin: top center;
+                        margin-bottom: -52%;
+                    }
+                }
+
+                /* Very small mobile (<420px) */
+                @media (max-width: 420px) {
+                    .fullscreen-resume-wrapper {
+                        transform: scale(0.38);
+                        margin-bottom: -62%;
+                    }
+                }
+            `}</style>
         </SectionCard>
     );
 }

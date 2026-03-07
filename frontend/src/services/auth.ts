@@ -33,3 +33,15 @@ export const googleLogin = async (idToken: string): Promise<any> => {
     const response = await api.post('/google-login', { token: idToken });
     return response.data;
 };
+
+export const updateProfile = async (profileData: {
+    full_name?: string;
+    phone_number?: string;
+    bio?: string;
+    links?: Record<string, any>;
+    skills?: string[];
+    profile_photo_url?: string;
+}): Promise<any> => {
+    const response = await api.put('/users/me/profile', profileData);
+    return response.data;
+};

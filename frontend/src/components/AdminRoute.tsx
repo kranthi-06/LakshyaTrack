@@ -3,7 +3,12 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthLoadingScreen from './AuthLoadingScreen';
 
-const MAX_LOADING_MS = 10000;
+const MAX_LOADING_MS = 15000;
+
+function hasValidToken(): boolean {
+    const token = localStorage.getItem('token');
+    return !!token && token !== 'undefined' && token !== 'null';
+}
 
 interface AdminRouteProps {
     children: React.ReactElement;
@@ -11,7 +16,7 @@ interface AdminRouteProps {
 }
 
 export const AdminRoute = ({ children, requireBlackAdmin = false }: AdminRouteProps) => {
-    const { user, loading } = useAuth();
+    const { user, loading, authReady } = useAuth();
     const [timedOut, setTimedOut] = useState(false);
 
     useEffect(() => {
@@ -20,23 +25,38 @@ export const AdminRoute = ({ children, requireBlackAdmin = false }: AdminRoutePr
         return () => clearTimeout(timer);
     }, [loading]);
 
+    // ── AUTH LOADING GUARD ──────────────────────────────────────
     if (loading && !timedOut) {
         return <AuthLoadingScreen />;
     }
 
-    if (!user) {
-        return <Navigate to="/login" replace />;
+    // Wait for full auth pipeline before redirecting
+    if (!authReady && !timedOut && hasValidToken()) {
+        return <AuthLoadingScreen />;
     }
 
-    const role = user.role || 'user';
+    // ── REDIRECT DECISIONS (only after auth loading is complete) ──
 
-    if (requireBlackAdmin && role !== 'black_admin') {
-        return <Navigate to="/dashboard" replace />;
+    // If user object is available, do normal role checks
+    if (user) {
+        const role = user.role || 'user';
+
+        if (requireBlackAdmin && role !== 'black_admin') {
+            return <Navigate to="/dashboard" replace />;
+        }
+
+        if (!requireBlackAdmin && role !== 'admin' && role !== 'black_admin') {
+            return <Navigate to="/dashboard" replace />;
+        }
+
+        return children;
     }
 
-    if (!requireBlackAdmin && role !== 'admin' && role !== 'black_admin') {
-        return <Navigate to="/dashboard" replace />;
+    // No user but token exists → network issue, render children to avoid logout
+    if (hasValidToken()) {
+        return children;
     }
 
-    return children;
+    // Genuinely not authenticated
+    return <Navigate to="/login" replace />;
 };

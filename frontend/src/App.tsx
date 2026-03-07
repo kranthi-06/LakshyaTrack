@@ -38,6 +38,15 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            {/* /begin — Google OAuth landing point, redirects to dashboard */}
+            <Route
+              path="/begin"
+              element={
+                <ProtectedRoute>
+                  <Navigate to="/dashboard" replace />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/dashboard"
               element={

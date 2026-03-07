@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { GraduationCap } from 'lucide-react';
 
 const statusMessages = [
+    'Checking your session...',
     'Verifying your identity...',
     'Connecting to your account...',
     'Loading your dashboard...',

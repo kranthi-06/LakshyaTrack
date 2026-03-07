@@ -4,10 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '../context/AuthContext';
+import { updateProfile as updateProfileApi } from '../services/auth';
 import {
     User, Mail, Phone, MapPin, Briefcase, Calendar,
     Linkedin, Github, Globe, FileText, Award, Star,
-    Edit2, Camera, Save, X, Plus, Trash2, Eye, Download
+    Edit2, Camera, Save, X, Plus, Trash2, Eye, Download, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSavedResumes, deleteSavedResume } from '../services/resumeStorage';
@@ -163,7 +164,11 @@ function formatJoinDate(dateStr?: string | null): string {
 export default function Profile() {
     const { user, refreshUser } = useAuth();
     const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Editable name — initialised from backend and updated locally
+    const [editName, setEditName] = useState('');
 
     // Profile state — populated from backend user data
     const [profile, setProfile] = useState({
@@ -205,6 +210,9 @@ export default function Profile() {
         } catch {
             // ignore parse errors
         }
+
+        // Initialise the editable name
+        setEditName(backendProfile?.full_name || user?.full_name || '');
 
         setProfile({
             role: localProfile?.role || "",
@@ -252,15 +260,35 @@ export default function Profile() {
         await exportToPDF(`resume-preview-${resume.id}`, `${name}.pdf`);
     };
 
-    const handleSave = () => {
-        if (user?.email) {
-            try {
-                localStorage.setItem(`user_profile_${user.email}`, JSON.stringify(profile));
-                setIsEditing(false);
-            } catch (error) {
-                console.error("Failed to save profile:", error);
-                alert("Failed to save changes. Your profile image might be too large for local storage.");
-            }
+    const handleSave = async () => {
+        if (!user?.email) return;
+        setIsSaving(true);
+        try {
+            // 1. Save to backend (name, phone, bio, skills, links)
+            await updateProfileApi({
+                full_name: editName.trim() || undefined,
+                phone_number: profile.phone || undefined,
+                bio: profile.bio || undefined,
+                skills: profile.skills.length > 0 ? profile.skills : undefined,
+                links: {
+                    linkedin: profile.socials.linkedin,
+                    github: profile.socials.github,
+                    portfolio: profile.socials.portfolio,
+                },
+            });
+
+            // 2. Save local-only fields (role, location, image) to localStorage
+            localStorage.setItem(`user_profile_${user.email}`, JSON.stringify(profile));
+
+            // 3. Refresh user from backend so every component sees the new name
+            await refreshUser();
+
+            setIsEditing(false);
+        } catch (error) {
+            console.error("Failed to save profile:", error);
+            alert("Failed to save changes. Please try again.");
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -295,9 +323,9 @@ export default function Profile() {
     };
 
     // Derived display values
-    const displayName = user?.profile?.full_name || user?.full_name || 'Your Profile';
+    const displayName = isEditing ? editName : (user?.profile?.full_name || user?.full_name || 'Your Profile');
     const displayEmail = user?.email || '';
-    const displayInitial = (displayName !== 'Your Profile' ? displayName[0] : displayEmail[0] || 'U').toUpperCase();
+    const displayInitial = (displayName && displayName !== 'Your Profile' ? displayName[0] : displayEmail[0] || 'U').toUpperCase();
 
     return (
         <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
@@ -325,8 +353,13 @@ export default function Profile() {
                                         onClick={handleSave}
                                         className="bg-white text-[#5c52d2] hover:bg-gray-100 border-none shadow-lg"
                                         size="sm"
+                                        disabled={isSaving}
                                     >
-                                        <Save className="w-4 h-4 mr-2" /> Save Changes
+                                        {isSaving ? (
+                                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+                                        ) : (
+                                            <><Save className="w-4 h-4 mr-2" /> Save Changes</>
+                                        )}
                                     </Button>
                                 </div>
                             ) : (
@@ -376,9 +409,18 @@ export default function Profile() {
                             </div>
 
                             <div className="flex-1 pb-2 space-y-2 w-full md:w-auto">
-                                <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-                                    {displayName}
-                                </h1>
+                                {isEditing ? (
+                                    <Input
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        className="max-w-sm mx-auto md:mx-0 font-black text-3xl md:text-4xl h-14 border-slate-200 tracking-tight"
+                                        placeholder="Your Name"
+                                    />
+                                ) : (
+                                    <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+                                        {displayName}
+                                    </h1>
+                                )}
 
                                 {isEditing ? (
                                     <Input

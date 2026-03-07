@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { login as loginApi, register as registerApi, getMe, verifyOtp as verifyOtpApi, sendOtp as sendOtpApi } from '../services/auth';
+import { setAuthInitialized } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
@@ -26,6 +27,7 @@ interface User {
 interface AuthContextType {
     user: User | null;
     loading: boolean;
+    authReady: boolean;  // true once the full init pipeline has completed
     login: (data: any) => Promise<void>;
     register: (data: any) => Promise<any>;
     verifyOtp: (email: string, otp: string) => Promise<void>;
@@ -38,50 +40,120 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // ── Constants ────────────────────────────────────────────────
-const PUBLIC_PATHS = ['/', '/login', '/register', '/verify-email', '/auth/callback'];
+const PUBLIC_PATHS = ['/', '/login', '/register', '/verify-email', '/auth/callback', '/begin'];
 const SUPABASE_TIMEOUT_MS = 4000;
 const AUTH_CALLBACK_SAFETY_TIMEOUT_MS = 8000;
+const BACKEND_FETCH_TIMEOUT_MS = 10000; // Max wait for /users/me during init
 const TOKEN_KEY = 'token';
+const RETRY_INTERVAL_MS = 15000; // Retry fetching user every 15s when offline
+
+/** Check whether a non-empty auth token lives in localStorage */
+function hasValidToken(): boolean {
+    const token = localStorage.getItem(TOKEN_KEY);
+    return !!token && token !== 'undefined' && token !== 'null';
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [authReady, setAuthReady] = useState(false); // Only true after full init
     const navigate = useNavigate();
 
     // Track state inside closures to avoid stale reads
     const userRef = useRef<User | null>(null);
     const mountedRef = useRef(true);
     const authInProgressRef = useRef(false); // Prevents duplicate auth flows
+    const explicitLogoutRef = useRef(false); // Tracks if user explicitly clicked logout
+    const initCompleteRef = useRef(false); // Has the init pipeline finished?
 
     const updateUser = useCallback((u: User | null) => {
         userRef.current = u;
         setUser(u);
     }, []);
 
-    /** Safely attempt to fetch the current user from backend */
-    const fetchCurrentUser = useCallback(async (): Promise<User | null> => {
+    /**
+     * Safely attempt to fetch the current user from backend.
+     * On network / timeout errors, returns the EXISTING user (if any)
+     * so we never accidentally wipe a valid session due to a connectivity blip.
+     * During initial load, enforces a timeout so the app doesn't hang forever.
+     */
+    const fetchCurrentUser = useCallback(async (withTimeout = false): Promise<User | null> => {
         const token = localStorage.getItem(TOKEN_KEY);
         if (!token || token === 'undefined' || token === 'null') {
             return null;
         }
         try {
-            const userData = await getMe();
+            let userData: any;
+            if (withTimeout) {
+                // During init: race against a timeout so a hung backend doesn't
+                // leave the user stuck on the loading screen forever.
+                userData = await Promise.race([
+                    getMe(),
+                    new Promise<null>((_, reject) =>
+                        setTimeout(() => reject(new Error('backend_timeout')), BACKEND_FETCH_TIMEOUT_MS)
+                    ),
+                ]);
+            } else {
+                userData = await getMe();
+            }
             return userData;
         } catch (err: any) {
             // Only clear token on GENUINE 401 (token is truly invalid/expired).
             // Network errors, timeouts, 500s etc. should NOT log the user out.
             const status = err?.response?.status;
             if (status === 401) {
-                console.warn('AuthContext: Token invalid (401) — clearing.');
-                localStorage.removeItem(TOKEN_KEY);
+                // Don't clear token during initial load — could be a race condition
+                if (initCompleteRef.current) {
+                    console.warn('AuthContext: Token invalid (401) — clearing.');
+                    localStorage.removeItem(TOKEN_KEY);
+                }
                 return null;
             }
             // For any other error (network, timeout, 500), keep the token
-            // and return null without destroying the session.
-            console.warn('AuthContext: Failed to fetch user (non-auth error, keeping token)', err?.message || err);
-            return null;
+            // AND preserve the existing user so we don't trigger a redirect.
+            console.warn('AuthContext: Failed to fetch user (non-auth error, keeping token & user)', err?.message || err);
+            return userRef.current; // ← KEY FIX: return existing user, not null
         }
     }, []);
+
+    // ── Background retry: re-fetch user when token exists but user is null ──
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            // Only retry if we have a token but no user (network temporarily failed)
+            if (!hasValidToken() || userRef.current) return;
+            console.log('AuthContext: Background retry — attempting to fetch user...');
+            try {
+                const userData = await getMe();
+                if (userData && mountedRef.current) {
+                    updateUser(userData);
+                    console.log('AuthContext: Background retry succeeded, user restored.');
+                }
+            } catch {
+                // Silently ignore — will retry next interval
+            }
+        }, RETRY_INTERVAL_MS);
+
+        return () => clearInterval(interval);
+    }, [updateUser]);
+
+    // ── Re-fetch user when the browser comes back online ──────
+    useEffect(() => {
+        const handleOnline = async () => {
+            if (!hasValidToken() || userRef.current) return;
+            console.log('AuthContext: Browser came online — re-fetching user...');
+            try {
+                const userData = await getMe();
+                if (userData && mountedRef.current) {
+                    updateUser(userData);
+                }
+            } catch {
+                // Will be retried by background interval
+            }
+        };
+
+        window.addEventListener('online', handleOnline);
+        return () => window.removeEventListener('online', handleOnline);
+    }, [updateUser]);
 
     // ── Initialise auth state on mount ──────────────────────────
     useEffect(() => {
@@ -90,6 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const initSession = async () => {
             if (authInProgressRef.current) return;
             authInProgressRef.current = true;
+            initCompleteRef.current = false;
 
             try {
                 // 1. Try Supabase session (with timeout so we don't hang on paused projects)
@@ -108,20 +181,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 if (!mountedRef.current) return;
 
+                // 2. Fetch user from backend (with timeout during init)
                 if (supabaseSession) {
                     // Supabase has a valid session — store the token and fetch user
                     localStorage.setItem(TOKEN_KEY, supabaseSession.access_token);
-                    const userData = await fetchCurrentUser();
+                    const userData = await fetchCurrentUser(true);
                     if (mountedRef.current) updateUser(userData);
                 } else {
                     // No Supabase session — try local token (custom email/password login)
-                    const userData = await fetchCurrentUser();
+                    const userData = await fetchCurrentUser(true);
                     if (mountedRef.current) updateUser(userData);
                 }
             } catch (err) {
                 console.error('AuthContext: Session init error', err);
             } finally {
                 authInProgressRef.current = false;
+                initCompleteRef.current = true;
+                setAuthInitialized(); // Tell api.ts interceptor that init is done
 
                 if (!mountedRef.current) return;
 
@@ -136,10 +212,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (isOAuthCallback) {
                     // Safety net: clear loading after a generous timeout
                     setTimeout(() => {
-                        if (mountedRef.current) setLoading(false);
+                        if (mountedRef.current) {
+                            setLoading(false);
+                            setAuthReady(true);
+                        }
                     }, AUTH_CALLBACK_SAFETY_TIMEOUT_MS);
                 } else {
                     setLoading(false);
+                    setAuthReady(true);
                 }
             }
         };
@@ -161,25 +241,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Navigate only when the user is on a public / callback page
                     const currentPath = window.location.pathname;
                     if (PUBLIC_PATHS.includes(currentPath)) {
-                        navigate('/dashboard', { replace: true });
+                        navigate('/begin', { replace: true });
                     }
                 } catch (err: any) {
+                    // ── STRICT OAUTH FIX ──────────────────────────────────
+                    // Do NOT redirect to /login during SIGNED_IN. The backend
+                    // may be slow or temporarily down. Keep the token and let
+                    // the AuthCallback / route guards handle the UX gracefully.
                     console.error('AuthContext: Backend sync failed on SIGNED_IN', err);
-                    localStorage.removeItem(TOKEN_KEY);
-                    await supabase.auth.signOut().catch(() => { });
-                    if (mountedRef.current) {
-                        updateUser(null);
-                        navigate('/login', { replace: true });
+
+                    // Only clear token on genuine 401 (token truly invalid)
+                    const status = err?.response?.status;
+                    if (status === 401) {
+                        localStorage.removeItem(TOKEN_KEY);
+                        await supabase.auth.signOut().catch(() => { });
+                        if (mountedRef.current) updateUser(null);
                     }
+                    // For network / timeout / 500 errors, keep the token —
+                    // the user has a valid Google session even if our backend
+                    // is temporarily unreachable.
                 }
             } else if (event === 'TOKEN_REFRESHED' && session) {
                 // Silent refresh — just update the token, don't navigate anywhere
                 localStorage.setItem(TOKEN_KEY, session.access_token);
             } else if (event === 'SIGNED_OUT') {
-                localStorage.removeItem(TOKEN_KEY);
-                if (mountedRef.current) {
-                    updateUser(null);
-                    navigate('/login', { replace: true });
+                // ── CRITICAL FIX ──────────────────────────────────────────
+                // Supabase can fire spurious SIGNED_OUT events during network
+                // issues or SDK reconnection. Only honour this event if:
+                //   a) The user explicitly clicked logout, OR
+                //   b) The token has already been removed (genuine sign-out)
+                if (explicitLogoutRef.current || !hasValidToken()) {
+                    explicitLogoutRef.current = false;
+                    localStorage.removeItem(TOKEN_KEY);
+                    if (mountedRef.current) {
+                        updateUser(null);
+                        navigate('/login', { replace: true });
+                    }
+                } else {
+                    console.warn('AuthContext: Ignoring spurious SIGNED_OUT event (token still exists). Likely a network issue.');
                 }
             }
 
@@ -245,6 +344,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ── Logout ──────────────────────────────────────────────────
     const logout = useCallback(async () => {
+        explicitLogoutRef.current = true; // Mark this as an explicit user action
         localStorage.removeItem(TOKEN_KEY);
         // Sign out from Supabase too (if applicable)
         await supabase.auth.signOut().catch(() => { });
@@ -255,6 +355,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const contextValue = useMemo(() => ({
         user,
         loading,
+        authReady,
         login,
         register,
         verifyOtp,
@@ -262,7 +363,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithGoogle,
         logout,
         refreshUser,
-    }), [user, loading, login, register, verifyOtp, resendOtp, signInWithGoogle, logout, refreshUser]);
+    }), [user, loading, authReady, login, register, verifyOtp, resendOtp, signInWithGoogle, logout, refreshUser]);
 
     return (
         <AuthContext.Provider value={contextValue}>
