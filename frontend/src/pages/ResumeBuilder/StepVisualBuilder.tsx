@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Palette, Download, FileText, FileType2, Eye, Sparkles,
@@ -621,134 +622,131 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
             </AnimatePresence>
 
             {/* ═══════════════════════════════════════════════════ */}
-            {/* FULLSCREEN PREVIEW MODAL                            */}
+            {/* FULLSCREEN PREVIEW MODAL — Portal to body so it    */}
+            {/* escapes SectionCard's overflow/transform context    */}
             {/* ═══════════════════════════════════════════════════ */}
-            <AnimatePresence>
-                {showFullPreview && (
-                    <motion.div
-                        key="fullscreen-preview"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.25 }}
-                        className="fixed inset-0 z-[100] flex flex-col"
-                        style={{ backgroundColor: 'rgba(15, 15, 25, 0.95)', backdropFilter: 'blur(12px)' }}
-                    >
-                        {/* ── Close Button — absolute top-right ── */}
-                        <motion.button
-                            whileHover={{ scale: 1.15, rotate: 90 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => setShowFullPreview(false)}
-                            className="absolute top-4 right-4 z-[110] w-10 h-10 flex items-center justify-center rounded-full bg-white/15 hover:bg-red-500/80 text-white/80 hover:text-white transition-all duration-200 shadow-lg backdrop-blur-sm border border-white/10 hover:border-red-400/50"
-                            title="Close Preview (ESC)"
+            {createPortal(
+                <AnimatePresence>
+                    {showFullPreview && (
+                        <motion.div
+                            key="fullscreen-preview"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.25 }}
+                            className="fixed inset-0 z-[100] flex flex-col"
+                            style={{ backgroundColor: 'rgba(15, 15, 25, 0.95)', backdropFilter: 'blur(12px)' }}
                         >
-                            <X className="w-5 h-5" strokeWidth={2.5} />
-                        </motion.button>
+                            {/* ── Close Button — absolute top-right ── */}
+                            <motion.button
+                                whileHover={{ scale: 1.15, rotate: 90 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={() => setShowFullPreview(false)}
+                                className="absolute top-4 right-4 z-[110] w-10 h-10 flex items-center justify-center rounded-full bg-white/15 hover:bg-red-500/80 text-white/80 hover:text-white transition-all duration-200 shadow-lg backdrop-blur-sm border border-white/10 hover:border-red-400/50"
+                                title="Close Preview (ESC)"
+                            >
+                                <X className="w-5 h-5" strokeWidth={2.5} />
+                            </motion.button>
 
-                        {/* ── Small header info bar ── */}
-                        <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 flex-shrink-0">
-                            <div className="flex items-center gap-2">
-                                <Eye className="w-4 h-4 text-[#5c52d2]" />
-                                <span className="text-white/80 text-xs font-bold">Resume Preview</span>
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${pageCount > 1
-                                    ? 'bg-amber-500/20 text-amber-400'
-                                    : 'bg-emerald-500/20 text-emerald-400'
-                                    }`}>
-                                    {pageCount} {pageCount === 1 ? 'page' : 'pages'}
-                                </span>
+                            {/* ── Small header info bar ── */}
+                            <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 flex-shrink-0">
+                                <div className="flex items-center gap-2">
+                                    <Eye className="w-4 h-4 text-[#5c52d2]" />
+                                    <span className="text-white/80 text-xs font-bold">Resume Preview</span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${pageCount > 1
+                                        ? 'bg-amber-500/20 text-amber-400'
+                                        : 'bg-emerald-500/20 text-emerald-400'
+                                        }`}>
+                                        {pageCount} {pageCount === 1 ? 'page' : 'pages'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 ml-auto mr-12">
+                                    <motion.button
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        onClick={handleExportPDF}
+                                        disabled={!!exporting}
+                                        className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                    >
+                                        <FileText className="w-3 h-3" /> PDF
+                                    </motion.button>
+                                    <motion.button
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        onClick={handleExportDOCX}
+                                        disabled={!!exporting}
+                                        className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                    >
+                                        <FileType2 className="w-3 h-3" /> Word
+                                    </motion.button>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2 ml-auto mr-12">
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={handleExportPDF}
-                                    disabled={!!exporting}
-                                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
-                                >
-                                    <FileText className="w-3 h-3" /> PDF
-                                </motion.button>
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={handleExportDOCX}
-                                    disabled={!!exporting}
-                                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
-                                >
-                                    <FileType2 className="w-3 h-3" /> Word
-                                </motion.button>
-                            </div>
-                        </div>
 
-                        {/* ── Overflow warning ── */}
-                        {pageCount > 1 && (
-                            <div className="mx-auto flex items-center gap-2 px-4 py-2 bg-amber-500/15 border border-amber-500/30 rounded-xl max-w-lg flex-shrink-0">
-                                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                                <p className="text-[10px] text-amber-300 font-medium">
-                                    Your resume exceeds one page. Recruiters usually prefer one-page resumes.
-                                </p>
-                            </div>
-                        )}
+                            {/* ── Overflow warning ── */}
+                            {pageCount > 1 && (
+                                <div className="mx-auto flex items-center gap-2 px-4 py-2 bg-amber-500/15 border border-amber-500/30 rounded-xl max-w-lg flex-shrink-0">
+                                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                                    <p className="text-[10px] text-amber-300 font-medium">
+                                        Your resume exceeds one page. Recruiters usually prefer one-page resumes.
+                                    </p>
+                                </div>
+                            )}
 
-                        {/* ── Preview Body — scrollable, JS-scaled ── */}
-                        <div
-                            ref={fsScrollRef}
-                            className="flex-1 overflow-auto px-4 sm:px-6"
-                            style={{ WebkitOverflowScrolling: 'touch' }}
-                        >
+                            {/* ── Preview Body — scrollable with CSS zoom ── */}
                             <div
-                                className="mx-auto relative"
-                                style={{
-                                    /* 
-                                     * The resume is 794px wide, rendered at fsScale.
-                                     * We set explicit width & minHeight on this wrapper
-                                     * so the scroll container knows the real rendered size.
-                                     */
-                                    width: `${794 * fsScale}px`,
-                                    minHeight: `${A4_PAGE_HEIGHT * fsScale + 48}px`,
-                                    paddingTop: '16px',
-                                    paddingBottom: '32px',
-                                }}
+                                className="flex-1 overflow-y-auto overflow-x-hidden"
+                                style={{ WebkitOverflowScrolling: 'touch' }}
                             >
                                 <div
-                                    className="bg-white shadow-2xl rounded-sm"
+                                    className="mx-auto my-4"
                                     style={{
                                         width: '794px',
                                         minHeight: `${A4_PAGE_HEIGHT}px`,
-                                        transform: `scale(${fsScale})`,
-                                        transformOrigin: 'top left',
+                                        /* 
+                                         * CSS zoom actually changes layout dimensions (unlike 
+                                         * transform: scale which only visually scales). This means
+                                         * scrolling works natively.
+                                         */
+                                        zoom: fsScale,
                                     }}
                                 >
-                                    <RenderTemplate base={selected.base} data={data} color={accentColor} />
-                                </div>
-
-                                {/* Page break lines in fullscreen */}
-                                {pageCount > 1 && Array.from({ length: pageCount - 1 }, (_, i) => (
                                     <div
-                                        key={`fs-page-break-${i}`}
-                                        className="absolute left-0 pointer-events-none z-10"
+                                        className="bg-white shadow-2xl relative"
                                         style={{
-                                            top: `${16 + (i + 1) * A4_PAGE_HEIGHT * fsScale}px`,
-                                            width: `${794 * fsScale}px`,
+                                            width: '794px',
+                                            minHeight: `${A4_PAGE_HEIGHT}px`,
                                         }}
                                     >
-                                        <div className="relative">
-                                            <div className="w-full border-t-2 border-dashed border-red-400/60" />
-                                            <span className="absolute right-3 -top-3 bg-red-500/80 text-white text-[9px] font-black px-2.5 py-0.5 rounded-full shadow">
-                                                Page {i + 2}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                                        <RenderTemplate base={selected.base} data={data} color={accentColor} />
 
-                        {/* ── Keyboard hint ── */}
-                        <div className="text-center pb-3 flex-shrink-0">
-                            <span className="text-[10px] text-white/30 font-medium">Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50 text-[9px] font-bold">ESC</kbd> to close · Scroll to see full resume</span>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                                        {/* Page break lines in fullscreen */}
+                                        {pageCount > 1 && Array.from({ length: pageCount - 1 }, (_, i) => (
+                                            <div
+                                                key={`fs-page-break-${i}`}
+                                                className="absolute left-0 right-0 pointer-events-none z-10"
+                                                style={{ top: `${(i + 1) * A4_PAGE_HEIGHT}px` }}
+                                            >
+                                                <div className="relative">
+                                                    <div className="w-full border-t-2 border-dashed border-red-400/60" />
+                                                    <span className="absolute right-3 -top-3 bg-red-500/80 text-white text-[9px] font-black px-2.5 py-0.5 rounded-full shadow">
+                                                        Page {i + 2}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ── Keyboard hint ── */}
+                            <div className="text-center pb-3 flex-shrink-0">
+                                <span className="text-[10px] text-white/30 font-medium">Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50 text-[9px] font-bold">ESC</kbd> to close · Scroll to see full resume</span>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
         </SectionCard>
     );
 }
