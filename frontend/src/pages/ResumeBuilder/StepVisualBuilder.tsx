@@ -106,7 +106,9 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
     const [saved, setSaved] = useState(false);
     const [showFullPreview, setShowFullPreview] = useState(false);
     const [pageCount, setPageCount] = useState(1);
+    const [fsScale, setFsScale] = useState(0.7); // Fullscreen preview dynamic scale
     const previewRef = useRef<HTMLDivElement>(null);
+    const fsScrollRef = useRef<HTMLDivElement>(null);
 
     const selected = useMemo(() => TEMPLATE_CATALOG.find(t => t.template_id === selectedId) || TEMPLATE_CATALOG[0], [selectedId]);
     const accentColor = customColor || selected.default_color;
@@ -147,6 +149,29 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
         ro.observe(el);
         return () => ro.disconnect();
     }, [measurePages]);
+
+    // ── FULLSCREEN PREVIEW: compute dynamic scale to fit viewport ──
+    useEffect(() => {
+        if (!showFullPreview) return;
+
+        const computeScale = () => {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const hPad = 48; // 24px padding on each side
+            const headerHeight = 100; // header + footer roughly
+
+            // Scale to fit width
+            const scaleW = Math.min(1, (vw - hPad) / 794);
+            // Scale to fit height (for single page, try to fit fully)
+            const scaleH = Math.min(1, (vh - headerHeight) / A4_PAGE_HEIGHT);
+            // Use the smaller of the two, but at least 0.3
+            setFsScale(Math.max(0.3, Math.min(scaleW, scaleH)));
+        };
+
+        computeScale();
+        window.addEventListener('resize', computeScale);
+        return () => window.removeEventListener('resize', computeScale);
+    }, [showFullPreview]);
 
     // Lock body scroll when fullscreen preview is open + ESC key handler
     useEffect(() => {
@@ -458,8 +483,8 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                             <FileStack className="w-3.5 h-3.5 text-gray-400" />
                             <span className="text-[10px] font-bold text-gray-400">Pages:</span>
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${pageCount > 1
-                                    ? 'bg-amber-100 text-amber-600'
-                                    : 'bg-emerald-50 text-emerald-600'
+                                ? 'bg-amber-100 text-amber-600'
+                                : 'bg-emerald-50 text-emerald-600'
                                 }`}>
                                 {pageCount}
                             </span>
@@ -626,8 +651,8 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                                 <Eye className="w-4 h-4 text-[#5c52d2]" />
                                 <span className="text-white/80 text-xs font-bold">Resume Preview</span>
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${pageCount > 1
-                                        ? 'bg-amber-500/20 text-amber-400'
-                                        : 'bg-emerald-500/20 text-emerald-400'
+                                    ? 'bg-amber-500/20 text-amber-400'
+                                    : 'bg-emerald-500/20 text-emerald-400'
                                     }`}>
                                     {pageCount} {pageCount === 1 ? 'page' : 'pages'}
                                 </span>
@@ -664,22 +689,24 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                             </div>
                         )}
 
-                        {/* ── Preview Body — dynamically fit to screen ── */}
+                        {/* ── Preview Body — scrollable, JS-scaled ── */}
                         <div
-                            className="flex-1 overflow-auto flex items-start justify-center py-4 sm:py-6 px-4"
+                            ref={fsScrollRef}
+                            className="flex-1 overflow-auto px-4 sm:px-6"
                             style={{ WebkitOverflowScrolling: 'touch' }}
                         >
                             <div
-                                className="relative mx-auto"
+                                className="mx-auto relative"
                                 style={{
                                     /* 
-                                     * Dynamic fit-to-screen: the A4 resume is 794px wide.
-                                     * We scale it to fit the viewport width (minus padding)
-                                     * and cap the scale at 1 for large screens.
+                                     * The resume is 794px wide, rendered at fsScale.
+                                     * We set explicit width & minHeight on this wrapper
+                                     * so the scroll container knows the real rendered size.
                                      */
-                                    width: '794px',
-                                    transformOrigin: 'top center',
-                                    transform: `scale(var(--fs-preview-scale, 0.6))`,
+                                    width: `${794 * fsScale}px`,
+                                    minHeight: `${A4_PAGE_HEIGHT * fsScale + 48}px`,
+                                    paddingTop: '16px',
+                                    paddingBottom: '32px',
                                 }}
                             >
                                 <div
@@ -687,6 +714,8 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                                     style={{
                                         width: '794px',
                                         minHeight: `${A4_PAGE_HEIGHT}px`,
+                                        transform: `scale(${fsScale})`,
+                                        transformOrigin: 'top left',
                                     }}
                                 >
                                     <RenderTemplate base={selected.base} data={data} color={accentColor} />
@@ -696,8 +725,11 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                                 {pageCount > 1 && Array.from({ length: pageCount - 1 }, (_, i) => (
                                     <div
                                         key={`fs-page-break-${i}`}
-                                        className="absolute left-0 right-0 pointer-events-none z-10"
-                                        style={{ top: `${(i + 1) * A4_PAGE_HEIGHT}px` }}
+                                        className="absolute left-0 pointer-events-none z-10"
+                                        style={{
+                                            top: `${16 + (i + 1) * A4_PAGE_HEIGHT * fsScale}px`,
+                                            width: `${794 * fsScale}px`,
+                                        }}
                                     >
                                         <div className="relative">
                                             <div className="w-full border-t-2 border-dashed border-red-400/60" />
@@ -712,31 +744,11 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
 
                         {/* ── Keyboard hint ── */}
                         <div className="text-center pb-3 flex-shrink-0">
-                            <span className="text-[10px] text-white/30 font-medium">Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50 text-[9px] font-bold">ESC</kbd> to close</span>
+                            <span className="text-[10px] text-white/30 font-medium">Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50 text-[9px] font-bold">ESC</kbd> to close · Scroll to see full resume</span>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            {/* ── Dynamic scale CSS for fullscreen preview ── */}
-            <style>{`
-                /* 
-                 * Calculate --fs-preview-scale as a CSS custom property.
-                 * The A4 resume is 794px wide. We fit it to the viewport
-                 * with 32px horizontal padding on each side.
-                 */
-                :root {
-                    --fs-preview-scale: min(1, calc((100vw - 64px) / 794));
-                }
-
-                /* For very tall screens, also consider height to ensure 
-                   the full A4 page is visible without scrolling */
-                @media (min-height: 900px) and (min-width: 860px) {
-                    :root {
-                        --fs-preview-scale: min(1, calc((100vh - 180px) / ${A4_PAGE_HEIGHT}), calc((100vw - 64px) / 794));
-                    }
-                }
-            `}</style>
         </SectionCard>
     );
 }
