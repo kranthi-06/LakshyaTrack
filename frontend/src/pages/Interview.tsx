@@ -83,12 +83,16 @@ export default function Interview() {
     const currentStage = STAGES[currentStageIdx];
     const completedStages = Object.keys(stageEvals);
 
+    // Use a ref for speed so the speakText callback always sees the latest value
+    const speechSpeedRef = useRef(speechSpeed);
+    speechSpeedRef.current = speechSpeed;
+
     // ── Voice reading helpers ─────────────────────────────────────
-    const speakText = useCallback((text: string) => {
+    const speakText = useCallback((text: string, rateOverride?: number) => {
         if (!speechSupported || !text) return;
         speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = speechSpeed;
+        utterance.rate = rateOverride ?? speechSpeedRef.current;
         utterance.pitch = 1;
         utterance.volume = 1;
         utterance.lang = 'en-US';
@@ -96,7 +100,7 @@ export default function Interview() {
         utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); };
         utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); };
         speechSynthesis.speak(utterance);
-    }, [speechSpeed, speechSupported]);
+    }, [speechSupported]);
 
     const pauseSpeech = useCallback(() => {
         if (speechSupported && speechSynthesis.speaking) {
@@ -599,12 +603,17 @@ export default function Interview() {
                                                                 ].map(s => (
                                                                     <button
                                                                         key={s.value}
-                                                                        onClick={() => setSpeechSpeed(s.value)}
-                                                                        className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
-                                                                            speechSpeed === s.value
+                                                                        onClick={() => {
+                                                                            setSpeechSpeed(s.value);
+                                                                            // Re-speak at the new speed immediately if currently speaking
+                                                                            if (isSpeaking || isPaused) {
+                                                                                speakText(currentQuestion, s.value);
+                                                                            }
+                                                                        }}
+                                                                        className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${speechSpeed === s.value
                                                                                 ? 'bg-[#5c52d2] text-white shadow-sm'
                                                                                 : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                                                                        }`}
+                                                                            }`}
                                                                     >
                                                                         {s.label}
                                                                     </button>
@@ -618,11 +627,10 @@ export default function Interview() {
                                                             <button
                                                                 onClick={() => { setVoiceMuted(m => !m); if (!voiceMuted) stopSpeech(); }}
                                                                 title={voiceMuted ? 'Unmute Auto-Read' : 'Mute Auto-Read'}
-                                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all ${
-                                                                    voiceMuted
-                                                                        ? 'bg-rose-50 text-rose-500 hover:bg-rose-100'
-                                                                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                                                                }`}
+                                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all ${voiceMuted
+                                                                    ? 'bg-rose-50 text-rose-500 hover:bg-rose-100'
+                                                                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                                    }`}
                                                             >
                                                                 {voiceMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
                                                                 {voiceMuted ? 'Muted' : 'Auto'}
