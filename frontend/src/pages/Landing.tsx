@@ -21,6 +21,7 @@ import {
     MousePointer2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 // 3D Tilt Card Component
 const TiltCard = ({ children, className }: { children: React.ReactNode, className?: string }) => {
@@ -171,6 +172,7 @@ export default function Landing() {
                     </div>
 
                     <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">
+                        <ThemeToggle variant="landing" />
                         <Link to="/login">
                             <Button variant="ghost" className={`font-bold text-xs sm:text-sm hover:bg-white/10 h-9 sm:h-10 ${scrolled ? 'text-gray-600 hover:text-purple-600 hover:bg-purple-50' : 'text-white'}`}>
                                 Sign In

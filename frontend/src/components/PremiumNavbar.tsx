@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ThemeToggle } from './ThemeToggle';
 import {
     LogOut,
     LayoutDashboard,
@@ -87,6 +88,7 @@ export const PremiumNavbar = () => {
 
                     {/* Right Side Actions */}
                     <div className="flex items-center gap-4">
+                        <ThemeToggle variant="navbar" />
                         <div className="hidden sm:flex items-center gap-3 pl-6 border-l border-white/10">
                             <Link to="/profile" className="bg-white/10 hover:bg-white/20 transition-all rounded-full p-0.5 border border-white/10 pr-4 flex items-center gap-3 group cursor-pointer">
                                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-300 to-orange-400 p-0.5 group-hover:scale-105 transition-transform duration-300">

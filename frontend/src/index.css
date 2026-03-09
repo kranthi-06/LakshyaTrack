@@ -194,6 +194,370 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════ */
+/* DARK MODE — Admin-style dark theme (matches admin page exactly)  */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Root HTML dark ── */
+html.dark {
+  background-color: #000000;
+  color-scheme: dark;
+}
+
+/* ── Dark animated gradient — very deep like admin ── */
+.dark .animated-gradient {
+  background: linear-gradient(45deg, #0a0a1a, #0f0a2e, #1a0832, #0a1628) !important;
+  background-size: 200% 200% !important;
+}
+
+/* ── Dark scrollbar — sleek purple ── */
+.dark ::-webkit-scrollbar-track {
+  background: #0f0f23;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6366f1;
+}
+
+/* ══════════════════════════════════════ */
+/* BACKGROUNDS — Admin-style dark colors */
+/* ══════════════════════════════════════ */
+.dark .bg-white {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(12px);
+  border-color: rgba(51, 65, 85, 0.5) !important;
+}
+.dark .bg-white\/90 {
+  background-color: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(12px);
+  border-color: rgba(51, 65, 85, 0.5) !important;
+}
+.dark .bg-white\/80 {
+  background-color: rgba(15, 23, 42, 0.75) !important;
+  backdrop-filter: blur(12px);
+}
+.dark .bg-white\/10 { background-color: rgba(255, 255, 255, 0.05) !important; }
+.dark .bg-white\/20 { background-color: rgba(255, 255, 255, 0.06) !important; }
+.dark .bg-gray-50,
+.dark .bg-slate-50 { background-color: rgba(15, 23, 42, 0.35) !important; }
+.dark .bg-gray-100,
+.dark .bg-slate-100 { background-color: rgba(30, 41, 59, 0.4) !important; }
+.dark .bg-gray-200,
+.dark .bg-slate-200 { background-color: rgba(30, 41, 59, 0.55) !important; }
+.dark .bg-\[\#f8fafc\] { background-color: #000000 !important; }
+.dark .bg-\[\#fafafa\] { background-color: rgba(15, 23, 42, 0.5) !important; }
+
+/* ── Cards get visible outline border in dark ── */
+.dark .shadow-sm {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(51, 65, 85, 0.4) !important;
+}
+.dark .border-none {
+  border: 1px solid rgba(51, 65, 85, 0.4) !important;
+}
+
+/* ══════════════════════════════════ */
+/* TEXT — Bright and readable on dark */
+/* ══════════════════════════════════ */
+.dark .text-gray-900,
+.dark .text-slate-900 { color: #f1f5f9 !important; }
+.dark .text-gray-800,
+.dark .text-slate-800 { color: #e2e8f0 !important; }
+.dark .text-gray-700,
+.dark .text-slate-700 { color: #cbd5e1 !important; }
+.dark .text-gray-600,
+.dark .text-slate-600 { color: #94a3b8 !important; }
+.dark .text-gray-500,
+.dark .text-slate-500 { color: #94a3b8 !important; }
+.dark .text-gray-400,
+.dark .text-slate-400 { color: #64748b !important; }
+.dark .text-black { color: #f1f5f9 !important; }
+.dark .text-\[\\#0F172A\] { color: #f1f5f9 !important; }
+
+/* ═════════════════════════════ */
+/* BORDERS — Slate-800 style    */
+/* ═════════════════════════════ */
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-slate-100,
+.dark .border-slate-200 { border-color: rgba(51, 65, 85, 0.5) !important; }
+.dark .border-white\/10 { border-color: rgba(255, 255, 255, 0.08) !important; }
+.dark .border-white\/20 { border-color: rgba(255, 255, 255, 0.1) !important; }
+
+/* ══════════════════════════════════════════ */
+/* COLORED BACKGROUNDS — Tinted translucent  */
+/* ══════════════════════════════════════════ */
+.dark .bg-purple-50 { background-color: rgba(139, 92, 246, 0.1) !important; }
+.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.1) !important; }
+.dark .bg-green-50 { background-color: rgba(34, 197, 94, 0.1) !important; }
+.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.1) !important; }
+.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.1) !important; }
+.dark .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.1) !important; }
+.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.1) !important; }
+.dark .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.1) !important; }
+.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.1) !important; }
+.dark .bg-blue-50\/50 { background-color: rgba(59, 130, 246, 0.05) !important; }
+.dark .bg-purple-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
+.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.15) !important; }
+
+/* ══════════════════════════════════════ */
+/* HOVER STATES                          */
+/* ══════════════════════════════════════ */
+.dark .hover\:bg-white:hover { background-color: rgba(30, 41, 59, 0.5) !important; }
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-gray-50:hover { background-color: rgba(30, 41, 59, 0.3) !important; }
+.dark .hover\:bg-purple-50:hover { background-color: rgba(139, 92, 246, 0.15) !important; }
+
+/* ══════════════════════════════════ */
+/* SHADOWS — deep black for depth    */
+/* ══════════════════════════════════ */
+.dark .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5) !important; }
+.dark .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important; }
+.dark .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4) !important; }
+
+/* ══════════════════════════════════════════ */
+/* NAVBAR — Match admin's deep dark bar      */
+/* ══════════════════════════════════════════ */
+.dark .bg-\[\#5c52d2\] {
+  background-color: rgba(0, 0, 0, 0.85) !important;
+  border-bottom-color: rgba(51, 65, 85, 0.5) !important;
+}
+
+/* ══════════════════════════════════ */
+/* LANDING PAGE NAV (scrolled state) */
+/* ══════════════════════════════════ */
+.dark .bg-white\/80.backdrop-blur-xl {
+  background-color: rgba(0, 0, 0, 0.8) !important;
+}
+
+/* ══════════════════════════════════════ */
+/* BUTTONS — Fix text visibility         */
+/* ══════════════════════════════════════ */
+
+/* "Start Free Trial" + "Launch Career" — white bg buttons in dark */
+.dark .bg-white.text-purple-900,
+.dark .bg-white.text-\[\#0F172A\] {
+  background-color: #ffffff !important;
+  color: #1e1b4b !important;
+}
+.dark .hover\:bg-yellow-300:hover {
+  background-color: #fde047 !important;
+  color: #1e1b4b !important;
+}
+
+/* ══════════════════════════════════════════ */
+/* FORM INPUTS — dark backgrounds            */
+/* ══════════════════════════════════════════ */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: rgba(15, 23, 42, 0.5) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(51, 65, 85, 0.5) !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+.dark .focus\:bg-white:focus {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+/* ══════════════════════════════════ */
+/* TEXT COLOR — specific overrides    */
+/* ══════════════════════════════════ */
+.dark .text-blue-900 { color: #93c5fd !important; }
+.dark .text-blue-700\/80 { color: rgba(96, 165, 250, 0.8) !important; }
+.dark .text-rose-700 { color: #fca5a1 !important; }
+.dark .text-indigo-600 { color: #a5b4fc !important; }
+.dark .hover\:text-indigo-500:hover { color: #c7d2fe !important; }
+.dark .text-purple-900 { color: #c4b5fd !important; }
+
+/* ═════════════════════════ */
+/* BLUE INFO BOX             */
+/* ═════════════════════════ */
+.dark .border-blue-100 { border-color: rgba(59, 130, 246, 0.2) !important; }
+
+/* ══════════════════════════ */
+/* FOOTER — deep dark         */
+/* ══════════════════════════ */
+.dark footer.bg-white,
+.dark footer {
+  background-color: #000000 !important;
+  border-top-color: rgba(51, 65, 85, 0.5) !important;
+}
+.dark footer .text-gray-900 { color: #f1f5f9 !important; }
+.dark footer .text-gray-400,
+.dark footer .text-gray-500 { color: #64748b !important; }
+
+/* ═══════════════════════════ */
+/* DIVIDER / SEPARATOR LINES  */
+/* ═══════════════════════════ */
+.dark .border-t { border-top-color: rgba(51, 65, 85, 0.5) !important; }
+.dark .border-b { border-bottom-color: rgba(51, 65, 85, 0.5) !important; }
+.dark .border-l { border-left-color: rgba(51, 65, 85, 0.5) !important; }
+
+/* ══════════════════════════════════════ */
+/* CHECKBOX                              */
+/* ══════════════════════════════════════ */
+.dark input[type="checkbox"] {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+  border-color: rgba(51, 65, 85, 0.7) !important;
+}
+
+/* ══════════════════════════════════════ */
+/* TABLE — admin-style dark table         */
+/* ══════════════════════════════════════ */
+.dark table,
+.dark th,
+.dark td { border-color: rgba(51, 65, 85, 0.5) !important; }
+.dark thead { background-color: rgba(30, 41, 59, 0.3) !important; }
+.dark tbody tr:nth-child(even) { background-color: rgba(15, 23, 42, 0.3) !important; }
+.dark tbody tr:hover { background-color: rgba(30, 41, 59, 0.2) !important; }
+
+/* ══════════════════════════════════════ */
+/* POPUP / MODAL — dark glassmorphism     */
+/* ══════════════════════════════════════ */
+.dark [role="dialog"],
+.dark [data-radix-portal] > div {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border-color: rgba(51, 65, 85, 0.5) !important;
+  color: #e2e8f0 !important;
+}
+
+/* ══════════════════════════════════════ */
+/* DROPDOWN / SELECT                      */
+/* ══════════════════════════════════════ */
+.dark [role="listbox"],
+.dark [role="menu"] {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border-color: rgba(51, 65, 85, 0.5) !important;
+}
+.dark [role="option"]:hover,
+.dark [role="menuitem"]:hover {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+/* ══════════════════════════════════════ */
+/* GLASS CARD — subtle glassmorphism      */
+/* ══════════════════════════════════════ */
+.dark .glass-card {
+  background: rgba(15, 23, 42, 0.3) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ══════════════════════════════════════ */
+/* FEATURE TAB BUTTONS — Landing page     */
+/* ══════════════════════════════════════ */
+.dark .bg-gray-100.text-gray-500 {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+  color: #94a3b8 !important;
+}
+.dark .hover\:bg-white.hover\:border-gray-200:hover {
+  background-color: rgba(30, 41, 59, 0.6) !important;
+  border-color: rgba(51, 65, 85, 0.5) !important;
+}
+
+/* Feature detail backgrounds */
+.dark .bg-gray-50.rounded-xl { background-color: rgba(30, 41, 59, 0.3) !important; }
+.dark .hover\:bg-white:hover.hover\:shadow-md:hover {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+/* "AI Analysis in Progress" label */
+.dark .bg-white.px-8.py-3 {
+  background-color: rgba(30, 41, 59, 0.7) !important;
+  color: #f1f5f9 !important;
+}
+.dark .bg-white.rounded-full.shadow-2xl {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+.dark .border-4.border-gray-100 {
+  border-color: rgba(51, 65, 85, 0.5) !important;
+}
+
+/* ══════════════════════════ */
+/* RESUME PREVIEW AREA        */
+/* ══════════════════════════ */
+.dark .bg-gray-200.p-6 {
+  background-color: rgba(15, 23, 42, 0.5) !important;
+}
+
+/* ═════════════════════════ */
+/* SKELETON LOADING           */
+/* ═════════════════════════ */
+.dark .bg-slate-200.rounded { background-color: rgba(51, 65, 85, 0.4) !important; }
+.dark .bg-slate-100.rounded { background-color: rgba(30, 41, 59, 0.4) !important; }
+.dark .bg-purple-100.rounded { background-color: rgba(139, 92, 246, 0.15) !important; }
+.dark .bg-blue-100.rounded { background-color: rgba(59, 130, 246, 0.12) !important; }
+.dark .bg-emerald-100.rounded { background-color: rgba(16, 185, 129, 0.12) !important; }
+
+/* ══════════════════════════════════════════════ */
+/* LOGIN / REGISTER — Keep gradient but darker    */
+/* ══════════════════════════════════════════════ */
+.dark .from-indigo-500.via-purple-500.to-pink-500 {
+  background: linear-gradient(to bottom right, #0a0a2e, #1e1b4b, #1a0832) !important;
+}
+
+/* Login/Reg white panel → dark */
+.dark .md\:w-7\/12.bg-white,
+.dark .lg\:w-1\/2.bg-white {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+}
+
+/* "Or continue with" separator text background */
+.dark .bg-white.px-4 {
+  background-color: transparent !important;
+}
+
+/* ══════════════════════════════════════ */
+/* MISC — Ensure no text blends           */
+/* ══════════════════════════════════════ */
+
+/* White bg descendant text — always light on dark */
+.dark .bg-white h1,
+.dark .bg-white h2,
+.dark .bg-white h3,
+.dark .bg-white h4 { color: #f1f5f9 !important; }
+.dark .bg-white p { color: #cbd5e1 !important; }
+.dark .bg-white span { color: inherit; }
+
+/* Nested white backgrounds — slightly brighter than parent */
+.dark .bg-white .bg-white {
+  background-color: rgba(30, 41, 59, 0.4) !important;
+}
+
+/* Roadmap progress bar track */
+.dark .bg-slate-100.rounded-full {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+/* ══════════════════════════════ */
+/* SELECTION COLORS               */
+/* ══════════════════════════════ */
+.dark ::selection {
+  background-color: rgba(139, 92, 246, 0.3) !important;
+  color: #f1f5f9 !important;
+}
+
+/* ═══════════════════════ */
+/* PROFILE PAGE OVERRIDES  */
+/* ═══════════════════════ */
+.dark .bg-\[\\#f8fafc\] { background-color: #000000 !important; }
+
+/* Progress bar track */
+.dark .bg-gray-100.rounded-full {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+/* ══════════════════════════════════════ */
+/* Link colors                            */
+/* ══════════════════════════════════════ */
+.dark .text-purple-600 { color: #a78bfa !important; }
+.dark .hover\:text-purple-600:hover { color: #c4b5fd !important; }
+
+
 /* ═══════════════════════════════════════════════════════ */
 /* PRINT STYLES — ATS-safe, full-page A4 resume output   */
 /* ═══════════════════════════════════════════════════════ */

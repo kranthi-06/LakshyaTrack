@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { Suspense, lazy } from 'react';
@@ -29,6 +30,7 @@ const AdminCommandCentre = lazy(() => import('./pages/AdminCommandCentre'));
 
 function App() {
   return (
+    <ThemeProvider>
     <Router>
       <AuthProvider>
         <Suspense fallback={<AuthLoadingScreen />}>
@@ -160,6 +162,7 @@ function App() {
         </Suspense>
       </AuthProvider>
     </Router>
+    </ThemeProvider>
   );
 }
 
