@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,7 +36,6 @@ import {
     Monitor,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PremiumBackground } from '../components/PremiumBackground';
 import { useExamMode } from '../hooks/useExamMode';
 
 type QuizStep = 'setup' | 'active' | 'results';
@@ -424,13 +422,10 @@ export default function Quiz() {
 
     // ── Render ──
     return (
-        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative animated-gradient">
-            <PremiumBackground />
-            {/* Hide navbar during active exam */}
-            {!examMode.isExamActive && <PremiumNavbar />}
+        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
 
-            <div className="relative z-10">
-                <main className={`max-w-4xl mx-auto px-6 ${examMode.isExamActive ? 'pt-8' : 'pt-16'}`}>
+
+                            <main className={`max-w-4xl mx-auto px-6 ${examMode.isExamActive ? 'pt-8' : 'pt-16'}`}>
                     <AnimatePresence mode="wait">
                         {step === 'setup' && (
                             <motion.div
@@ -847,9 +842,7 @@ export default function Quiz() {
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </main>
-            </div>
-
+                </main>
             {/* ═══════════════════════════════════════════════════════════ */}
             {/* EXAM MODE OVERLAYS (Popups) — rendered on top of everything */}
             {/* ═══════════════════════════════════════════════════════════ */}

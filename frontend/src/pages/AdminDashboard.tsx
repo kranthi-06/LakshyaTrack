@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { getAdminUsers, blacklistUser, unblacklistUser, promoteUser, demoteUser, deleteUser, AdminUser } from '../services/admin';
 import { useAuth } from '../context/AuthContext';
-import { PremiumNavbar } from '../components/PremiumNavbar';
-import { PremiumBackground } from '../components/PremiumBackground';
 import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -107,10 +105,7 @@ const AdminDashboard: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-black text-white selection:bg-purple-500/30">
-            <PremiumBackground />
-            <PremiumNavbar />
-
-            <main className="relative pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto z-10">
+<main className="relative pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto z-10">
                 <div className="flex justify-between items-center mb-10">
                     <div>
                         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-3">

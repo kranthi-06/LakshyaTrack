@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
+import { AppLayout } from './components/AppLayout';
 import { Suspense, lazy } from 'react';
 import AuthLoadingScreen from './components/AuthLoadingScreen';
 
@@ -28,6 +29,24 @@ const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const AdminInactivity = lazy(() => import('./pages/AdminInactivity'));
 const AdminCommandCentre = lazy(() => import('./pages/AdminCommandCentre'));
 
+/** Wrap a page with AppLayout + ProtectedRoute */
+function ProtectedPage({ children }: { children: React.ReactNode }) {
+  return (
+    <ProtectedRoute>
+      <AppLayout>{children}</AppLayout>
+    </ProtectedRoute>
+  );
+}
+
+/** Wrap an admin page with AppLayout + AdminRoute */
+function AdminPage({ children, requireBlackAdmin }: { children: React.ReactNode; requireBlackAdmin?: boolean }) {
+  return (
+    <AdminRoute requireBlackAdmin={requireBlackAdmin}>
+      <AppLayout>{children}</AppLayout>
+    </AdminRoute>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider>
@@ -35,12 +54,14 @@ function App() {
       <AuthProvider>
         <Suspense fallback={<AuthLoadingScreen />}>
           <Routes>
+            {/* Public routes — no layout */}
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
-            {/* /begin — Google OAuth landing point, redirects to dashboard */}
+
+            {/* /begin — Google OAuth landing point */}
             <Route
               path="/begin"
               element={
@@ -49,113 +70,23 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
 
-            <Route
-              path="/resume-builder"
-              element={
-                <ProtectedRoute>
-                  <ResumeBuilder />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/evaluate"
-              element={
-                <ProtectedRoute>
-                  <Evaluate />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/career"
-              element={
-                <ProtectedRoute>
-                  <CareerIntelligence />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/learning"
-              element={
-                <ProtectedRoute>
-                  <LearningHub />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/quiz"
-              element={
-                <ProtectedRoute>
-                  <Quiz />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/interview"
-              element={
-                <ProtectedRoute>
-                  <Interview />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/jobs"
-              element={
-                <ProtectedRoute>
-                  <Jobs />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/progress"
-              element={
-                <ProtectedRoute>
-                  <Progress />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              }
-            />
+            {/* ── Authenticated routes with sidebar layout ── */}
+            <Route path="/dashboard" element={<ProtectedPage><Dashboard /></ProtectedPage>} />
+            <Route path="/resume-builder" element={<ProtectedPage><ResumeBuilder /></ProtectedPage>} />
+            <Route path="/evaluate" element={<ProtectedPage><Evaluate /></ProtectedPage>} />
+            <Route path="/career" element={<ProtectedPage><CareerIntelligence /></ProtectedPage>} />
+            <Route path="/learning" element={<ProtectedPage><LearningHub /></ProtectedPage>} />
+            <Route path="/quiz" element={<ProtectedPage><Quiz /></ProtectedPage>} />
+            <Route path="/interview" element={<ProtectedPage><Interview /></ProtectedPage>} />
+            <Route path="/jobs" element={<ProtectedPage><Jobs /></ProtectedPage>} />
+            <Route path="/progress" element={<ProtectedPage><Progress /></ProtectedPage>} />
+            <Route path="/profile" element={<ProtectedPage><Profile /></ProtectedPage>} />
 
             {/* ── Admin Routes ── */}
-            <Route
-              path="/admin/users"
-              element={
-                <AdminRoute>
-                  <AdminDashboard />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/inactivity"
-              element={
-                <AdminRoute>
-                  <AdminInactivity />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/command-centre"
-              element={
-                <AdminRoute requireBlackAdmin>
-                  <AdminCommandCentre />
-                </AdminRoute>
-              }
-            />
+            <Route path="/admin/users" element={<AdminPage><AdminDashboard /></AdminPage>} />
+            <Route path="/admin/inactivity" element={<AdminPage><AdminInactivity /></AdminPage>} />
+            <Route path="/admin/command-centre" element={<AdminPage requireBlackAdmin><AdminCommandCentre /></AdminPage>} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
-import { PremiumNavbar } from '../components/PremiumNavbar';
-import { PremiumBackground } from '../components/PremiumBackground';
 import {
     FileText,
     Target,
@@ -20,10 +18,11 @@ import {
     BookOpen,
     BrainCircuit,
     ArrowUpRight,
-    Plus
+    Plus,
+    Sparkles,
+    BarChart3,
+    Rocket,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Link, useNavigate } from 'react-router-dom';
 import { getActiveRoadmap } from '../services/careerPlatform';
 
@@ -78,249 +77,209 @@ export default function Dashboard() {
         fetchRoadmap();
     }, []);
 
+    const displayName = (user?.profile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'User');
+    const firstName = displayName.split(' ')[0];
+
+    const getGreeting = () => {
+        const h = new Date().getHours();
+        if (h < 12) return 'Good morning';
+        if (h < 17) return 'Good afternoon';
+        return 'Good evening';
+    };
+
     const stats = [
-        { label: 'Skills Assessed', val: '12', sub: '+3 this week', icon: Zap, color: 'blue' },
-        { label: 'Achievements', val: '8', sub: 'New badge earned!', icon: Trophy, color: 'green' },
-        { label: 'Profile Score', val: '85%', sub: '+5% this month', icon: TrendingUp, color: 'orange' },
-        { label: 'Streak Days', val: '15', sub: 'Keep it up!', icon: Calendar, color: 'purple' }
+        { label: 'Skills Assessed', value: '12', change: '+3 this week', icon: Zap, color: 'from-blue-500 to-cyan-400', bg: 'bg-blue-50 dark:bg-blue-500/10' },
+        { label: 'Achievements', value: '8', change: 'New badge earned!', icon: Trophy, color: 'from-emerald-500 to-teal-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+        { label: 'Profile Score', value: '85%', change: '+5% this month', icon: TrendingUp, color: 'from-amber-500 to-orange-400', bg: 'bg-amber-50 dark:bg-amber-500/10' },
+        { label: 'Streak Days', value: '15', change: 'Keep it up!', icon: Calendar, color: 'from-violet-500 to-purple-400', bg: 'bg-violet-50 dark:bg-violet-500/10' },
     ];
 
     const quickActions = [
-        { title: 'Start Career Journey', desc: 'Begin with resume analysis and career planning', icon: FileText, color: 'blue', path: '/resume-builder' },
-        { title: 'Skill Evaluation', desc: 'Assess your skills vs job requirements', icon: BarChart2, color: 'green', path: '/evaluate' },
-        { title: 'Learning Plan', desc: 'Get personalized training roadmap', icon: BookOpen, color: 'orange', path: '/career' },
-        { title: 'Practice Quiz', desc: 'Test your knowledge with AI quizzes', icon: BrainCircuit, color: 'purple', path: '/quiz' }
+        { title: 'Resume Studio', desc: 'Build & optimize your resume with AI', icon: FileText, path: '/resume-builder', accent: '#6C63FF' },
+        { title: 'Skill Check', desc: 'Assess your skills vs job requirements', icon: Target, path: '/evaluate', accent: '#10B981' },
+        { title: 'Learning Path', desc: 'Get AI-powered training roadmap', icon: BookOpen, path: '/career', accent: '#F59E0B' },
+        { title: 'Practice Quiz', desc: 'Test knowledge with adaptive quizzes', icon: BrainCircuit, path: '/quiz', accent: '#8B5CF6' },
+        { title: 'Mock Interview', desc: 'AI-powered interview simulator', icon: Mic2, path: '/interview', accent: '#EF4444' },
+        { title: 'Opportunities', desc: 'Jobs, internships & certifications', icon: Briefcase, path: '/jobs', accent: '#0EA5E9' },
     ];
 
-    const recommendations = [
-        {
-            title: 'Complete Your Profile',
-            desc: 'Add your work experience to get better job matches',
-            progress: 75,
-            action: 'Complete Now',
-            color: 'blue'
-        },
-        {
-            title: 'Take Skill Assessment',
-            desc: 'Evaluate your JavaScript skills to unlock new opportunities',
-            progress: 0,
-            action: 'Start Assessment',
-            color: 'green'
-        },
-        {
-            title: 'Practice Interview',
-            desc: 'Prepare for your next interview with AI-powered practice',
-            progress: 25,
-            action: 'Continue',
-            color: 'purple'
-        }
-    ];
+    const fadeIn = (i: number) => ({
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        transition: { delay: i * 0.06, duration: 0.4 },
+    });
 
     return (
-        <div className="min-h-screen font-sans pb-20 relative overflow-hidden animated-gradient">
-            <PremiumBackground />
+        <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+            <div className="max-w-[1360px] mx-auto space-y-8">
 
-            <div className="relative z-10">
-                <PremiumNavbar />
+                {/* ═══════════════════════════════════════ */}
+                {/* Welcome Header                          */}
+                {/* ═══════════════════════════════════════ */}
+                <motion.div {...fadeIn(0)} className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+                            {getGreeting()}, {firstName} 👋
+                        </h1>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">
+                            Here's an overview of your career journey
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => navigate('/resume-builder')}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#6C63FF] hover:bg-[#5B54E0] text-white text-sm font-semibold transition-colors shadow-lg shadow-indigo-500/20"
+                        >
+                            <Plus className="w-4 h-4" />
+                            New Resume
+                        </button>
+                    </div>
+                </motion.div>
 
-                <main className="max-w-[1400px] mx-auto px-6 pt-10">
-
-                    {/* Welcome Banner - Glassmorphism */}
-                    <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-[1.5rem] sm:rounded-[2.5rem] p-6 sm:p-10 md:p-14 mb-10 text-white relative overflow-hidden shadow-2xl">
-                        <div className="flex flex-col md:flex-row justify-between items-center gap-8 relative z-10">
-                            <div className="space-y-4 text-center md:text-left">
-                                <h1 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight drop-shadow-lg">
-                                    Welcome back, {(user?.profile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'User').split(' ')[0]}! 👋
-                                </h1>
-                                <p className="text-white/90 text-lg font-medium drop-shadow-md">Ready to advance your career today?</p>
-                            </div>
-
-                            <motion.div
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => navigate('/profile')}
-                                className="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/20 flex items-center gap-5 w-full md:w-auto min-w-[300px] cursor-pointer hover:bg-white/20 transition-all shadow-lg"
-                            >
-                                <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center border border-white/10 overflow-hidden">
-                                    {(user as any)?.profile?.profile_photo_url || localStorage.getItem(`user_profile_${user?.email}`) ? (
-                                        <img
-                                            src={(user as any)?.profile?.profile_photo_url || (localStorage.getItem(`user_profile_${user?.email}`) ? JSON.parse(localStorage.getItem(`user_profile_${user?.email}`)!).image : '')}
-                                            alt="Profile"
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                e.currentTarget.style.display = 'none';
-                                                e.currentTarget.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-                                            }}
-                                        />
-                                    ) : (
-                                        <UserIcon className="w-8 h-8 text-white" />
-                                    )}
+                {/* ═══════════════════════════════════════ */}
+                {/* Stats Row                               */}
+                {/* ═══════════════════════════════════════ */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {stats.map((stat, i) => (
+                        <motion.div
+                            key={stat.label}
+                            {...fadeIn(i + 1)}
+                            className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5 hover:shadow-lg hover:shadow-slate-200/40 dark:hover:shadow-slate-900/40 transition-all group"
+                        >
+                            <div className="flex items-center justify-between mb-3">
+                                <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center`}>
+                                    <stat.icon className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                                 </div>
-                                <div>
-                                    <h4 className="font-black text-xl leading-none mb-1">{user?.profile?.full_name || user?.full_name || 'User'}</h4>
-                                    <p className="text-white/70 font-bold text-sm">{user?.email || 'user@example.com'}</p>
+                                <ArrowUpRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-[#6C63FF] transition-colors" />
+                            </div>
+                            <p className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{stat.value}</p>
+                            <p className="text-[13px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">{stat.label}</p>
+                            <p className="text-[11px] font-medium text-emerald-500 dark:text-emerald-400 mt-1">{stat.change}</p>
+                        </motion.div>
+                    ))}
+                </div>
+
+                {/* ═══════════════════════════════════════ */}
+                {/* Roadmap Progress Card                    */}
+                {/* ═══════════════════════════════════════ */}
+                <motion.div
+                    {...fadeIn(5)}
+                    onClick={() => navigate('/career')}
+                    className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-6 cursor-pointer hover:shadow-lg hover:shadow-slate-200/40 dark:hover:shadow-slate-900/40 transition-all group"
+                >
+                    <div className="flex flex-col md:flex-row md:items-center gap-5">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#6C63FF] to-[#4F46E5] flex items-center justify-center flex-shrink-0 shadow-lg shadow-indigo-500/20">
+                            <Rocket className="w-7 h-7 text-white" />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-base font-bold text-slate-900 dark:text-white truncate group-hover:text-[#6C63FF] transition-colors">
+                                    {hasRoadmap ? `Roadmap: ${roadmapRole}` : 'Start Your Career Roadmap'}
+                                </h3>
+                                <span className="text-sm font-bold text-[#6C63FF] flex-shrink-0 ml-4">{roadmapProgress}%</span>
+                            </div>
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                                <motion.div
+                                    className="bg-gradient-to-r from-[#6C63FF] to-[#8B83FF] h-full rounded-full"
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${roadmapProgress}%` }}
+                                    transition={{ duration: 1.2, ease: 'easeOut' }}
+                                />
+                            </div>
+                            <p className="text-[13px] font-medium text-slate-500 dark:text-slate-400 mt-2">
+                                {hasRoadmap ? (
+                                    <>Up Next: <span className="text-slate-700 dark:text-slate-300">{nextSkill}</span></>
+                                ) : (
+                                    <>Get started: <span className="text-slate-700 dark:text-slate-300">Generate your career path</span></>
+                                )}
+                            </p>
+                        </div>
+
+                        <div className="hidden md:flex w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 items-center justify-center group-hover:bg-[#6C63FF] group-hover:text-white transition-all flex-shrink-0">
+                            <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-white" />
+                        </div>
+                    </div>
+                </motion.div>
+
+                {/* ═══════════════════════════════════════ */}
+                {/* Quick Actions Grid                      */}
+                {/* ═══════════════════════════════════════ */}
+                <div>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-[#6C63FF]" />
+                        Quick Actions
+                    </h2>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {quickActions.map((action, i) => (
+                            <motion.div
+                                key={action.title}
+                                {...fadeIn(i + 6)}
+                                onClick={() => navigate(action.path)}
+                                className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5 cursor-pointer
+                                    hover:shadow-lg hover:shadow-slate-200/40 dark:hover:shadow-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all group"
+                            >
+                                <div className="flex items-start gap-4">
+                                    <div
+                                        className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+                                        style={{ backgroundColor: `${action.accent}15` }}
+                                    >
+                                        <action.icon className="w-5 h-5" style={{ color: action.accent }} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#6C63FF] transition-colors">
+                                                {action.title}
+                                            </h4>
+                                            <ArrowUpRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-[#6C63FF] transition-colors flex-shrink-0" />
+                                        </div>
+                                        <p className="text-[13px] text-slate-500 dark:text-slate-400 font-medium mt-1 leading-relaxed">{action.desc}</p>
+                                    </div>
                                 </div>
                             </motion.div>
-                        </div>
-                        {/* Decorative Background Elements */}
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/30 rounded-full -mr-32 -mt-32 blur-[80px]"></div>
-                        <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/30 rounded-full -ml-24 -mb-24 blur-[60px]"></div>
+                        ))}
                     </div>
+                </div>
 
-                    <div className="space-y-12">
-                        {/* Roadmap Progress Summary Card */}
-                        <motion.div
-                            whileHover={{ scale: 1.01 }}
-                            onClick={() => navigate('/career')}
-                            className="bg-white/90 backdrop-blur-sm border border-purple-100 shadow-xl hover:shadow-2xl transition-all rounded-[2rem] p-6 lg:p-8 cursor-pointer flex flex-col md:flex-row items-center gap-6 lg:gap-10 overflow-hidden relative group"
-                        >
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl group-hover:bg-purple-500/10 transition-colors"></div>
-
-                            <div className="w-16 h-16 bg-purple-100 text-[#5c52d2] rounded-2xl flex items-center justify-center flex-shrink-0">
-                                <Target className="w-8 h-8" />
-                            </div>
-
-                            <div className="flex-1 w-full space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <h3 className="text-xl font-black text-gray-900 group-hover:text-[#5c52d2] transition-colors">
-                                        Roadmap: {hasRoadmap ? roadmapRole : 'Not Started'}
-                                    </h3>
-                                    <span className="text-[#5c52d2] font-black">{roadmapProgress}%</span>
-                                </div>
-                                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                {/* ═══════════════════════════════════════ */}
+                {/* AI Recommendations                      */}
+                {/* ═══════════════════════════════════════ */}
+                <div>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5 text-emerald-500" />
+                        Recommended for You
+                    </h2>
+                    <div className="grid md:grid-cols-3 gap-4">
+                        {[
+                            { t: 'Complete Your Profile', d: 'Add work experience for better job matches', p: 75, path: '/profile', accent: '#6C63FF' },
+                            { t: 'Take Skill Assessment', d: 'Evaluate your JavaScript skills', p: 0, path: '/evaluate', accent: '#10B981' },
+                            { t: 'Practice Interview', d: 'Prepare for your next interview with AI', p: 25, path: '/interview', accent: '#8B5CF6' },
+                        ].map((rec, i) => (
+                            <motion.div
+                                key={rec.t}
+                                {...fadeIn(i + 12)}
+                                onClick={() => navigate(rec.path)}
+                                className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5 cursor-pointer
+                                    hover:shadow-lg hover:shadow-slate-200/40 dark:hover:shadow-slate-900/40 transition-all group"
+                            >
+                                <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{rec.t}</h4>
+                                <p className="text-[13px] text-slate-500 dark:text-slate-400 font-medium mb-3">{rec.d}</p>
+                                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden mb-2">
                                     <div
-                                        className="bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] h-full rounded-full transition-all duration-1000 ease-out"
-                                        style={{ width: `${roadmapProgress}%` }}
-                                    ></div>
+                                        className="h-full rounded-full transition-all duration-700"
+                                        style={{ width: `${rec.p}%`, backgroundColor: rec.accent }}
+                                    />
                                 </div>
-                                <p className="text-sm font-bold text-gray-500 pt-1">
-                                    {hasRoadmap ? (
-                                        <>Up Next: <span className="text-gray-700">{nextSkill}</span></>
-                                    ) : (
-                                        <>Get started: <span className="text-gray-700">Generate your career path</span></>
-                                    )}
-                                </p>
-                            </div>
-
-                            <div className="hidden md:flex w-10 h-10 rounded-full bg-purple-50 items-center justify-center group-hover:bg-[#5c52d2] group-hover:text-white transition-colors">
-                                <ChevronRight className="w-5 h-5 text-[#5c52d2] group-hover:text-white" />
-                            </div>
-                        </motion.div>
-
-                        {/* Quick Actions */}
-                        <div className="space-y-6">
-                            <div className="flex items-center gap-3 mb-4 ml-1 text-white">
-                                <Zap className="w-6 h-6 text-yellow-300" />
-                                <h2 className="text-xl sm:text-2xl font-black tracking-tight drop-shadow-md">Quick Actions</h2>
-                            </div>
-                            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                                {quickActions.map((action, i) => (
-                                    <motion.div
-                                        key={i}
-                                        whileHover={{ y: -5 }}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: i * 0.1 }}
-                                    >
-                                        <Card
-                                            onClick={() => navigate(action.path)}
-                                            className="border-0 bg-white/90 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all rounded-3xl p-6 group cursor-pointer h-full"
-                                        >
-                                            <div className="flex flex-col items-start gap-5 h-full">
-                                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all shadow-inner ${action.color === 'blue' ? 'bg-blue-50 text-blue-600' :
-                                                    action.color === 'green' ? 'bg-green-50 text-green-600' :
-                                                        action.color === 'orange' ? 'bg-orange-50 text-orange-600' :
-                                                            'bg-purple-50 text-purple-600'
-                                                    }`}>
-                                                    <action.icon className="w-7 h-7" />
-                                                </div>
-                                                <div className="flex-1 w-full flex flex-col justify-between">
-                                                    <div>
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <h4 className="font-extrabold text-gray-900 text-lg group-hover:text-[#5c52d2] transition-colors">{action.title}</h4>
-                                                            <ArrowUpRight className="w-4 h-4 text-gray-300 group-hover:text-[#5c52d2] transition-colors" />
-                                                        </div>
-                                                        <p className="text-sm font-medium text-gray-500 leading-relaxed">{action.desc}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </Card>
-                                    </motion.div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* More Actions */}
-                        <div className="space-y-6">
-                            <div className="flex items-center gap-3 mb-4 ml-1 text-white">
-                                <Plus className="w-6 h-6 text-yellow-300" />
-                                <h2 className="text-2xl font-black tracking-tight drop-shadow-md">More Actions</h2>
-                            </div>
-                            <div className="grid md:grid-cols-2 gap-6">
-                                <motion.button
-                                    whileHover={{ scale: 1.01 }}
-                                    whileTap={{ scale: 0.99 }}
-                                    onClick={() => navigate('/interview')}
-                                    className="w-full bg-white/90 backdrop-blur-sm border-0 rounded-3xl p-6 flex justify-between items-center group shadow-lg hover:shadow-xl transition-all"
-                                >
-                                    <div className="flex items-center gap-5">
-                                        <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center group-hover:bg-red-100 transition-colors">
-                                            <Mic2 className="w-6 h-6" />
-                                        </div>
-                                        <div className="text-left">
-                                            <span className="block font-black text-gray-900 text-lg group-hover:text-red-600 transition-colors">Mock Interview</span>
-                                            <span className="text-sm text-gray-500 font-medium">Practice with AI</span>
-                                        </div>
-                                    </div>
-                                    <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-red-500 group-hover:text-white transition-all">
-                                        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-white" />
-                                    </div>
-                                </motion.button>
-
-                                <motion.button
-                                    whileHover={{ scale: 1.01 }}
-                                    whileTap={{ scale: 0.99 }}
-                                    onClick={() => navigate('/jobs')}
-                                    className="w-full bg-white/90 backdrop-blur-sm border-0 rounded-3xl p-6 flex justify-between items-center group shadow-lg hover:shadow-xl transition-all"
-                                >
-                                    <div className="flex items-center gap-5">
-                                        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
-                                            <Briefcase className="w-6 h-6" />
-                                        </div>
-                                        <div className="text-left">
-                                            <span className="block font-black text-gray-900 text-lg group-hover:text-blue-600 transition-colors">Job Matching</span>
-                                            <span className="text-sm text-gray-500 font-medium">Find your fit</span>
-                                        </div>
-                                    </div>
-                                    <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-all">
-                                        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-white" />
-                                    </div>
-                                </motion.button>
-                            </div>
-                        </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-medium text-slate-400">{rec.p}% complete</span>
+                                    <span className="text-[11px] font-semibold text-[#6C63FF] group-hover:underline">Continue →</span>
+                                </div>
+                            </motion.div>
+                        ))}
                     </div>
-                </main>
+                </div>
+
             </div>
         </div>
     );
 }
-
-// Missing Lucide component
-const BarChart2 = (props: any) => (
-    <svg
-        {...props}
-        xmlns="http://www.w3.org/2000/svg"
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-    >
-        <line x1="18" y1="20" x2="18" y2="10" />
-        <line x1="12" y1="20" x2="12" y2="4" />
-        <line x1="6" y1="20" x2="6" y2="14" />
-    </svg>
-);

@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { getAdminCommandCentre, AdminUser } from '../services/admin';
-import { PremiumNavbar } from '../components/PremiumNavbar';
-import { PremiumBackground } from '../components/PremiumBackground';
 import { Shield, Users, Activity, UserMinus, ShieldAlert, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -33,10 +31,7 @@ const AdminCommandCentre: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-black text-white selection:bg-red-500/30">
-            <PremiumBackground />
-            <PremiumNavbar />
-
-            <main className="relative pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto z-10">
+<main className="relative pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto z-10">
                 <div className="mb-8">
                     <Link to="/admin/users" className="inline-flex items-center text-slate-400 hover:text-white transition-colors mb-6 group">
                         <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />

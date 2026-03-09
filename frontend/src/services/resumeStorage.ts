@@ -13,6 +13,19 @@ export const saveResumeToProfile = async (payload: {
     return res.data;
 };
 
+export const updateSavedResume = async (resumeId: string, payload: {
+    resume_name?: string;
+    resume_data?: any;
+    template_id?: string;
+    theme?: string;
+    target_role?: string;
+    ats_score?: number;
+    is_primary?: boolean;
+}) => {
+    const res = await api.put(`/saved-resumes/${resumeId}`, payload);
+    return res.data;
+};
+
 export const getSavedResumes = async () => {
     const res = await api.get('/saved-resumes/');
     return res.data;

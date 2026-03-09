@@ -19,12 +19,20 @@ import type { BaseTemplate, CatalogTemplate } from './templates';
 import type { ResumeData } from './types';
 import { exportToPDF, exportToDOCX } from './exportUtils';
 import { optimizeResumeContent } from '../../services/resumeBuilder';
-import { saveResumeToProfile } from '../../services/resumeStorage';
+import { saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
 import { SidePanelEditor } from './SidePanelEditor';
+
+interface EditMeta {
+    id: string;
+    originalName: string;
+    templateId: string;
+    theme: string;
+}
 
 interface StepVisualBuilderProps {
     data: ResumeData;
     onChange: (d: Partial<ResumeData>) => void;
+    editMeta?: EditMeta | null;
 }
 
 /* Render the correct base template component */
@@ -93,7 +101,7 @@ function MiniThumb({ base, color }: { base: BaseTemplate; color: string }) {
 /* A4 page height in pixels at 96dpi (794px width) */
 const A4_PAGE_HEIGHT = 1122;
 
-export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
+export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilderProps) {
     const [selectedId, setSelectedId] = useState('ats-modern');
     const [customColor, setCustomColor] = useState<string | null>(null);
     const [exporting, setExporting] = useState<string | null>(null);
@@ -111,8 +119,32 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
     const previewRef = useRef<HTMLDivElement>(null);
     const fsScrollRef = useRef<HTMLDivElement>(null);
 
-    const selected = useMemo(() => TEMPLATE_CATALOG.find(t => t.template_id === selectedId) || TEMPLATE_CATALOG[0], [selectedId]);
-    const accentColor = customColor || selected.default_color;
+    // ── Resume naming & save-mode modals ──
+    const [showNameModal, setShowNameModal] = useState(false);
+    const [resumeNameInput, setResumeNameInput] = useState('');
+    const [showSaveModeModal, setShowSaveModeModal] = useState(false);
+    const [copyNameInput, setCopyNameInput] = useState('');
+    const [saveModeStep, setSaveModeStep] = useState<'choose' | 'copy-name'>('choose');
+
+    const selected = useMemo(() => {
+        // In edit mode, try to match the original template first
+        if (editMeta?.templateId && selectedId === 'ats-modern') {
+            const editTmpl = TEMPLATE_CATALOG.find(t => t.template_id === editMeta.templateId);
+            if (editTmpl) return editTmpl;
+        }
+        return TEMPLATE_CATALOG.find(t => t.template_id === selectedId) || TEMPLATE_CATALOG[0];
+    }, [selectedId, editMeta]);
+    const accentColor = customColor || (editMeta?.theme && editMeta.theme !== 'default' ? editMeta.theme : null) || selected.default_color;
+
+    // In edit mode, initialise selected template from editMeta
+    useEffect(() => {
+        if (editMeta?.templateId) {
+            setSelectedId(editMeta.templateId);
+        }
+        if (editMeta?.theme && editMeta.theme !== 'default') {
+            setCustomColor(editMeta.theme);
+        }
+    }, [editMeta]);
 
     // Filtered catalog
     const filteredCatalog = useMemo(() => {
@@ -242,29 +274,78 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
         setExporting(null);
     };
 
-    const handleSaveToProfile = async () => {
+    // Build common payload
+    const buildPayload = (name: string) => ({
+        resume_name: name,
+        resume_data: {
+            personal: data.personal,
+            education: data.education,
+            experience: data.experience,
+            projects: data.projects,
+            skills: data.skills
+        },
+        template_id: selectedId,
+        theme: accentColor || 'default',
+        target_role: data.target_role,
+        ats_score: data.ats?.score,
+        is_primary: true
+    });
+
+    // Entry point: user clicks "Save to Profile"
+    const handleSaveToProfile = () => {
+        if (editMeta) {
+            // Editing mode → ask replace or copy
+            setSaveModeStep('choose');
+            setCopyNameInput('');
+            setShowSaveModeModal(true);
+        } else {
+            // Fresh resume → ask for a name
+            setResumeNameInput(`${data.target_role || 'Untitled'} Resume`);
+            setShowNameModal(true);
+        }
+    };
+
+    // Save fresh resume with a name
+    const handleSaveWithName = async () => {
+        if (!resumeNameInput.trim()) return;
         setSaving(true);
+        setShowNameModal(false);
         try {
-            const payload = {
-                resume_name: `${data.target_role || 'Untitled'} Resume`,
-                resume_data: {
-                    personal: data.personal,
-                    education: data.education,
-                    experience: data.experience,
-                    projects: data.projects,
-                    skills: data.skills
-                },
-                template_id: selectedId,
-                theme: accentColor || 'default',
-                target_role: data.target_role,
-                ats_score: data.ats?.score,
-                is_primary: true
-            };
-            await saveResumeToProfile(payload);
+            await saveResumeToProfile(buildPayload(resumeNameInput.trim()));
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {
             console.error('Error saving resume to profile:', e);
+        }
+        setSaving(false);
+    };
+
+    // Replace the original resume
+    const handleReplaceOriginal = async () => {
+        if (!editMeta) return;
+        setSaving(true);
+        setShowSaveModeModal(false);
+        try {
+            await updateSavedResume(editMeta.id, buildPayload(editMeta.originalName));
+            setSaved(true);
+            setTimeout(() => setSaved(false), 3000);
+        } catch (e) {
+            console.error('Error updating resume:', e);
+        }
+        setSaving(false);
+    };
+
+    // Save as a new copy with custom name
+    const handleSaveAsCopy = async () => {
+        if (!copyNameInput.trim()) return;
+        setSaving(true);
+        setShowSaveModeModal(false);
+        try {
+            await saveResumeToProfile(buildPayload(copyNameInput.trim()));
+            setSaved(true);
+            setTimeout(() => setSaved(false), 3000);
+        } catch (e) {
+            console.error('Error saving resume copy:', e);
         }
         setSaving(false);
     };
@@ -742,6 +823,192 @@ export function StepVisualBuilder({ data, onChange }: StepVisualBuilderProps) {
                             <div className="text-center pb-3 flex-shrink-0">
                                 <span className="text-[10px] text-white/30 font-medium">Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50 text-[9px] font-bold">ESC</kbd> to close · Scroll to see full resume</span>
                             </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
+            {/* ═══════════════════════════════════════════════════ */}
+            {/* RESUME NAME MODAL — for fresh saves                  */}
+            {/* ═══════════════════════════════════════════════════ */}
+            {createPortal(
+                <AnimatePresence>
+                    {showNameModal && (
+                        <motion.div
+                            key="name-modal"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+                            style={{ backgroundColor: 'rgba(15, 15, 25, 0.7)', backdropFilter: 'blur(8px)' }}
+                            onClick={() => setShowNameModal(false)}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                                className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div className="bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] px-8 py-6">
+                                    <h3 className="text-xl font-black text-white">Name Your Resume</h3>
+                                    <p className="text-white/70 text-sm font-medium mt-1">Give it a memorable name so you can find it later</p>
+                                </div>
+                                <div className="p-8 space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Resume Name</label>
+                                        <input
+                                            type="text"
+                                            value={resumeNameInput}
+                                            onChange={e => setResumeNameInput(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleSaveWithName()}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 font-bold focus:outline-none focus:border-[#5c52d2] focus:ring-4 focus:ring-purple-100 transition-all"
+                                            placeholder="e.g. Software Engineer Resume"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setShowNameModal(false)}
+                                            className="flex-1 px-6 py-3 rounded-xl border-2 border-gray-200 text-gray-500 font-bold hover:bg-gray-50 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveWithName}
+                                            disabled={!resumeNameInput.trim()}
+                                            className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-green-200 hover:shadow-xl transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                                        >
+                                            <Save className="w-4 h-4" /> Save Resume
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
+
+            {/* ═══════════════════════════════════════════════════ */}
+            {/* SAVE MODE MODAL — Replace or Save Copy (edit mode)  */}
+            {/* ═══════════════════════════════════════════════════ */}
+            {createPortal(
+                <AnimatePresence>
+                    {showSaveModeModal && (
+                        <motion.div
+                            key="save-mode-modal"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+                            style={{ backgroundColor: 'rgba(15, 15, 25, 0.7)', backdropFilter: 'blur(8px)' }}
+                            onClick={() => setShowSaveModeModal(false)}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                                className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div className="bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] px-8 py-6">
+                                    <h3 className="text-xl font-black text-white">Save Changes</h3>
+                                    <p className="text-white/70 text-sm font-medium mt-1">
+                                        How would you like to save "<span className="text-white font-bold">{editMeta?.originalName}</span>"?
+                                    </p>
+                                </div>
+
+                                <div className="p-8">
+                                    <AnimatePresence mode="wait">
+                                        {saveModeStep === 'choose' && (
+                                            <motion.div
+                                                key="choose"
+                                                initial={{ opacity: 0, x: -10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 10 }}
+                                                className="space-y-4"
+                                            >
+                                                <button
+                                                    onClick={handleReplaceOriginal}
+                                                    className="w-full p-5 rounded-2xl border-2 border-gray-200 hover:border-[#5c52d2] hover:bg-purple-50/50 transition-all group text-left flex items-start gap-4"
+                                                >
+                                                    <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0 group-hover:bg-[#5c52d2] transition-colors">
+                                                        <Save className="w-5 h-5 text-[#5c52d2] group-hover:text-white transition-colors" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-black text-gray-800 text-base">Replace Original</h4>
+                                                        <p className="text-gray-400 text-sm font-medium mt-0.5">Overwrite "{editMeta?.originalName}" with your changes</p>
+                                                    </div>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        setCopyNameInput(`${editMeta?.originalName || 'Resume'} (Copy)`);
+                                                        setSaveModeStep('copy-name');
+                                                    }}
+                                                    className="w-full p-5 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/50 transition-all group text-left flex items-start gap-4"
+                                                >
+                                                    <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-500 transition-colors">
+                                                        <FileText className="w-5 h-5 text-emerald-600 group-hover:text-white transition-colors" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-black text-gray-800 text-base">Save as New Copy</h4>
+                                                        <p className="text-gray-400 text-sm font-medium mt-0.5">Keep the original and create a separate version</p>
+                                                    </div>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => setShowSaveModeModal(false)}
+                                                    className="w-full py-3 text-center text-gray-400 font-bold text-sm hover:text-gray-600 transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </motion.div>
+                                        )}
+
+                                        {saveModeStep === 'copy-name' && (
+                                            <motion.div
+                                                key="copy-name"
+                                                initial={{ opacity: 0, x: 10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: -10 }}
+                                                className="space-y-6"
+                                            >
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Name for the Copy</label>
+                                                    <input
+                                                        type="text"
+                                                        value={copyNameInput}
+                                                        onChange={e => setCopyNameInput(e.target.value)}
+                                                        onKeyDown={e => e.key === 'Enter' && handleSaveAsCopy()}
+                                                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 font-bold focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 transition-all"
+                                                        placeholder="e.g. Senior Developer Resume v2"
+                                                        autoFocus
+                                                    />
+                                                </div>
+                                                <div className="flex gap-3">
+                                                    <button
+                                                        onClick={() => setSaveModeStep('choose')}
+                                                        className="flex-1 px-6 py-3 rounded-xl border-2 border-gray-200 text-gray-500 font-bold hover:bg-gray-50 transition-colors"
+                                                    >
+                                                        ← Back
+                                                    </button>
+                                                    <button
+                                                        onClick={handleSaveAsCopy}
+                                                        disabled={!copyNameInput.trim()}
+                                                        className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-green-200 hover:shadow-xl transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                                                    >
+                                                        <Save className="w-4 h-4" /> Save Copy
+                                                    </button>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            </motion.div>
                         </motion.div>
                     )}
                 </AnimatePresence>,

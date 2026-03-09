@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,8 +21,6 @@ import {
     Volume2, VolumeX, Pause, RotateCcw, Gauge
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PremiumBackground } from '../components/PremiumBackground';
-
 type InterviewStep = 'landing' | 'setup' | 'screening' | 'technical' | 'coding' | 'hr' | 'stage_result' | 'final_results';
 type InterviewMode = 'text' | 'voice';
 type InterviewPath = 'resume_screening' | 'direct_skill';
@@ -393,11 +390,8 @@ export default function Interview() {
     // RENDER
     // ═══════════════════════════════════════
     return (
-        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative animated-gradient">
-            <PremiumBackground />
-            <div className="relative z-10">
-                <PremiumNavbar />
-                <main className="max-w-5xl mx-auto px-6 pt-16">
+        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
+<main className="max-w-5xl mx-auto px-6 pt-16">
                     <AnimatePresence mode="wait">
                         {/* ═══ LANDING ═══ */}
                         {step === 'landing' && (
@@ -948,8 +942,6 @@ export default function Interview() {
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </main>
-            </div>
-        </div>
+                </main>        </div>
     );
 }

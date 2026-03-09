@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PremiumNavbar } from '../components/PremiumNavbar';
 import {
     Target,
     TrendingUp,
@@ -358,9 +357,7 @@ export default function CareerIntelligence() {
 
     return (
         <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
-            <PremiumNavbar />
-
-            <main className="max-w-7xl mx-auto px-6 pt-16">
+<main className="max-w-7xl mx-auto px-6 pt-16">
                 <AnimatePresence mode="wait">
                     {step === 'domains' && (
                         <motion.div

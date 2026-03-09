@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { PremiumNavbar } from '../components/PremiumNavbar';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -46,10 +46,11 @@ function RenderTemplate({ base, data, color }: { base: BaseTemplate; data: Resum
 }
 
 /* Lazy-rendered resume card — only renders the heavy template when visible */
-function LazyResumePreview({ resume, onDelete, onDownload }: {
+function LazyResumePreview({ resume, onDelete, onDownload, onEdit }: {
     resume: any;
     onDelete: (id: string) => void;
     onDownload: (resume: any) => void;
+    onEdit: (resume: any) => void;
 }) {
     const [isVisible, setIsVisible] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -80,6 +81,14 @@ function LazyResumePreview({ resume, onDelete, onDownload }: {
                     <p className="text-xs font-semibold text-slate-400">Template: <span className="uppercase text-[#5c52d2]">{resume.template_id}</span> • {new Date(resume.created_at).toLocaleDateString()}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shadow-sm text-[#5c52d2] hover:text-[#4a42b8] hover:bg-purple-50 border-purple-200"
+                        onClick={() => onEdit(resume)}
+                    >
+                        <Edit2 className="w-4 h-4 mr-1.5" /> Edit
+                    </Button>
                     <Button
                         variant="outline"
                         size="sm"
@@ -141,6 +150,9 @@ function LazyResumePreview({ resume, onDelete, onDownload }: {
 
                 {/* Hover Overlay */}
                 <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-4">
+                    <Button size="lg" className="bg-[#5c52d2] text-white hover:bg-[#4a42b8] font-bold px-8 shadow-xl" onClick={() => onEdit(resume)}>
+                        <Edit2 className="w-5 h-5 mr-2" /> Edit Resume
+                    </Button>
                     <Button size="lg" className="bg-white text-slate-900 hover:bg-slate-50 font-bold px-8 shadow-xl" onClick={() => onDownload(resume)}>
                         <Download className="w-5 h-5 mr-2" /> Download Document
                     </Button>
@@ -163,6 +175,7 @@ function formatJoinDate(dateStr?: string | null): string {
 
 export default function Profile() {
     const { user, refreshUser } = useAuth();
+    const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -260,6 +273,12 @@ export default function Profile() {
         await exportToPDF(`resume-preview-${resume.id}`, `${name}.pdf`);
     };
 
+    const handleEditResume = (resume: any) => {
+        navigate('/resume-builder', {
+            state: { editResume: resume }
+        });
+    };
+
     const handleSave = async () => {
         if (!user?.email) return;
         setIsSaving(true);
@@ -329,9 +348,7 @@ export default function Profile() {
 
     return (
         <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
-            <PremiumNavbar />
-
-            <main className="max-w-5xl mx-auto px-6 pt-10">
+<main className="max-w-5xl mx-auto px-6 pt-10">
                 <div className="bg-white rounded-[2.5rem] shadow-xl overflow-hidden border border-slate-100 relative">
                     {/* Header Banner */}
                     <div className="h-48 bg-gradient-to-r from-[#5c52d2] to-[#7c66dc] relative">
@@ -656,6 +673,7 @@ export default function Profile() {
                                     resume={resume}
                                     onDelete={handleDeleteResume}
                                     onDownload={handleDownloadPDF}
+                                    onEdit={handleEditResume}
                                 />
                             ))}
                         </div>

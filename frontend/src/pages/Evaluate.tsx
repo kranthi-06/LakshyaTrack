@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +7,6 @@ import {
     BrainCircuit, ArrowRight, Loader2, MinusCircle, FileCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PremiumBackground } from '../components/PremiumBackground';
 import { analyzeResume } from '../services/resume';
 
 interface AnalysisResult {
@@ -285,11 +283,8 @@ export default function Evaluate() {
     };
 
     return (
-        <div className="min-h-screen font-sans pb-20 relative overflow-hidden animated-gradient">
-            <PremiumBackground />
-            <PremiumNavbar />
-
-            <main className="max-w-[1300px] mx-auto px-6 pt-16 relative z-10">
+        <div className="min-h-screen font-sans pb-20 relative overflow-hidden bg-slate-50 dark:bg-[#050510]">
+<main className="max-w-[1300px] mx-auto px-6 pt-16 relative z-10">
                 {/* Header Section */}
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PremiumNavbar } from '../components/PremiumNavbar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,7 +32,6 @@ import {
     ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PremiumBackground } from '../components/PremiumBackground';
 import {
     browseOpportunities,
     getFilterOptions,
@@ -318,12 +316,8 @@ export default function Jobs() {
     // ════════════════════════════════════════════════════════════
 
     return (
-        <div className="min-h-screen font-sans pb-20 relative overflow-hidden animated-gradient">
-            <PremiumBackground />
-            <div className="relative z-10">
-                <PremiumNavbar />
-
-                <main className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-6">
+        <div className="min-h-screen font-sans pb-20 relative overflow-hidden bg-slate-50 dark:bg-[#050510]">
+<main className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-6">
 
                     {/* ── Header ───────────────────────────────────── */}
                     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
@@ -749,9 +743,7 @@ export default function Jobs() {
                     )}
                         </>
                     )}
-                </main>
-            </div>
-        </div>
+                </main>        </div>
     );
 }
 

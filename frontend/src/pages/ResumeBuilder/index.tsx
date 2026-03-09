@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, FileText, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FileText, Sparkles, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Stepper } from './components';
 import { StepTargetRole } from './StepTargetRole';
@@ -16,11 +16,27 @@ import { defaultResumeData } from './types';
 
 interface AIBuilderProps {
     onBack: () => void;
+    editResume?: any;
 }
 
-export default function AIBuilder({ onBack }: AIBuilderProps) {
-    const [step, setStep] = useState<BuilderStep>(1);
-    const [data, setData] = useState<ResumeData>({ ...defaultResumeData });
+export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
+    // If editResume is provided, start at step 8 (Visual Studio) directly
+    const [step, setStep] = useState<BuilderStep>(editResume ? 8 : 1);
+    const [data, setData] = useState<ResumeData>(() => {
+        if (editResume?.resume_data) {
+            const rd = editResume.resume_data;
+            return {
+                target_role: editResume.target_role || rd.target_role || '',
+                personal: rd.personal || defaultResumeData.personal,
+                education: rd.education || defaultResumeData.education,
+                experience: rd.experience || defaultResumeData.experience,
+                projects: rd.projects || defaultResumeData.projects,
+                skills: rd.skills || defaultResumeData.skills,
+                ats: rd.ats || null,
+            };
+        }
+        return { ...defaultResumeData };
+    });
 
     const update = (partial: Partial<ResumeData>) => setData(prev => ({ ...prev, ...partial }));
     const next = () => step < 8 && setStep((step + 1) as BuilderStep);
@@ -30,6 +46,14 @@ export default function AIBuilder({ onBack }: AIBuilderProps) {
         if (step === 1) return data.target_role.trim().length > 0;
         return true;
     };
+
+    // Edit mode metadata — passed to visual builder for save logic
+    const editMeta = editResume ? {
+        id: editResume.id,
+        originalName: editResume.resume_name,
+        templateId: editResume.template_id,
+        theme: editResume.theme,
+    } : null;
 
     return (
         <motion.div
@@ -46,7 +70,14 @@ export default function AIBuilder({ onBack }: AIBuilderProps) {
                         <FileText className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-lg font-black text-gray-900 tracking-tight">AI Resume Architect</h1>
+                        <h1 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
+                            AI Resume Architect
+                            {editResume && (
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                    <Edit2 className="w-3 h-3" /> Editing: {editResume.resume_name}
+                                </span>
+                            )}
+                        </h1>
                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Step {step} of 8</p>
                     </div>
                 </div>
@@ -67,7 +98,7 @@ export default function AIBuilder({ onBack }: AIBuilderProps) {
                         {step === 5 && <StepProjects data={data} onChange={update} />}
                         {step === 6 && <StepSkills data={data} onChange={update} />}
                         {step === 7 && <StepATSPreview data={data} onChange={update} />}
-                        {step === 8 && <StepVisualBuilder data={data} onChange={update} />}
+                        {step === 8 && <StepVisualBuilder data={data} onChange={update} editMeta={editMeta} />}
                     </motion.div>
                 </AnimatePresence>
 

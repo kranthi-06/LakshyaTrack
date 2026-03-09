@@ -124,6 +124,73 @@ async def get_saved_resumes(
     
     return {"resumes": serialized}
 
+class ResumeUpdateRequest(BaseModel):
+    resume_name: Optional[str] = None
+    resume_data: Optional[Dict[str, Any]] = None
+    template_id: Optional[str] = None
+    theme: Optional[str] = None
+    target_role: Optional[str] = None
+    ats_score: Optional[float] = None
+    is_primary: Optional[bool] = None
+
+@router.put("/{resume_id}")
+async def update_saved_resume(
+    resume_id: str,
+    request: ResumeUpdateRequest,
+    db: Session = Depends(deps.get_db),
+    current_user = Depends(deps.get_current_active_user),
+) -> Any:
+    """Update an existing saved resume."""
+    resume = db.query(SavedResume).filter(
+        SavedResume.id == resume_id,
+        SavedResume.user_id == current_user.id
+    ).first()
+    
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    
+    # Update fields that were provided
+    if request.resume_name is not None:
+        resume.resume_name = request.resume_name
+    if request.resume_data is not None:
+        resume.resume_data = request.resume_data
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(resume, "resume_data")
+    if request.template_id is not None:
+        resume.template_id = request.template_id
+    if request.theme is not None:
+        resume.theme = request.theme
+    if request.target_role is not None:
+        resume.target_role = request.target_role
+    if request.ats_score is not None:
+        resume.ats_score = request.ats_score
+    if request.is_primary is not None:
+        if request.is_primary:
+            db.query(SavedResume).filter(
+                SavedResume.user_id == current_user.id,
+                SavedResume.id != resume_id
+            ).update({"is_primary": False})
+        resume.is_primary = request.is_primary
+    
+    # Sync extracted skills to Profile if resume_data was updated
+    if request.resume_data:
+        extracted_skills = extract_skills_from_resume(request.resume_data)
+        if extracted_skills:
+            profile = db.query(Profile).filter(Profile.id == current_user.id).first()
+            if not profile:
+                profile = Profile(id=current_user.id)
+                db.add(profile)
+            current_skills = set(profile.skills or [])
+            new_skills = current_skills.union(set(extracted_skills))
+            profile.skills = list(new_skills)
+            from sqlalchemy.orm.attributes import flag_modified as fm
+            fm(profile, "skills")
+    
+    db.commit()
+    db.refresh(resume)
+    
+    return {"message": "Resume updated successfully", "id": str(resume.id)}
+
 @router.delete("/{resume_id}")
 async def delete_saved_resume(
     resume_id: str,

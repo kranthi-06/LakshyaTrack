@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PremiumNavbar } from '../components/PremiumNavbar';
 import {
     BookOpen,
     Calendar,
@@ -20,8 +19,6 @@ import {
     Library,
     Users
 } from 'lucide-react';
-import { PremiumBackground } from '../components/PremiumBackground';
-
 const roadmapData = [
     {
         week: 'W1',
@@ -139,11 +136,7 @@ const roadmapData = [
 
 export default function LearningHub() {
     return (
-        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative animated-gradient">
-            <PremiumBackground />
-            <PremiumNavbar />
-
-            <div className="relative z-10">
+        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
                 <main className="max-w-5xl mx-auto px-6 pt-16 space-y-12">
 
                     {/* Header Banner */}
@@ -300,8 +293,6 @@ export default function LearningHub() {
                     </div>
 
                     {/* Decorative Elements */}
-                </main>
-            </div>
-        </div>
+                </main>        </div>
     );
 }

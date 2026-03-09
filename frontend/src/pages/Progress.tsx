@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { PremiumNavbar } from '../components/PremiumNavbar';
 import AuthLoadingScreen from '../components/AuthLoadingScreen';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,7 +30,6 @@ import {
     Activity
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { PremiumBackground } from '../components/PremiumBackground';
 import {
     getCurrentProgress,
     getProgressHistory,
@@ -191,12 +189,8 @@ export default function Progress() {
     }
 
     return (
-        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative animated-gradient">
-            <PremiumBackground />
-            <div className="relative z-10">
-                <PremiumNavbar />
-
-                <main className="max-w-[1200px] mx-auto px-6 pt-16 space-y-16">
+        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
+<main className="max-w-[1200px] mx-auto px-6 pt-16 space-y-16">
                     {/* Header Container */}
                     <div className="text-center space-y-4">
                         <h1 className="text-5xl font-[900] text-slate-900 tracking-tight">Your Learning Progress</h1>
@@ -547,7 +541,6 @@ export default function Progress() {
                         </Card>
                     </div>
                 )}
-            </div>
         </div>
     );
 }

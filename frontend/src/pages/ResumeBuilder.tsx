@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     FileText,
     Upload,
@@ -30,8 +30,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { PremiumNavbar } from '@/components/PremiumNavbar';
-import { PremiumBackground } from '@/components/PremiumBackground';
+
 import { analyzeResumeText } from '@/services/resume';
 import { extractTextFromFile } from '@/utils/ocr';
 import AIBuilder from './ResumeBuilder/index';
@@ -39,7 +38,9 @@ import AIBuilder from './ResumeBuilder/index';
 type Step = 'selection' | 'upload' | 'builder' | 'analysis' | 'templates';
 
 export default function ResumeBuilder() {
-    const [step, setStep] = useState<Step>('selection');
+    const location = useLocation();
+    const editResume = (location.state as any)?.editResume || null;
+    const [step, setStep] = useState<Step>(editResume ? 'builder' : 'selection');
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [ocrProgress, setOcrProgress] = useState('');
@@ -106,12 +107,8 @@ export default function ResumeBuilder() {
 
 
     return (
-        <div className="min-h-screen font-sans pb-20 relative overflow-hidden animated-gradient">
-            <PremiumBackground />
-            <div className="relative z-10">
-                <PremiumNavbar />
-
-                <main className="max-w-[1200px] mx-auto px-6 pt-10">
+        <div className="min-h-screen font-sans pb-20 bg-slate-50 dark:bg-[#050510]">
+                <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
                     <AnimatePresence mode="wait">
                         {step === 'selection' && (
                             <motion.div
@@ -122,13 +119,13 @@ export default function ResumeBuilder() {
                                 className="max-w-3xl mx-auto text-center space-y-12 py-10"
                             >
                                 <div className="space-y-6">
-                                    <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-inner border border-white/20">
-                                        <FileText className="w-10 h-10 text-white" />
+                                    <div className="w-20 h-20 bg-white/20 dark:bg-white/10 backdrop-blur-md rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-inner border border-white/20">
+                                        <FileText className="w-10 h-10 text-slate-800 dark:text-white" />
                                     </div>
-                                    <h1 className="text-5xl font-black text-white tracking-tight leading-tight drop-shadow-md">
+                                    <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight drop-shadow-md">
                                         Let's Start Your Career Journey!
                                     </h1>
-                                    <p className="text-blue-100 text-lg font-medium max-w-xl mx-auto drop-shadow-sm">
+                                    <p className="text-slate-600 dark:text-blue-100 text-lg font-medium max-w-xl mx-auto drop-shadow-sm">
                                         To provide you with the best career guidance, we need to understand your current profile.
                                     </p>
                                 </div>
@@ -167,7 +164,7 @@ export default function ResumeBuilder() {
                         )}
 
                         {step === 'builder' && (
-                            <AIBuilder onBack={() => setStep('selection')} />
+                            <AIBuilder onBack={() => setStep('selection')} editResume={editResume} />
                         )}
 
                         {step === 'upload' && (
@@ -179,16 +176,16 @@ export default function ResumeBuilder() {
                                 className="max-w-3xl mx-auto py-10 space-y-12"
                             >
                                 <div className="text-center space-y-6">
-                                    <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm">
+                                    <div className="w-16 h-16 bg-blue-50 dark:bg-[#0a1628] rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm">
                                         <div className="relative">
-                                            <FileText className="w-8 h-8 text-blue-400" />
+                                            <FileText className="w-8 h-8 text-blue-500 dark:text-blue-400" />
                                             <div className="absolute -top-2 -right-2 bg-red-400 text-white rounded-lg p-1 shadow-sm">
                                                 <Upload className="w-3 h-3" />
                                             </div>
                                         </div>
                                     </div>
-                                    <h1 className="text-5xl font-black text-white tracking-tight leading-tight drop-shadow-md">Upload Your Resume</h1>
-                                    <p className="text-blue-100 text-lg font-medium drop-shadow-sm">Upload your existing resume and let our AI analyze your skills, experience, and qualifications</p>
+                                    <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight drop-shadow-md">Upload Your Resume</h1>
+                                    <p className="text-slate-600 dark:text-blue-100 text-lg font-medium drop-shadow-sm">Upload your existing resume and let our AI analyze your skills, experience, and qualifications</p>
                                 </div>
 
                                 <div className="relative border-2 border-dashed border-white/30 rounded-[3rem] p-16 text-center group hover:border-white/50 transition-all bg-white/10 backdrop-blur-md shadow-xl overflow-hidden">
@@ -795,7 +792,6 @@ export default function ResumeBuilder() {
                         )}
                     </AnimatePresence>
                 </main>
-            </div >
-        </div >
+        </div>
     );
 }
