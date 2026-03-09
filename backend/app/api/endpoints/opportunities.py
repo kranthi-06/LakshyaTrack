@@ -150,10 +150,9 @@ async def live_search(
     """
     Live search: combines database search with AI-powered generation
     to return fresh, relevant results based on the user's search query.
-    Searches across all categories (jobs, courses, internships, certifications).
     """
     if not request.search_query or len(request.search_query.strip()) < 2:
-        raise HTTPException(status_code=400, detail="Search query must be at least 2 characters")
+        return {"opportunities": [], "total": 0, "db_count": 0, "ai_count": 0, "search_query": ""}
 
     try:
         result = await opportunity_service.live_search_opportunities(
@@ -163,7 +162,15 @@ async def live_search(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import logging
+        logging.getLogger(__name__).error(f"Live search endpoint error: {e}")
+        return {
+            "opportunities": [],
+            "total": 0,
+            "db_count": 0,
+            "ai_count": 0,
+            "search_query": request.search_query,
+        }
 
 
 @router.post("/fetch-external")

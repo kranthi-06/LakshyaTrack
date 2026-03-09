@@ -393,23 +393,33 @@ async def live_search_opportunities(
     Live search: first check DB for existing matches, then use AI to generate
     fresh opportunities that match the user's search query.
     Returns combined and deduplicated results.
+    Fully exception-safe — never throws, always returns a valid dict.
     """
-    # ── Step 1: Quick DB search ──
-    db_results = browse_opportunities(
-        db=db,
-        category=category if category and category != "all" else None,
-        search_query=search_query,
-        page=1,
-        per_page=per_page,
-    )
-    db_opps = db_results.get("opportunities", [])
-
-    # ── Step 2: AI generation for the search query ──
+    db_opps = []
     ai_opps = []
+
+    # ── Step 1: Quick DB search (safe) ──
+    try:
+        db_results = browse_opportunities(
+            db=db,
+            category=category if category and category != "all" else None,
+            search_query=search_query,
+            page=1,
+            per_page=per_page,
+        )
+        db_opps = db_results.get("opportunities", [])
+    except Exception as e:
+        logger.error(f"Live search DB query error: {e}")
+        db_opps = []
+
+    # ── Step 2: AI generation for the search query (safe) ──
     try:
         ai_opps = await _ai_search_generate(search_query, category, db)
+        if not isinstance(ai_opps, list):
+            ai_opps = []
     except Exception as e:
         logger.error(f"AI live search generation error: {e}")
+        ai_opps = []
 
     # ── Step 3: Merge & deduplicate ──
     seen_titles = set()
@@ -417,19 +427,25 @@ async def live_search_opportunities(
 
     # DB results first (they're already verified)
     for opp in db_opps:
-        key = opp["title"].lower().strip()
-        if key not in seen_titles:
-            seen_titles.add(key)
-            opp["_source_type"] = "database"
-            merged.append(opp)
+        try:
+            key = opp.get("title", "").lower().strip()
+            if key and key not in seen_titles:
+                seen_titles.add(key)
+                opp["_source_type"] = "database"
+                merged.append(opp)
+        except Exception:
+            continue
 
     # Then AI-generated results
     for opp in ai_opps:
-        key = opp["title"].lower().strip()
-        if key not in seen_titles:
-            seen_titles.add(key)
-            opp["_source_type"] = "ai_generated"
-            merged.append(opp)
+        try:
+            key = opp.get("title", "").lower().strip()
+            if key and key not in seen_titles:
+                seen_titles.add(key)
+                opp["_source_type"] = "ai_generated"
+                merged.append(opp)
+        except Exception:
+            continue
 
     return {
         "opportunities": merged[:per_page],
