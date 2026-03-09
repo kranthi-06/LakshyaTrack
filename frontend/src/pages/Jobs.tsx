@@ -27,6 +27,10 @@ import {
     Tag,
     ChevronLeft,
     ChevronRight,
+    Radar,
+    Database,
+    Cpu,
+    ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PremiumBackground } from '../components/PremiumBackground';
@@ -36,6 +40,7 @@ import {
     getRecommendations,
     discoverOpportunities,
     fetchExternalSources,
+    liveSearchOpportunities,
 } from '../services/careerPlatform';
 
 // ════════════════════════════════════════════════════════════
@@ -122,6 +127,13 @@ export default function Jobs() {
     const [hasInitialLoad, setHasInitialLoad] = useState(false);
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // ── Live Search State ────────────────────────────────
+    const [isLiveSearching, setIsLiveSearching] = useState(false);
+    const [liveSearchResults, setLiveSearchResults] = useState<(Opportunity & { _source_type?: string })[]>([]);
+    const [liveSearchActive, setLiveSearchActive] = useState(false);
+    const [liveSearchQuery, setLiveSearchQuery] = useState('');
+    const [liveSearchStats, setLiveSearchStats] = useState<{ db_count: number; ai_count: number } | null>(null);
+
     // ── Load opportunities ───────────────────────────────
     const loadOpportunities = useCallback(async (resetPage = false) => {
         setIsLoading(true);
@@ -183,21 +195,21 @@ export default function Jobs() {
 
     // ── Reload on filter change ──────────────────────────
     useEffect(() => {
-        if (hasInitialLoad) {
+        if (hasInitialLoad && !liveSearchActive) {
             loadOpportunities(true);
         }
     }, [activeCategory, locationFilter, skillFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Reload on page change ────────────────────────────
     useEffect(() => {
-        if (hasInitialLoad && page > 1) {
+        if (hasInitialLoad && page > 1 && !liveSearchActive) {
             loadOpportunities(false);
         }
     }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── Debounced search ─────────────────────────────────
+    // ── Debounced search (only when NOT in live search mode) ─
     useEffect(() => {
-        if (!hasInitialLoad) return;
+        if (!hasInitialLoad || liveSearchActive) return;
         if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
         searchTimeoutRef.current = setTimeout(() => {
             loadOpportunities(true);
@@ -241,6 +253,49 @@ export default function Jobs() {
         }
     };
 
+    // ── LIVE SEARCH ──────────────────────────────────────
+    const handleLiveSearch = async () => {
+        const query = searchQuery.trim();
+        if (!query || query.length < 2) return;
+
+        setIsLiveSearching(true);
+        setLiveSearchActive(true);
+        setLiveSearchQuery(query);
+        setLiveSearchResults([]);
+        setLiveSearchStats(null);
+
+        try {
+            const data = await liveSearchOpportunities(
+                query,
+                activeCategory !== 'all' ? activeCategory : undefined
+            );
+            setLiveSearchResults(data.opportunities || []);
+            setLiveSearchStats({
+                db_count: data.db_count || 0,
+                ai_count: data.ai_count || 0,
+            });
+        } catch (err) {
+            console.error('Live search failed:', err);
+            setLiveSearchResults([]);
+        } finally {
+            setIsLiveSearching(false);
+        }
+    };
+
+    const exitLiveSearch = () => {
+        setLiveSearchActive(false);
+        setLiveSearchResults([]);
+        setLiveSearchQuery('');
+        setLiveSearchStats(null);
+        loadOpportunities(true);
+    };
+
+    const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && searchQuery.trim().length >= 2) {
+            handleLiveSearch();
+        }
+    };
+
     // ── Open opportunity ─────────────────────────────────
     const handleOpen = (opp: Opportunity) => {
         if (opp.url) {
@@ -253,6 +308,7 @@ export default function Jobs() {
         setLocationFilter('');
         setSkillFilter('');
         setActiveCategory('all');
+        if (liveSearchActive) exitLiveSearch();
     };
 
     const hasActiveFilters = searchQuery || locationFilter || skillFilter || activeCategory !== 'all';
@@ -305,25 +361,54 @@ export default function Jobs() {
 
                     {/* ── Search + Filter Bar ─────────────────────── */}
                     <Card className="p-4 sm:p-6 rounded-2xl border border-white/30 bg-white/80 backdrop-blur-md shadow-xl shadow-slate-100/50 mb-6">
-                        <div className="flex flex-col lg:flex-row gap-4">
-                            {/* Search */}
+                        {/* Main Search Row */}
+                        <div className="flex flex-col sm:flex-row gap-3 mb-4">
                             <div className="flex-1 relative">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
                                 <Input
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search skills, technologies, roles, or companies..."
-                                    className="h-12 pl-11 rounded-xl border-slate-100 bg-slate-50/50 font-medium focus:bg-white focus:border-[#5c52d2] transition-all text-sm"
+                                    onKeyDown={handleSearchKeyDown}
+                                    placeholder="Search for jobs, courses, internships, certifications... (e.g. 'React Developer', 'AWS Cloud', 'Data Science')"
+                                    className="h-13 pl-11 pr-4 rounded-xl border-slate-100 bg-slate-50/50 font-medium focus:bg-white focus:border-[#5c52d2] focus:ring-2 focus:ring-purple-100 transition-all text-sm"
                                 />
                             </div>
+                            <Button
+                                onClick={handleLiveSearch}
+                                disabled={isLiveSearching || searchQuery.trim().length < 2}
+                                className="h-13 px-7 rounded-xl bg-gradient-to-r from-[#5c52d2] via-[#7c3aed] to-[#8b5cf6] text-white font-bold text-sm uppercase tracking-wider shadow-lg shadow-purple-200/50 hover:shadow-purple-300/70 hover:scale-[1.02] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                            >
+                                {isLiveSearching ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Searching...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Radar className="w-4 h-4" />
+                                        Search Market
+                                    </>
+                                )}
+                            </Button>
+                        </div>
 
+                        {/* Hint text */}
+                        {!liveSearchActive && (
+                            <p className="text-[11px] text-slate-400 font-medium mb-4 flex items-center gap-1.5">
+                                <Sparkles className="w-3 h-3 text-purple-400" />
+                                Hit <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] font-bold border border-slate-200">Enter</kbd> or click <strong>Search Market</strong> to find live opportunities from all platforms via AI
+                            </p>
+                        )}
+
+                        {/* Filter Row */}
+                        <div className="flex flex-col lg:flex-row gap-3">
                             {/* Location */}
                             <div className="relative w-full lg:w-52">
                                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none z-10" />
                                 <select
                                     value={locationFilter}
                                     onChange={(e) => setLocationFilter(e.target.value)}
-                                    className="w-full h-12 pl-9 pr-10 rounded-xl border border-slate-100 bg-slate-50/50 font-medium appearance-none focus:border-[#5c52d2] outline-none transition-all text-sm text-slate-700"
+                                    className="w-full h-11 pl-9 pr-10 rounded-xl border border-slate-100 bg-slate-50/50 font-medium appearance-none focus:border-[#5c52d2] outline-none transition-all text-sm text-slate-700"
                                 >
                                     <option value="">All Locations</option>
                                     <option value="Remote">Remote</option>
@@ -340,7 +425,7 @@ export default function Jobs() {
                                 <select
                                     value={skillFilter}
                                     onChange={(e) => setSkillFilter(e.target.value)}
-                                    className="w-full h-12 pl-9 pr-10 rounded-xl border border-slate-100 bg-slate-50/50 font-medium appearance-none focus:border-[#5c52d2] outline-none transition-all text-sm text-slate-700"
+                                    className="w-full h-11 pl-9 pr-10 rounded-xl border border-slate-100 bg-slate-50/50 font-medium appearance-none focus:border-[#5c52d2] outline-none transition-all text-sm text-slate-700"
                                 >
                                     <option value="">All Skills</option>
                                     {filterOptions?.top_skills.map(s => (
@@ -350,14 +435,16 @@ export default function Jobs() {
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                             </div>
 
+                            <div className="flex-1" />
+
                             {/* Filter toggle + Clear */}
                             {hasActiveFilters && (
                                 <Button
                                     onClick={clearFilters}
                                     variant="ghost"
-                                    className="h-12 px-4 text-sm text-slate-400 hover:text-red-500 font-bold"
+                                    className="h-11 px-4 text-sm text-slate-400 hover:text-red-500 font-bold"
                                 >
-                                    <X className="w-4 h-4 mr-1" /> Clear
+                                    <X className="w-4 h-4 mr-1" /> Clear All
                                 </Button>
                             )}
                         </div>
@@ -431,6 +518,148 @@ export default function Jobs() {
                         )}
                     </AnimatePresence>
 
+                    {/* ════════════════════════════════════════════════ */}
+                    {/* ── LIVE SEARCH RESULTS MODE ─────────────────── */}
+                    {/* ════════════════════════════════════════════════ */}
+                    <AnimatePresence mode="wait">
+                        {liveSearchActive && (
+                            <motion.div
+                                key="live-search-results"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -20 }}
+                                transition={{ duration: 0.3 }}
+                            >
+                                {/* Live Search Header */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <Button
+                                            onClick={exitLiveSearch}
+                                            variant="ghost"
+                                            className="h-9 w-9 p-0 rounded-lg hover:bg-slate-100"
+                                        >
+                                            <ArrowLeft className="w-4 h-4 text-slate-500" />
+                                        </Button>
+                                        <div>
+                                            <h2 className="text-xl sm:text-2xl font-[900] text-slate-800 flex items-center gap-2">
+                                                <Radar className="w-6 h-6 text-[#5c52d2]" />
+                                                Live Search Results
+                                            </h2>
+                                            <p className="text-sm text-slate-400 font-medium mt-0.5">
+                                                Showing results for "<span className="text-[#5c52d2] font-bold">{liveSearchQuery}</span>"
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Search stats badges */}
+                                    {liveSearchStats && !isLiveSearching && (
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full">
+                                                <Database className="w-3.5 h-3.5 text-blue-500" />
+                                                <span className="text-[11px] font-black text-blue-600 uppercase tracking-wider">
+                                                    {liveSearchStats.db_count} from database
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 border border-purple-200 rounded-full">
+                                                <Cpu className="w-3.5 h-3.5 text-purple-500" />
+                                                <span className="text-[11px] font-black text-purple-600 uppercase tracking-wider">
+                                                    {liveSearchStats.ai_count} AI-discovered
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Live Search Loading State */}
+                                {isLiveSearching && (
+                                    <div className="flex items-center justify-center py-24">
+                                        <div className="text-center space-y-6">
+                                            {/* Animated radar */}
+                                            <div className="relative w-20 h-20 mx-auto">
+                                                <div className="absolute inset-0 rounded-full border-2 border-purple-200 animate-ping" style={{ animationDuration: '1.5s' }} />
+                                                <div className="absolute inset-2 rounded-full border-2 border-purple-300 animate-ping" style={{ animationDuration: '2s' }} />
+                                                <div className="absolute inset-4 rounded-full border-2 border-purple-400 animate-ping" style={{ animationDuration: '2.5s' }} />
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <Radar className="w-8 h-8 text-[#5c52d2] animate-pulse" />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-[800] text-slate-700 mb-1">
+                                                    Scanning the market for "{liveSearchQuery}"
+                                                </h3>
+                                                <p className="text-slate-400 text-sm font-medium">
+                                                    Searching databases & generating AI-curated results from all platforms...
+                                                </p>
+                                            </div>
+                                            {/* Progress steps */}
+                                            <div className="flex items-center justify-center gap-6 text-xs font-bold text-slate-400">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Database className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                                                    Checking database
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <Cpu className="w-3.5 h-3.5 text-purple-400 animate-pulse" style={{ animationDelay: '0.5s' }} />
+                                                    AI scanning platforms
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" style={{ animationDelay: '1s' }} />
+                                                    Curating results
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Live Search Results Grid */}
+                                {!isLiveSearching && liveSearchResults.length > 0 && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                                        {liveSearchResults.map((opp, i) => (
+                                            <motion.div
+                                                key={opp.id || `live-${i}`}
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: i * 0.05 }}
+                                            >
+                                                <OpportunityCard
+                                                    opp={opp}
+                                                    onOpen={handleOpen}
+                                                    sourceType={opp._source_type}
+                                                />
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Live Search Empty State */}
+                                {!isLiveSearching && liveSearchResults.length === 0 && (
+                                    <div className="flex items-center justify-center py-24">
+                                        <div className="text-center space-y-4 max-w-md">
+                                            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto">
+                                                <Search className="w-7 h-7 text-slate-300" />
+                                            </div>
+                                            <h3 className="text-xl font-bold text-slate-700">No results found</h3>
+                                            <p className="text-slate-400 text-sm">
+                                                Try a different search term or broaden your query.
+                                            </p>
+                                            <Button
+                                                onClick={exitLiveSearch}
+                                                variant="outline"
+                                                className="h-11 px-6 rounded-xl border-slate-200 font-bold text-sm"
+                                            >
+                                                <ArrowLeft className="w-4 h-4 mr-2" /> Back to Browse
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* ════════════════════════════════════════════════ */}
+                    {/* ── REGULAR BROWSE MODE ──────────────────────── */}
+                    {/* ════════════════════════════════════════════════ */}
+                    {!liveSearchActive && (
+                        <>
                     {/* ── Results Header ───────────────────────────── */}
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-3">
@@ -464,7 +693,7 @@ export default function Jobs() {
                                 </div>
                                 <h3 className="text-xl font-bold text-slate-700">No opportunities found</h3>
                                 <p className="text-slate-400 text-sm">
-                                    Try adjusting your filters or use AI Discover to generate fresh opportunities tailored to your skills.
+                                    Try searching for something like "React Developer" or "Data Science" and click <strong>Search Market</strong> to discover live opportunities.
                                 </p>
                                 <Button
                                     onClick={handleAIDiscover}
@@ -518,6 +747,8 @@ export default function Jobs() {
                             )}
                         </>
                     )}
+                        </>
+                    )}
                 </main>
             </div>
         </div>
@@ -532,11 +763,13 @@ export default function Jobs() {
 function OpportunityCard({
     opp,
     onOpen,
-    isRecommendation = false
+    isRecommendation = false,
+    sourceType,
 }: {
     opp: Opportunity;
     onOpen: (opp: Opportunity) => void;
     isRecommendation?: boolean;
+    sourceType?: string;
 }) {
     const category = opp.category || opp.opportunity_type || 'job';
     const CatIcon = getCategoryIcon(category);
@@ -582,7 +815,19 @@ function OpportunityCard({
                         <span className="text-[10px] font-black uppercase tracking-wider">AI Pick</span>
                     </div>
                 )}
-                {opp.match_score && opp.match_score > 0 && !isRecommendation && (
+                {sourceType === 'ai_generated' && !isRecommendation && (
+                    <div className="flex items-center gap-1 text-purple-500">
+                        <Cpu className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">AI Found</span>
+                    </div>
+                )}
+                {sourceType === 'database' && !isRecommendation && (
+                    <div className="flex items-center gap-1 text-blue-500">
+                        <Database className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">Verified</span>
+                    </div>
+                )}
+                {opp.match_score && opp.match_score > 0 && !isRecommendation && !sourceType && (
                     <div className="flex items-center gap-1 text-emerald-500">
                         <TrendingUp className="w-3.5 h-3.5" />
                         <span className="text-[10px] font-black">{opp.match_score}% match</span>

@@ -235,6 +235,14 @@ export const fetchExternalSources = async () => {
     return res.data;
 };
 
+export const liveSearchOpportunities = async (searchQuery: string, category?: string) => {
+    const res = await api.post('/opportunities/live-search', {
+        search_query: searchQuery,
+        category: category || undefined,
+    });
+    return res.data;
+};
+
 // ════════════════════════════════════════════
 // 6. PROGRESS TRACKING
 // ════════════════════════════════════════════

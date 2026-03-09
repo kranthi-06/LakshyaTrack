@@ -380,6 +380,209 @@ that may expire)
 
 
 # ════════════════════════════════════════════════════════════
+# LIVE SEARCH — On-demand AI-powered search across all sources
+# ════════════════════════════════════════════════════════════
+
+async def live_search_opportunities(
+    search_query: str,
+    category: Optional[str],
+    db: Session,
+    per_page: int = 24,
+) -> dict:
+    """
+    Live search: first check DB for existing matches, then use AI to generate
+    fresh opportunities that match the user's search query.
+    Returns combined and deduplicated results.
+    """
+    # ── Step 1: Quick DB search ──
+    db_results = browse_opportunities(
+        db=db,
+        category=category if category and category != "all" else None,
+        search_query=search_query,
+        page=1,
+        per_page=per_page,
+    )
+    db_opps = db_results.get("opportunities", [])
+
+    # ── Step 2: AI generation for the search query ──
+    ai_opps = []
+    try:
+        ai_opps = await _ai_search_generate(search_query, category, db)
+    except Exception as e:
+        logger.error(f"AI live search generation error: {e}")
+
+    # ── Step 3: Merge & deduplicate ──
+    seen_titles = set()
+    merged = []
+
+    # DB results first (they're already verified)
+    for opp in db_opps:
+        key = opp["title"].lower().strip()
+        if key not in seen_titles:
+            seen_titles.add(key)
+            opp["_source_type"] = "database"
+            merged.append(opp)
+
+    # Then AI-generated results
+    for opp in ai_opps:
+        key = opp["title"].lower().strip()
+        if key not in seen_titles:
+            seen_titles.add(key)
+            opp["_source_type"] = "ai_generated"
+            merged.append(opp)
+
+    return {
+        "opportunities": merged[:per_page],
+        "total": len(merged),
+        "db_count": len(db_opps),
+        "ai_count": len(ai_opps),
+        "search_query": search_query,
+    }
+
+
+async def _ai_search_generate(
+    search_query: str,
+    category: Optional[str],
+    db: Session,
+) -> List[dict]:
+    """
+    Use AI to generate opportunities specifically matching a search query.
+    The AI acts as a market-aware assistant returning real platform links.
+    """
+    cats = ["course", "internship", "certification", "job"]
+    if category and category != "all":
+        cat = CATEGORY_MAP.get(category.lower(), category.lower())
+        cats = [cat]
+    cats_str = ", ".join(cats)
+
+    system_prompt = (
+        "You are a career and education search engine that knows all major platforms. "
+        "When a user searches for something, you return REAL opportunities from platforms like "
+        "Coursera, edX, Udemy, Google, AWS, Microsoft Learn, LinkedIn Learning, Indeed, Glassdoor, "
+        "Naukri, Internshala, HackerRank, GitHub, AngelList, Wellfound, LeetCode, freeCodeCamp, "
+        "Khan Academy, and official company career pages. "
+        "You ONLY suggest real, legitimate platforms and search links. "
+        "Never invent fake companies or fake listing URLs."
+    )
+
+    prompt = f"""
+    A user searched for: "{search_query}"
+    
+    Find 15 REAL opportunities (mix of: {cats_str}) that match this search query.
+    
+    These should include:
+    - Online courses about "{search_query}" from real platforms
+    - Internship opportunities related to "{search_query}"
+    - Professional certifications related to "{search_query}"
+    - Job openings related to "{search_query}"
+    
+    For each opportunity, return:
+    - "title": descriptive title of the opportunity
+    - "company": real company or platform name
+    - "provider": the platform offering it
+    - "opportunity_type": one of [{cats_str}]
+    - "category": same as opportunity_type
+    - "description": 1-2 sentence description of what this opportunity offers
+    - "url": REAL URL to the platform's search/category page for this topic
+    - "source": platform name
+    - "skill_tags": list of 3-5 relevant skills
+    - "level": "Beginner" | "Intermediate" | "Advanced"
+    - "location": "Remote" or specific location
+    - "salary_range": salary range for jobs/internships, "Free"/"Paid" for courses, cost for certifications
+    - "deadline": null
+    
+    Rules:
+    - Every URL must be a real, working platform URL (search page or category page)
+    - Companies must be real and well-known
+    - Results must be directly relevant to "{search_query}"
+    - Include a balanced mix across all requested categories
+    - For courses, include from: Coursera, Udemy, edX, Google, LinkedIn Learning, freeCodeCamp
+    - For jobs, include from: Indeed, LinkedIn, Glassdoor, Naukri, RemoteOK
+    - For internships, include from: Internshala, Indeed, LinkedIn, AngelList
+    - For certifications, include from: AWS, Google, Microsoft, Oracle, CompTIA, Cisco
+    
+    Return ONLY a valid JSON array. No markdown, no code fences, no explanation.
+    """
+
+    try:
+        response = await ai_hub.chat_completion(
+            [{"role": "user", "content": prompt}],
+            system_prompt
+        )
+
+        clean = response.strip()
+        if "```json" in clean:
+            clean = clean.split("```json")[1].split("```")[0].strip()
+        elif "```" in clean:
+            clean = clean.split("```")[1].split("```")[0].strip()
+
+        opportunities = json.loads(clean)
+        if not isinstance(opportunities, list):
+            return []
+
+        # Save to DB and return
+        saved = []
+        for opp in opportunities:
+            if not all(k in opp for k in ["title", "url", "opportunity_type"]):
+                continue
+
+            cat = CATEGORY_MAP.get(
+                opp.get("category", opp["opportunity_type"]),
+                opp["opportunity_type"]
+            )
+
+            # Check for duplicate in DB
+            existing = db.query(Opportunity).filter(
+                Opportunity.title == opp["title"],
+                Opportunity.source == opp.get("source", "")
+            ).first()
+
+            if existing:
+                saved.append(_opp_to_dict(existing))
+                continue
+
+            deadline = None
+            if opp.get("deadline"):
+                try:
+                    deadline = datetime.fromisoformat(opp["deadline"].replace("Z", "+00:00"))
+                except:
+                    pass
+
+            new_opp = Opportunity(
+                title=opp["title"],
+                company=opp.get("company"),
+                provider=opp.get("provider", opp.get("company")),
+                opportunity_type=opp["opportunity_type"],
+                category=cat,
+                description=opp.get("description"),
+                url=opp["url"],
+                source=opp.get("source"),
+                skill_tags=opp.get("skill_tags", []),
+                level=opp.get("level"),
+                location=opp.get("location"),
+                salary_range=opp.get("salary_range"),
+                deadline=deadline,
+            )
+            db.add(new_opp)
+            try:
+                db.commit()
+                db.refresh(new_opp)
+                saved.append(_opp_to_dict(new_opp))
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to save AI-searched opportunity: {e}")
+
+        return saved
+
+    except json.JSONDecodeError:
+        logger.error("Failed to parse AI search results JSON")
+        return []
+    except Exception as e:
+        logger.error(f"AI search generation error: {e}")
+        return []
+
+
+# ════════════════════════════════════════════════════════════
 # BROWSE / SEARCH / FILTER
 # ════════════════════════════════════════════════════════════
 

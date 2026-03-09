@@ -34,6 +34,11 @@ class OpportunityRecommendRequest(BaseModel):
     limit: int = 12
 
 
+class LiveSearchRequest(BaseModel):
+    search_query: str
+    category: Optional[str] = None  # "course", "internship", "certification", "job", "all"
+
+
 # ── Endpoints ──────────────────────────────────────────────
 
 @router.get("/browse")
@@ -132,6 +137,31 @@ async def get_recommendations(
             limit=request.limit,
         )
         return {"opportunities": recommendations, "count": len(recommendations)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/live-search")
+async def live_search(
+    request: LiveSearchRequest,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Live search: combines database search with AI-powered generation
+    to return fresh, relevant results based on the user's search query.
+    Searches across all categories (jobs, courses, internships, certifications).
+    """
+    if not request.search_query or len(request.search_query.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Search query must be at least 2 characters")
+
+    try:
+        result = await opportunity_service.live_search_opportunities(
+            search_query=request.search_query.strip(),
+            category=request.category,
+            db=db,
+        )
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
