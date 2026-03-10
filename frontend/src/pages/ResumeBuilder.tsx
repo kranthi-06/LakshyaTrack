@@ -106,8 +106,145 @@ export default function ResumeBuilder() {
     };
 
 
+    // Create Spline background directly on document.body (outside React tree)
+    // to guarantee it covers the full viewport without any parent CSS interference
+    useEffect(() => {
+        if (step === 'selection') {
+            // Hide the network background canvas on this page
+            const networkBg = document.querySelector('.fixed.inset-0.pointer-events-none') as HTMLElement;
+            if (networkBg) {
+                networkBg.style.display = 'none';
+            }
+
+            // Make all parent backgrounds transparent
+            const layoutRoot = document.querySelector('.flex.h-screen.overflow-hidden') as HTMLElement;
+            if (layoutRoot) layoutRoot.style.background = 'transparent';
+
+            const pageContent = document.querySelector('.min-h-full.relative.z-10') as HTMLElement;
+            if (pageContent) pageContent.style.background = 'transparent';
+
+            const mainArea = document.querySelector('main.flex-1.overflow-y-auto') as HTMLElement;
+            if (mainArea) {
+                mainArea.style.background = 'transparent';
+                mainArea.style.overflow = 'visible';
+                mainArea.style.transition = 'none';
+            }
+
+            // Set body/html background to match theme dynamically
+            // Use a MutationObserver to update when theme toggles
+            const updateBgForTheme = () => {
+                const isDark = document.documentElement.classList.contains('dark');
+                const sceneBg = isDark ? '#0a0a1a' : '#ffffff';
+                document.body.style.background = sceneBg;
+                document.documentElement.style.background = sceneBg;
+            };
+            updateBgForTheme();
+
+            // Watch for theme changes (dark class toggle on <html>)
+            const themeObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.attributeName === 'class') {
+                        updateBgForTheme();
+                    }
+                }
+            });
+            themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+            // Also make the #root transparent
+            const rootEl = document.getElementById('root');
+            if (rootEl) rootEl.style.background = 'transparent';
+
+            // === CREATE SPLINE VIEWER DIRECTLY ON document.body ===
+            // Make it LARGER than viewport (130%) and center it with negative offsets
+            // so the 3D ribbons extend well beyond all screen edges
+            const splineContainer = document.createElement('div');
+            splineContainer.id = 'spline-bg-container';
+            splineContainer.style.cssText = `
+                position: fixed;
+                top: -15vh;
+                left: -15vw;
+                width: 130vw;
+                height: 130vh;
+                z-index: 0;
+                pointer-events: none;
+                cursor: default;
+                overflow: hidden;
+            `;
+
+            const splineViewer = document.createElement('spline-viewer');
+            splineViewer.setAttribute('url', 'https://prod.spline.design/A2iZA6xU4DxAyFHi/scene.splinecode');
+            splineViewer.style.cssText = `
+                width: 100%;
+                height: 100%;
+                display: block;
+                pointer-events: none;
+                cursor: default;
+            `;
+
+            splineContainer.appendChild(splineViewer);
+            document.body.insertBefore(splineContainer, document.body.firstChild);
+
+            // Fix watermark and cursor inside Shadow DOM
+            const fixSplineViewer = () => {
+                const viewer = document.querySelector('#spline-bg-container spline-viewer') as any;
+                if (!viewer?.shadowRoot) return;
+
+                const logo = viewer.shadowRoot.getElementById('logo');
+                if (logo) logo.style.display = 'none';
+
+                viewer.shadowRoot.querySelectorAll('a').forEach((a: HTMLAnchorElement) => {
+                    if (a.href?.includes('spline.design')) a.style.display = 'none';
+                });
+
+                viewer.shadowRoot.querySelectorAll('canvas').forEach((canvas: HTMLCanvasElement) => {
+                    canvas.style.cursor = 'default';
+                    canvas.style.pointerEvents = 'none';
+                });
+
+                if (!viewer.shadowRoot.getElementById('cursor-fix-style')) {
+                    const styleEl = document.createElement('style');
+                    styleEl.id = 'cursor-fix-style';
+                    styleEl.textContent = `
+                        * { cursor: default !important; pointer-events: none !important; }
+                        canvas { cursor: default !important; pointer-events: none !important; }
+                        #logo, a[href*="spline"] { display: none !important; }
+                    `;
+                    viewer.shadowRoot.appendChild(styleEl);
+                }
+            };
+
+            fixSplineViewer();
+            const interval = setInterval(fixSplineViewer, 500);
+            const timeout = setTimeout(() => clearInterval(interval), 15000);
+
+            // === CLEANUP ===
+            return () => {
+                // Remove the Spline container from body
+                const el = document.getElementById('spline-bg-container');
+                if (el) el.remove();
+
+                // Stop watching theme changes
+                themeObserver.disconnect();
+
+                if (networkBg) networkBg.style.display = '';
+                if (layoutRoot) layoutRoot.style.background = '';
+                if (pageContent) pageContent.style.background = '';
+                if (mainArea) {
+                    mainArea.style.background = '';
+                    mainArea.style.overflow = '';
+                    mainArea.style.transition = '';
+                }
+                document.body.style.background = '';
+                document.documentElement.style.background = '';
+                if (rootEl) rootEl.style.background = '';
+                clearInterval(interval);
+                clearTimeout(timeout);
+            };
+        }
+    }, [step]);
+
     return (
-        <div className="min-h-screen font-sans pb-20">
+        <div className={`font-sans ${step === 'selection' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
                 <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
                     <AnimatePresence mode="wait">
                         {step === 'selection' && (
@@ -116,37 +253,33 @@ export default function ResumeBuilder() {
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -20 }}
-                                className="relative min-h-[85vh] flex items-center justify-center"
+                                className="relative h-[calc(100vh-6rem)] flex items-center justify-center"
                             >
-                                {/* Spline 3D Background */}
-                                <div className="fixed inset-0 z-0" style={{ pointerEvents: 'auto' }}>
-                                    {/* @ts-ignore */}
-                                    <spline-viewer
-                                        url="https://prod.spline.design/A2iZA6xU4DxAyFHi/scene.splinecode"
-                                        style={{
-                                            width: '100%',
-                                            height: '100%',
-                                            display: 'block',
-                                        }}
-                                    />
-                                </div>
 
-                                {/* Content overlay */}
-                                <div className="relative z-10 max-w-3xl mx-auto text-center space-y-12 py-10">
+                                {/* Content overlay - High contrast text for Spline background */}
+                                <div className="relative max-w-3xl mx-auto text-center space-y-12 py-10" style={{ zIndex: 10 }}>
                                     <div className="space-y-6">
                                         <div className="w-20 h-20 bg-white/30 dark:bg-white/10 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg border border-white/30">
                                             <FileText className="w-10 h-10 text-slate-800 dark:text-white" />
                                         </div>
-                                        <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight drop-shadow-lg">
+                                        <h1
+                                            className="text-5xl font-black tracking-tight leading-tight text-slate-900 dark:text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.8)] dark:drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]"
+                                        >
                                             Let's Start Your Career Journey!
                                         </h1>
-                                        <p className="text-slate-600 dark:text-blue-100 text-lg font-medium max-w-xl mx-auto drop-shadow-sm">
+                                        <p
+                                            className="text-lg font-medium max-w-xl mx-auto text-slate-700 dark:text-slate-200 drop-shadow-sm"
+                                        >
                                             To provide you with the best career guidance, we need to understand your current profile.
                                         </p>
                                     </div>
 
                                     <div className="space-y-8">
-                                        <h2 className="text-2xl font-black text-gray-800 dark:text-gray-200 tracking-tight">Do you have an existing resume?</h2>
+                                        <h2
+                                            className="text-2xl font-black tracking-tight text-slate-800 dark:text-white"
+                                        >
+                                            Do you have an existing resume?
+                                        </h2>
                                         <div className="grid md:grid-cols-2 gap-8">
                                             <button
                                                 onClick={() => setStep('upload')}
@@ -176,6 +309,21 @@ export default function ResumeBuilder() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* CSS animation for the text gradient shift effect */}
+                                <style>{`
+                                    @keyframes textGradientShift {
+                                        0% {
+                                            background-position: 0% 50%;
+                                        }
+                                        50% {
+                                            background-position: 100% 50%;
+                                        }
+                                        100% {
+                                            background-position: 0% 50%;
+                                        }
+                                    }
+                                `}</style>
                             </motion.div>
                         )}
 
