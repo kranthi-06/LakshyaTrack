@@ -107,7 +107,7 @@ export default function ResumeBuilder() {
 
 
     return (
-        <div className="min-h-screen font-sans pb-20 bg-slate-50 dark:bg-[#050510]">
+        <div className="min-h-screen font-sans pb-20">
                 <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
                     <AnimatePresence mode="wait">
                         {step === 'selection' && (
@@ -116,48 +116,64 @@ export default function ResumeBuilder() {
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -20 }}
-                                className="max-w-3xl mx-auto text-center space-y-12 py-10"
+                                className="relative min-h-[85vh] flex items-center justify-center"
                             >
-                                <div className="space-y-6">
-                                    <div className="w-20 h-20 bg-white/20 dark:bg-white/10 backdrop-blur-md rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-inner border border-white/20">
-                                        <FileText className="w-10 h-10 text-slate-800 dark:text-white" />
-                                    </div>
-                                    <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight drop-shadow-md">
-                                        Let's Start Your Career Journey!
-                                    </h1>
-                                    <p className="text-slate-600 dark:text-blue-100 text-lg font-medium max-w-xl mx-auto drop-shadow-sm">
-                                        To provide you with the best career guidance, we need to understand your current profile.
-                                    </p>
+                                {/* Spline 3D Background */}
+                                <div className="fixed inset-0 z-0" style={{ pointerEvents: 'auto' }}>
+                                    {/* @ts-ignore */}
+                                    <spline-viewer
+                                        url="https://prod.spline.design/A2iZA6xU4DxAyFHi/scene.splinecode"
+                                        style={{
+                                            width: '100%',
+                                            height: '100%',
+                                            display: 'block',
+                                        }}
+                                    />
                                 </div>
 
-                                <div className="space-y-8">
-                                    <h2 className="text-2xl font-black text-gray-800 tracking-tight">Do you have an existing resume?</h2>
-                                    <div className="grid md:grid-cols-2 gap-8">
-                                        <button
-                                            onClick={() => setStep('upload')}
-                                            className="bg-white/90 backdrop-blur-sm p-10 rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-transparent hover:border-white/50 group text-center space-y-6"
-                                        >
-                                            <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center mx-auto text-green-500 group-hover:scale-110 transition-transform">
-                                                <CheckCircle2 className="w-8 h-8" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <h3 className="text-2xl font-black text-gray-900">Yes, I have one</h3>
-                                                <p className="text-gray-500 font-medium text-sm px-4">Upload your existing resume for analysis</p>
-                                            </div>
-                                        </button>
+                                {/* Content overlay */}
+                                <div className="relative z-10 max-w-3xl mx-auto text-center space-y-12 py-10">
+                                    <div className="space-y-6">
+                                        <div className="w-20 h-20 bg-white/30 dark:bg-white/10 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg border border-white/30">
+                                            <FileText className="w-10 h-10 text-slate-800 dark:text-white" />
+                                        </div>
+                                        <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight drop-shadow-lg">
+                                            Let's Start Your Career Journey!
+                                        </h1>
+                                        <p className="text-slate-600 dark:text-blue-100 text-lg font-medium max-w-xl mx-auto drop-shadow-sm">
+                                            To provide you with the best career guidance, we need to understand your current profile.
+                                        </p>
+                                    </div>
 
-                                        <button
-                                            onClick={() => setStep('builder')}
-                                            className="bg-white/90 backdrop-blur-sm p-10 rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-transparent hover:border-white/50 group text-center space-y-6"
-                                        >
-                                            <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto text-red-400 group-hover:scale-110 transition-transform">
-                                                <XCircle className="w-8 h-8" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <h3 className="text-2xl font-black text-gray-900">No, I need help</h3>
-                                                <p className="text-gray-400 font-medium text-sm px-4">Let our AI help you build a professional resume</p>
-                                            </div>
-                                        </button>
+                                    <div className="space-y-8">
+                                        <h2 className="text-2xl font-black text-gray-800 dark:text-gray-200 tracking-tight">Do you have an existing resume?</h2>
+                                        <div className="grid md:grid-cols-2 gap-8">
+                                            <button
+                                                onClick={() => setStep('upload')}
+                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-10 rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-6"
+                                            >
+                                                <div className="w-16 h-16 bg-green-50 dark:bg-green-900/30 rounded-2xl flex items-center justify-center mx-auto text-green-500 group-hover:scale-110 transition-transform">
+                                                    <CheckCircle2 className="w-8 h-8" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <h3 className="text-2xl font-black text-gray-900 dark:text-white">Yes, I have one</h3>
+                                                    <p className="text-gray-500 dark:text-gray-400 font-medium text-sm px-4">Upload your existing resume for analysis</p>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                onClick={() => setStep('builder')}
+                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-10 rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-6"
+                                            >
+                                                <div className="w-16 h-16 bg-red-50 dark:bg-red-900/30 rounded-2xl flex items-center justify-center mx-auto text-red-400 group-hover:scale-110 transition-transform">
+                                                    <XCircle className="w-8 h-8" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <h3 className="text-2xl font-black text-gray-900 dark:text-white">No, I need help</h3>
+                                                    <p className="text-gray-400 font-medium text-sm px-4">Let our AI help you build a professional resume</p>
+                                                </div>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </motion.div>
