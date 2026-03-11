@@ -348,10 +348,10 @@ export default function Profile() {
 
     return (
         <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
-<main className="max-w-5xl mx-auto px-6 pt-10">
-                <div className="bg-white rounded-[2.5rem] shadow-xl overflow-hidden border border-slate-100 relative">
+<main className="max-w-5xl mx-auto px-3 sm:px-6 pt-6 sm:pt-10">
+                <div className="bg-white rounded-2xl sm:rounded-[2.5rem] shadow-xl overflow-hidden border border-slate-100 relative">
                     {/* Header Banner */}
-                    <div className="h-48 bg-gradient-to-r from-[#5c52d2] to-[#7c66dc] relative">
+                    <div className="h-32 sm:h-48 bg-gradient-to-r from-[#5c52d2] to-[#7c66dc] relative">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-[80px]"></div>
                         <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full -ml-24 -mb-24 blur-[60px]"></div>
 
@@ -391,12 +391,12 @@ export default function Profile() {
                         </div>
                     </div>
 
-                    <div className="px-8 md:px-12 pb-12">
+                    <div className="px-4 sm:px-8 md:px-12 pb-8 sm:pb-12">
                         {/* Profile Image & Basic Info */}
-                        <div className="relative -mt-20 mb-8 flex flex-col md:flex-row items-center md:items-end gap-6 text-center md:text-left">
+                        <div className="relative -mt-14 sm:-mt-20 mb-6 sm:mb-8 flex flex-col md:flex-row items-center md:items-end gap-4 sm:gap-6 text-center md:text-left">
                             <div className="relative group">
-                                <div className="w-40 h-40 bg-white p-2 rounded-[2.5rem] shadow-lg relative z-10">
-                                    <div className="w-full h-full bg-slate-100 rounded-[2rem] flex items-center justify-center overflow-hidden relative">
+                                <div className="w-28 h-28 sm:w-40 sm:h-40 bg-white p-1.5 sm:p-2 rounded-2xl sm:rounded-[2.5rem] shadow-lg relative z-10">
+                                    <div className="w-full h-full bg-slate-100 rounded-xl sm:rounded-[2rem] flex items-center justify-center overflow-hidden relative">
                                         {profile.image ? (
                                             <img src={profile.image} alt="Profile" className="w-full h-full object-cover" />
                                         ) : (
@@ -430,11 +430,11 @@ export default function Profile() {
                                     <Input
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="max-w-sm mx-auto md:mx-0 font-black text-3xl md:text-4xl h-14 border-slate-200 tracking-tight"
+                                        className="max-w-sm mx-auto md:mx-0 font-black text-2xl sm:text-3xl md:text-4xl h-11 sm:h-14 border-slate-200 tracking-tight"
                                         placeholder="Your Name"
                                     />
                                 ) : (
-                                    <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+                                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
                                         {displayName}
                                     </h1>
                                 )}
@@ -454,7 +454,7 @@ export default function Profile() {
                             </div>
                         </div>
 
-                        <div className="grid md:grid-cols-3 gap-12">
+                        <div className="grid md:grid-cols-3 gap-6 sm:gap-8 md:gap-12">
                             {/* Left Column: Contact & Socials */}
                             <div className="space-y-8">
                                 <div className="space-y-4">
@@ -580,7 +580,7 @@ export default function Profile() {
                             </div>
 
                             {/* Right Column: Bio & Skills */}
-                            <div className="md:col-span-2 space-y-8 border-t md:border-t-0 md:border-l border-slate-100 pt-8 md:pt-0 md:pl-12">
+                            <div className="md:col-span-2 space-y-6 sm:space-y-8 border-t md:border-t-0 md:border-l border-slate-100 pt-6 sm:pt-8 md:pt-0 md:pl-8 lg:pl-12">
                                 <div className="space-y-4">
                                     <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
                                         <FileText className="w-5 h-5 text-[#5c52d2]" /> About Me
@@ -666,7 +666,7 @@ export default function Profile() {
                             <p className="text-slate-500 max-w-sm mx-auto">Create and save your beautiful resumes from the builder to display them here.</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
                             {savedResumes.map((resume: any) => (
                                 <LazyResumePreview
                                     key={resume.id}

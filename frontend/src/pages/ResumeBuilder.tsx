@@ -121,7 +121,13 @@ export default function ResumeBuilder() {
             if (layoutRoot) layoutRoot.style.background = 'transparent';
 
             const pageContent = document.querySelector('.min-h-full.relative.z-10') as HTMLElement;
-            if (pageContent) pageContent.style.background = 'transparent';
+            if (pageContent) {
+                pageContent.style.background = 'transparent';
+                // Remove z-index and position to break stacking context
+                // so mix-blend-mode can see through to the Spline layer
+                pageContent.style.zIndex = 'auto';
+                pageContent.style.position = 'static';
+            }
 
             const mainArea = document.querySelector('main.flex-1.overflow-y-auto') as HTMLElement;
             if (mainArea) {
@@ -130,8 +136,7 @@ export default function ResumeBuilder() {
                 mainArea.style.transition = 'none';
             }
 
-            // Set body/html background to match theme dynamically
-            // Use a MutationObserver to update when theme toggles
+            // Set body/html background to match the Spline scene per theme
             const updateBgForTheme = () => {
                 const isDark = document.documentElement.classList.contains('dark');
                 const sceneBg = isDark ? '#0a0a1a' : '#ffffff';
@@ -140,7 +145,7 @@ export default function ResumeBuilder() {
             };
             updateBgForTheme();
 
-            // Watch for theme changes (dark class toggle on <html>)
+            // Watch for theme changes
             const themeObserver = new MutationObserver((mutations) => {
                 for (const mutation of mutations) {
                     if (mutation.attributeName === 'class') {
@@ -228,7 +233,11 @@ export default function ResumeBuilder() {
 
                 if (networkBg) networkBg.style.display = '';
                 if (layoutRoot) layoutRoot.style.background = '';
-                if (pageContent) pageContent.style.background = '';
+                if (pageContent) {
+                    pageContent.style.background = '';
+                    pageContent.style.zIndex = '';
+                    pageContent.style.position = '';
+                }
                 if (mainArea) {
                     mainArea.style.background = '';
                     mainArea.style.overflow = '';
@@ -245,45 +254,40 @@ export default function ResumeBuilder() {
 
     return (
         <div className={`font-sans ${step === 'selection' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
-                <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+                <main className="max-w-[1200px] mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
                     <AnimatePresence mode="wait">
                         {step === 'selection' && (
                             <motion.div
                                 key="selection"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -20 }}
-                                className="relative h-[calc(100vh-6rem)] flex items-center justify-center"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.4 }}
+                                className="h-[calc(100vh-6rem)] flex items-center justify-center"
                             >
 
-                                {/* Content overlay - High contrast text for Spline background */}
-                                <div className="relative max-w-3xl mx-auto text-center space-y-12 py-10" style={{ zIndex: 10 }}>
+                                {/* Content — dynamic text interaction with Spline ribbons */}
+                                <div className="max-w-3xl mx-auto text-center space-y-12 py-10">
                                     <div className="space-y-6">
-                                        <div className="w-20 h-20 bg-white/30 dark:bg-white/10 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg border border-white/30">
-                                            <FileText className="w-10 h-10 text-slate-800 dark:text-white" />
+                                        <div className="w-20 h-20 bg-white/30 dark:bg-white/10 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg border border-white/20">
+                                            <FileText className="w-10 h-10 text-indigo-600 dark:text-white" />
                                         </div>
-                                        <h1
-                                            className="text-5xl font-black tracking-tight leading-tight text-slate-900 dark:text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.8)] dark:drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]"
-                                        >
+                                        <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight spline-blend-heading">
                                             Let's Start Your Career Journey!
                                         </h1>
-                                        <p
-                                            className="text-lg font-medium max-w-xl mx-auto text-slate-700 dark:text-slate-200 drop-shadow-sm"
-                                        >
+                                        <p className="text-lg font-semibold max-w-xl mx-auto spline-blend-paragraph">
                                             To provide you with the best career guidance, we need to understand your current profile.
                                         </p>
                                     </div>
 
                                     <div className="space-y-8">
-                                        <h2
-                                            className="text-2xl font-black tracking-tight text-slate-800 dark:text-white"
-                                        >
+                                        <h2 className="text-2xl font-black tracking-tight spline-blend-subheading">
                                             Do you have an existing resume?
                                         </h2>
-                                        <div className="grid md:grid-cols-2 gap-8">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                                             <button
                                                 onClick={() => setStep('upload')}
-                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-10 rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-6"
+                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-6 sm:p-10 rounded-2xl sm:rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-4 sm:space-y-6"
                                             >
                                                 <div className="w-16 h-16 bg-green-50 dark:bg-green-900/30 rounded-2xl flex items-center justify-center mx-auto text-green-500 group-hover:scale-110 transition-transform">
                                                     <CheckCircle2 className="w-8 h-8" />
@@ -296,7 +300,7 @@ export default function ResumeBuilder() {
 
                                             <button
                                                 onClick={() => setStep('builder')}
-                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-10 rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-6"
+                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-6 sm:p-10 rounded-2xl sm:rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-4 sm:space-y-6"
                                             >
                                                 <div className="w-16 h-16 bg-red-50 dark:bg-red-900/30 rounded-2xl flex items-center justify-center mx-auto text-red-400 group-hover:scale-110 transition-transform">
                                                     <XCircle className="w-8 h-8" />
@@ -348,11 +352,11 @@ export default function ResumeBuilder() {
                                             </div>
                                         </div>
                                     </div>
-                                    <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight drop-shadow-md">Upload Your Resume</h1>
+                                    <h1 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight drop-shadow-md">Upload Your Resume</h1>
                                     <p className="text-slate-600 dark:text-blue-100 text-lg font-medium drop-shadow-sm">Upload your existing resume and let our AI analyze your skills, experience, and qualifications</p>
                                 </div>
 
-                                <div className="relative border-2 border-dashed border-white/30 rounded-[3rem] p-16 text-center group hover:border-white/50 transition-all bg-white/10 backdrop-blur-md shadow-xl overflow-hidden">
+                                <div className="relative border-2 border-dashed border-white/30 rounded-2xl sm:rounded-[3rem] p-8 sm:p-16 text-center group hover:border-white/50 transition-all bg-white/10 backdrop-blur-md shadow-xl overflow-hidden">
                                     <input
                                         type="file"
                                         accept=".pdf"

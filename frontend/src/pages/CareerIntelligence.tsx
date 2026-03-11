@@ -357,7 +357,7 @@ export default function CareerIntelligence() {
 
     return (
         <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
-<main className="max-w-7xl mx-auto px-6 pt-16">
+<main className="max-w-7xl mx-auto px-3 sm:px-6 pt-8 sm:pt-16">
                 <AnimatePresence mode="wait">
                     {step === 'domains' && (
                         <motion.div
@@ -372,14 +372,14 @@ export default function CareerIntelligence() {
                                     <Target className="w-8 h-8 text-rose-500" />
                                 </div>
                                 <div className="space-y-2">
-                                    <h1 className="text-4xl font-[900] text-slate-900 tracking-tight">Select Your Domain of Interest</h1>
+                                    <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight">Select Your Domain of Interest</h1>
                                     <p className="text-slate-400 text-lg font-medium max-w-2xl mx-auto leading-relaxed">
                                         Choose the industry domain that aligns with your career goals. This helps us provide more targeted job matching and skill recommendations.
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
                                 {domains.map((domain) => (
                                     <Card
                                         key={domain.id}
@@ -427,7 +427,7 @@ export default function CareerIntelligence() {
                                     <Target className="w-8 h-8 text-rose-500" />
                                 </div>
                                 <div className="space-y-2">
-                                    <h1 className="text-4xl font-[900] text-slate-900 tracking-tight">Select Your Desired Job Role</h1>
+                                    <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight">Select Your Desired Job Role</h1>
                                     <p className="text-slate-400 text-lg font-medium max-w-2xl mx-auto leading-relaxed">
                                         Choose the specific role you're targeting. We'll generate a personalized AI roadmap to help you achieve your career goals.
                                     </p>
@@ -444,7 +444,7 @@ export default function CareerIntelligence() {
                                 />
                             </div>
 
-                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
                                 {filteredRoles.map((role) => (
                                     <Card
                                         key={role.id}
@@ -521,7 +521,7 @@ export default function CareerIntelligence() {
                                             <Map className="w-8 h-8 text-[#5c52d2]" />
                                         </div>
                                         <div className="space-y-2">
-                                            <h1 className="text-4xl font-[900] text-slate-900 tracking-tight">Your AI Learning Roadmap</h1>
+                                            <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight">Your AI Learning Roadmap</h1>
                                             <p className="text-slate-400 text-lg font-medium max-w-2xl mx-auto leading-relaxed">
                                                 Personalized path to become a <span className="text-[#5c52d2] font-black">{activeTopicName || selectedRole}</span>. Complete skills, pass quizzes, and unlock the next level.
                                             </p>
@@ -646,7 +646,7 @@ export default function CareerIntelligence() {
                                                         />
                                                     </div>
                                                     {/* Skill Grid */}
-                                                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                                                         {level.skills?.map((skill: any, skillIdx: number) => (
                                                             <Card
                                                                 key={skill.id}

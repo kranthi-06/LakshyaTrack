@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AnimatePresence, motion } from 'framer-motion';
 import NetworkBackground from './NetworkBackground';
+import { GraduationCap } from 'lucide-react';
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -16,6 +17,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         return stored === 'true';
     });
     const [isMobile, setIsMobile] = useState(false);
+    const [isSmallScreen, setIsSmallScreen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const location = useLocation();
 
@@ -24,17 +26,29 @@ export function AppLayout({ children }: AppLayoutProps) {
         setMobileOpen(false);
     }, [location.pathname]);
 
-    // Detect mobile
+    // Detect mobile and small screen
     useEffect(() => {
         const check = () => {
             const mobile = window.innerWidth < 1024;
+            const small = window.innerWidth < 768;
             setIsMobile(mobile);
+            setIsSmallScreen(small);
             if (mobile) setCollapsed(true);
         };
         check();
         window.addEventListener('resize', check);
         return () => window.removeEventListener('resize', check);
     }, []);
+
+    // Prevent body scroll when mobile sidebar is open
+    useEffect(() => {
+        if (mobileOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => { document.body.style.overflow = ''; };
+    }, [mobileOpen]);
 
     const handleToggle = () => {
         if (isMobile) {
@@ -58,7 +72,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm lg:hidden"
+                        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
                         onClick={() => setMobileOpen(false)}
                     />
                 )}
@@ -69,11 +83,12 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <AnimatePresence>
                     {mobileOpen && (
                         <motion.div
-                            initial={{ x: -264 }}
+                            initial={{ x: -280 }}
                             animate={{ x: 0 }}
-                            exit={{ x: -264 }}
-                            transition={{ type: 'spring', damping: 24, stiffness: 260 }}
-                            className="fixed z-50"
+                            exit={{ x: -280 }}
+                            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                            className="fixed z-50 h-screen"
+                            style={{ width: 264 }}
                         >
                             <AppSidebar collapsed={false} onToggle={handleToggle} />
                         </motion.div>
@@ -88,30 +103,42 @@ export function AppLayout({ children }: AppLayoutProps) {
                 className="flex-1 overflow-y-auto overflow-x-hidden transition-all duration-300 relative"
                 style={{ marginLeft: isMobile ? 0 : sidebarWidth }}
             >
-                {/* ── Global interactive background ── */}
+                {/* ── Global interactive background (skip on small devices for perf) ── */}
                 <div className="fixed inset-0 pointer-events-none" style={{ marginLeft: isMobile ? 0 : sidebarWidth }}>
-                    {/* Gradient base */}
+                    {/* Gradient base — always visible */}
                     <div className="absolute inset-0 bg-gradient-to-br from-violet-50/40 via-rose-50/20 to-amber-50/15 dark:from-[#020817] dark:via-[#0a1628] dark:to-[#050510]" />
-                    {/* Interactive canvas */}
-                    <div className="absolute inset-0 pointer-events-auto">
-                        <NetworkBackground />
-                    </div>
+                    {/* Interactive canvas — skip on small screens for performance */}
+                    {!isSmallScreen && (
+                        <div className="absolute inset-0 pointer-events-auto">
+                            <NetworkBackground />
+                        </div>
+                    )}
                 </div>
 
                 {/* Mobile top bar */}
                 {isMobile && (
-                    <div className="sticky top-0 z-30 flex items-center h-14 px-4 bg-white/80 dark:bg-[#0a0a14]/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/60">
+                    <div className="sticky top-0 z-30 flex items-center h-14 px-3 sm:px-4 bg-white/90 dark:bg-[#0a0a14]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/60"
+                        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+                    >
                         <button
                             onClick={() => setMobileOpen(true)}
-                            className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            className="w-11 h-11 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-95"
+                            aria-label="Open navigation menu"
                         >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <line x1="3" y1="6" x2="21" y2="6" />
                                 <line x1="3" y1="12" x2="21" y2="12" />
                                 <line x1="3" y1="18" x2="21" y2="18" />
                             </svg>
                         </button>
-                        <span className="ml-3 text-[15px] font-bold text-slate-900 dark:text-white">VidyaMithra</span>
+                        <div className="ml-2 flex items-center gap-2">
+                            <div className="w-7 h-7 bg-gradient-to-br from-[#6C63FF] to-[#4F46E5] rounded-lg flex items-center justify-center shadow-sm">
+                                <GraduationCap className="w-4 h-4 text-white" />
+                            </div>
+                            <span className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">
+                                Vidya<span className="text-[#6C63FF]">Mithra</span>
+                            </span>
+                        </div>
                     </div>
                 )}
 

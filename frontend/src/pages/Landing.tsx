@@ -120,7 +120,7 @@ export default function Landing() {
     };
 
     return (
-        <div className="relative min-h-screen font-inter overflow-x-hidden bg-gray-50 selection:bg-purple-200 selection:text-purple-900">
+        <div className="relative min-h-screen font-inter overflow-x-hidden bg-gray-50 selection:bg-purple-200 selection:text-purple-900" style={{ overflowX: 'hidden' }}>
             {/* Scroll Progress Bar */}
             <motion.div
                 className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-yellow-500 origin-left z-[100]"
@@ -144,8 +144,8 @@ export default function Landing() {
 
             {/* Navigation */}
             <nav className={`fixed w-full top-0 z-50 transition-all duration-500 py-4 ${scrolled ? 'bg-white/80 backdrop-blur-xl shadow-lg py-3 border-b border-gray-100' : 'bg-transparent'}`}>
-                <div className="max-w-7xl mx-auto flex items-center px-4 sm:px-8 gap-6 overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <div className="flex items-center space-x-3 group cursor-pointer shrink-0" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+                <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-8 gap-4 sm:gap-6">
+                    <div className="flex items-center space-x-2 sm:space-x-3 group cursor-pointer shrink-0" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
                         <motion.div
                             whileHover={{ rotate: 12, scale: 1.1 }}
                             className="w-10 h-10 sm:w-12 sm:h-12 bg-white text-[#5c52d2] rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg border border-white/20 relative overflow-hidden"
@@ -158,7 +158,7 @@ export default function Landing() {
                         </span>
                     </div>
 
-                    <div className="flex items-center space-x-6 sm:space-x-10">
+                    <div className="hidden sm:flex items-center space-x-6 sm:space-x-10">
                         {['Home', 'Features', 'Demo'].map((item) => (
                             <a
                                 key={item}
@@ -189,7 +189,7 @@ export default function Landing() {
             </nav>
 
             {/* Hero Section */}
-            <section id="home" className="relative pt-32 pb-24 overflow-hidden min-h-screen flex items-center animated-gradient">
+            <section id="home" className="relative pt-24 sm:pt-32 pb-16 sm:pb-24 overflow-hidden min-h-screen flex items-center animated-gradient">
                 <PremiumBackground />
 
                 {/* Floating Particles */}
@@ -220,7 +220,7 @@ export default function Landing() {
                 </div>
 
                 <div className="max-w-7xl mx-auto px-4 sm:px-8 relative z-10 w-full">
-                    <div className="grid lg:grid-cols-2 gap-16 items-center">
+                    <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
                         <motion.div
                             initial={{ opacity: 0, x: -50 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -237,7 +237,7 @@ export default function Landing() {
                                 <span>#1 AI Career Assistant</span>
                             </motion.div>
 
-                            <h1 className="text-4xl sm:text-6xl md:text-[5.5rem] font-black leading-[1.1] md:leading-[1] tracking-tighter drop-shadow-2xl">
+                            <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-[5.5rem] font-black leading-[1.15] md:leading-[1.05] tracking-tighter drop-shadow-2xl">
                                 Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-200 to-indigo-200">Intelligent</span> <br />
                                 <span className="relative inline-block">
                                     <span className="relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-300 italic">Career Agent</span>
@@ -247,7 +247,7 @@ export default function Landing() {
                                 </span>
                             </h1>
 
-                            <p className="text-xl text-purple-100 max-w-xl leading-relaxed font-medium opacity-90">
+                            <p className="text-base sm:text-lg md:text-xl text-purple-100 max-w-xl leading-relaxed font-medium opacity-90">
                                 Stop guessing. Start growing. Let our AI analyze your potential, optimize your resume, and guide you to your dream job with surgical precision.
                             </p>
 
@@ -258,7 +258,7 @@ export default function Landing() {
                                 className="flex flex-wrap gap-4"
                             >
                                 <Link to="/register">
-                                    <Button size="lg" className="h-16 px-10 rounded-2xl bg-white text-purple-900 hover:bg-yellow-300 font-black text-lg shadow-[0_20px_40px_-10px_rgba(255,255,255,0.3)] hover:-translate-y-1 transition-all flex items-center gap-2 group">
+                                    <Button size="lg" className="h-14 sm:h-16 px-8 sm:px-10 rounded-2xl bg-white text-purple-900 hover:bg-yellow-300 font-black text-base sm:text-lg shadow-[0_20px_40px_-10px_rgba(255,255,255,0.3)] hover:-translate-y-1 transition-all flex items-center gap-2 group w-full sm:w-auto justify-center">
                                         Launch Career
                                         <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                     </Button>
@@ -362,7 +362,7 @@ export default function Landing() {
             </section>
 
             {/* Features Section - Interactive Tabs */}
-            <section id="features" className="py-32 relative z-10 overflow-hidden animated-gradient">
+            <section id="features" className="py-16 sm:py-24 lg:py-32 relative z-10 overflow-hidden animated-gradient">
                 <PremiumBackground />
                 <div className="max-w-7xl mx-auto px-4 sm:px-8 relative">
                     <div className="text-center max-w-3xl mx-auto mb-20 space-y-6">
@@ -376,14 +376,14 @@ export default function Landing() {
                         <motion.h2
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}
-                            className="text-5xl md:text-7xl font-black tracking-tighter text-gray-900"
+                            className="text-3xl sm:text-5xl md:text-7xl font-black tracking-tighter text-gray-900"
                         >
                             Built for <span className="bg-gradient-to-r from-[#667eea] to-[#764ba2] bg-clip-text text-transparent italic px-2">Greatness</span>
                         </motion.h2>
                     </div>
 
                     {/* Interactive Tabs */}
-                    <div className="flex flex-wrap justify-center gap-4 mb-16">
+                    <div className="flex flex-nowrap sm:flex-wrap justify-start sm:justify-center gap-3 sm:gap-4 mb-10 sm:mb-16 overflow-x-auto pb-2 scrollbar-hide no-scrollbar">
                         {Object.entries(features).map(([key, feature]) => {
                             const Icon = feature.icon;
                             const isActive = activeFeature === key;
@@ -393,7 +393,7 @@ export default function Landing() {
                                     onClick={() => setActiveFeature(key)}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
-                                    className={`px-8 py-4 rounded-full font-bold transition-all flex items-center gap-3 border-2 ${isActive
+                                    className={`px-5 sm:px-8 py-3 sm:py-4 rounded-full font-bold transition-all flex items-center gap-2 sm:gap-3 border-2 whitespace-nowrap text-sm sm:text-base shrink-0 ${isActive
                                         ? 'border-purple-600 bg-purple-600 text-white shadow-xl shadow-purple-200'
                                         : 'border-transparent bg-gray-100 text-gray-500 hover:bg-white hover:border-gray-200 hover:shadow-lg'
                                         }`}
@@ -413,10 +413,10 @@ export default function Landing() {
                                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                                 exit={{ opacity: 0, y: -20, filter: 'blur(10px)' }}
                                 transition={{ duration: 0.4 }}
-                                className="bg-white rounded-[3rem] p-8 md:p-16 shadow-[0_40px_100px_-30px_rgba(0,0,0,0.1)] border border-gray-100 relative overflow-hidden"
+                                className="bg-white rounded-2xl sm:rounded-[3rem] p-5 sm:p-8 md:p-16 shadow-[0_40px_100px_-30px_rgba(0,0,0,0.1)] border border-gray-100 relative overflow-hidden"
                             >
                                 <div className={`absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-${features[activeFeature as keyof typeof features].color}-400 to-${features[activeFeature as keyof typeof features].color}-600`}></div>
-                                <div className="grid lg:grid-cols-2 gap-20 items-center">
+                                <div className="grid lg:grid-cols-2 gap-8 lg:gap-20 items-center">
                                     <div className="space-y-10 relative z-10">
                                         <div className={`inline-flex p-4 rounded-2xl bg-${features[activeFeature as keyof typeof features].color}-50 text-${features[activeFeature as keyof typeof features].color}-600`}>
                                             {(() => {
@@ -425,10 +425,10 @@ export default function Landing() {
                                             })()}
                                         </div>
                                         <div className="space-y-6">
-                                            <h3 className="text-4xl font-black tracking-tight text-gray-900">
+                                            <h3 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-gray-900">
                                                 {features[activeFeature as keyof typeof features].title}
                                             </h3>
-                                            <p className="text-xl text-gray-600 leading-relaxed font-medium">
+                                            <p className="text-base sm:text-lg md:text-xl text-gray-600 leading-relaxed font-medium">
                                                 {features[activeFeature as keyof typeof features].desc}
                                             </p>
                                         </div>
@@ -449,7 +449,7 @@ export default function Landing() {
                                     </div>
 
                                     {/* Dynamic Visual Side */}
-                                    <div className="relative h-[500px] bg-gray-50 rounded-[2.5rem] border border-gray-100 flex items-center justify-center overflow-hidden group">
+                                    <div className="relative h-[300px] sm:h-[400px] lg:h-[500px] bg-gray-50 rounded-2xl sm:rounded-[2.5rem] border border-gray-100 flex items-center justify-center overflow-hidden group">
                                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.1),rgba(255,255,255,0))]"></div>
 
                                         {/* Mock Visuals based on Feature */}
@@ -486,25 +486,25 @@ export default function Landing() {
 
             {/* CTA Section - Acting as Demo/Get Started */}
             {/* CTA Section - Acting as Demo/Get Started */}
-            <section id="demo" className="py-32 relative overflow-hidden animated-gradient">
+            <section id="demo" className="py-16 sm:py-24 lg:py-32 relative overflow-hidden animated-gradient">
                 <PremiumBackground />
 
                 <div className="max-w-4xl mx-auto px-4 relative z-10 text-center space-y-12">
                     <motion.h2
                         initial={{ opacity: 0, y: 30 }}
                         whileInView={{ opacity: 1, y: 0 }}
-                        className="text-6xl md:text-8xl font-black text-white tracking-tighter"
+                        className="text-4xl sm:text-6xl md:text-8xl font-black text-white tracking-tighter"
                     >
                         Ready to <br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500">Ascend?</span>
                     </motion.h2>
 
-                    <p className="text-2xl text-gray-400 font-medium leading-relaxed">
+                    <p className="text-lg sm:text-xl md:text-2xl text-gray-400 font-medium leading-relaxed">
                         Join the platform that is redefining career growth for the AI age.
                     </p>
 
                     <div className="flex flex-col md:flex-row items-center justify-center gap-6">
                         <Link to="/register" className="w-full md:w-auto">
-                            <Button className="w-full md:w-auto h-20 px-12 text-2xl font-black bg-white text-[#0F172A] hover:bg-yellow-300 rounded-3xl shadow-[0_0_50px_rgba(255,255,255,0.3)] hover:shadow-[0_0_80px_rgba(255,255,255,0.5)] transition-all hover:-translate-y-2">
+                            <Button className="w-full md:w-auto h-16 sm:h-20 px-8 sm:px-12 text-xl sm:text-2xl font-black bg-white text-[#0F172A] hover:bg-yellow-300 rounded-2xl sm:rounded-3xl shadow-[0_0_50px_rgba(255,255,255,0.3)] hover:shadow-[0_0_80px_rgba(255,255,255,0.5)] transition-all hover:-translate-y-2">
                                 Start Free Trial
                             </Button>
                         </Link>
@@ -513,16 +513,16 @@ export default function Landing() {
             </section>
 
             {/* Footer */}
-            <footer className="bg-white border-t border-gray-100 pt-24 pb-12">
-                <div className="max-w-7xl mx-auto px-8">
-                    <div className="flex flex-col md:flex-row justify-between items-center gap-10">
+            <footer className="bg-white border-t border-gray-100 pt-12 sm:pt-24 pb-8 sm:pb-12">
+                <div className="max-w-7xl mx-auto px-4 sm:px-8">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-6 sm:gap-10">
                         <div className="flex items-center space-x-3">
                             <div className="w-12 h-12 bg-gray-900 rounded-xl flex items-center justify-center text-white">
                                 <GraduationCap className="w-6 h-6" />
                             </div>
                             <span className="text-3xl font-black tracking-tighter text-gray-900">Vidorya</span>
                         </div>
-                        <div className="flex gap-8 text-gray-500 font-bold">
+                        <div className="flex gap-4 sm:gap-8 text-gray-500 font-bold text-sm sm:text-base">
                             <a href="#" className="hover:text-purple-600 transition-colors">Privacy</a>
                             <a href="#" className="hover:text-purple-600 transition-colors">Terms</a>
                             <a href="#" className="hover:text-purple-600 transition-colors">Twitter</a>

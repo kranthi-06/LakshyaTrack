@@ -113,7 +113,7 @@ export default function Register() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 font-sans">
+        <div className="min-h-screen flex items-center justify-center p-3 sm:p-4 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 font-sans">
 
             {/* Toast Notification */}
             <AnimatePresence>
@@ -136,11 +136,11 @@ export default function Register() {
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="w-full max-w-6xl bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col md:flex-row min-h-[750px]"
+                className="w-full max-w-6xl bg-white rounded-2xl sm:rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col md:flex-row min-h-[500px] sm:min-h-[750px]"
             >
 
                 {/* LEFT SIDE - BRANDING */}
-                <div className="md:w-5/12 lg:w-1/2 bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] p-12 text-white flex flex-col justify-between relative overflow-hidden order-last md:order-first">
+                <div className="hidden md:flex md:w-5/12 lg:w-1/2 bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] p-8 lg:p-12 text-white flex-col justify-between relative overflow-hidden">
                     {/* Background decorations */}
                     <div className="absolute top-0 left-0 w-full h-full overflow-hidden opacity-10 pointer-events-none">
                         <div className="absolute top-10 left-10 w-64 h-64 bg-white rounded-full mix-blend-overlay filter blur-3xl"></div>
@@ -192,7 +192,7 @@ export default function Register() {
                 </div>
 
                 {/* RIGHT SIDE - FORM */}
-                <div className="md:w-7/12 lg:w-1/2 bg-white p-8 md:p-12 flex flex-col justify-center overflow-y-auto max-h-[90vh] md:max-h-auto">
+                <div className="w-full md:w-7/12 lg:w-1/2 bg-white p-5 sm:p-8 md:p-12 flex flex-col justify-center overflow-y-auto max-h-screen md:max-h-none">
                     <div className="max-w-md mx-auto w-full space-y-6">
 
                         <div className="text-center space-y-2">

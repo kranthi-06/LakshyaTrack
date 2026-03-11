@@ -391,7 +391,7 @@ export default function Interview() {
     // ═══════════════════════════════════════
     return (
         <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
-<main className="max-w-5xl mx-auto px-6 pt-16">
+<main className="max-w-5xl mx-auto px-3 sm:px-6 pt-8 sm:pt-16">
                     <AnimatePresence mode="wait">
                         {/* ═══ LANDING ═══ */}
                         {step === 'landing' && (
@@ -402,17 +402,17 @@ export default function Interview() {
                                     >
                                         <BrainCircuit className="w-12 h-12 text-white" />
                                     </motion.div>
-                                    <h1 className="text-5xl font-[900] text-slate-800 tracking-tight">Start Your AI Interview</h1>
+                                    <h1 className="text-3xl sm:text-5xl font-[900] text-slate-800 tracking-tight">Start Your AI Interview</h1>
                                     <p className="text-slate-400 text-lg font-medium max-w-xl mx-auto">Experience a complete AI-powered hiring simulation with 4 stages</p>
                                 </div>
 
                                 {/* Stage Pipeline */}
-                                <div className="grid grid-cols-4 gap-4 max-w-3xl mx-auto">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 max-w-3xl mx-auto">
                                     {STAGES.map((s, i) => (
                                         <motion.div key={s.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * 0.1 }}
-                                            className="relative p-6 rounded-[2rem] bg-white/90 backdrop-blur-sm border-2 border-white/20 shadow-lg text-center space-y-3 group hover:shadow-xl transition-all"
+                                            className="relative p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-white/90 backdrop-blur-sm border-2 border-white/20 shadow-lg text-center space-y-2 sm:space-y-3 group hover:shadow-xl transition-all"
                                         >
-                                            {i < 3 && <ChevronRight className="absolute -right-4 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-200 z-10" />}
+                                            {i < 3 && <ChevronRight className="hidden md:block absolute -right-4 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-200 z-10" />}
                                             <div className={`w-14 h-14 ${s.bg} rounded-2xl flex items-center justify-center mx-auto`}>
                                                 <s.icon className={`w-7 h-7 ${s.color}`} />
                                             </div>
@@ -423,7 +423,7 @@ export default function Interview() {
                                 </div>
 
                                 {/* Path Selection */}
-                                <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[3rem] space-y-8 max-w-2xl mx-auto border border-white/20">
+                                <Card className="p-6 sm:p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3rem] space-y-6 sm:space-y-8 max-w-2xl mx-auto border border-white/20">
                                     <div className="space-y-4">
                                         <label className="text-sm font-black text-slate-900 uppercase tracking-widest px-1">Choose Your Path</label>
                                         <div className="grid grid-cols-2 gap-4">
@@ -485,9 +485,9 @@ export default function Interview() {
                         {(step === 'screening' || step === 'technical' || step === 'hr') && (
                             <motion.div key="active-qa" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
                                 {/* Stage Progress Bar */}
-                                <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6">
+                                <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 -mx-3 sm:-mx-6 px-3 sm:px-6">
                                     {STAGES.map((s, i) => (
-                                        <div key={s.id} className={`flex-1 min-w-[140px] p-5 rounded-[2rem] border-2 transition-all backdrop-blur-sm ${i === currentStageIdx ? 'border-[#5c52d2] bg-blue-50/80 shadow-lg' : i < currentStageIdx ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-100 bg-white/40'}`}>
+                                        <div key={s.id} className={`flex-1 min-w-[100px] sm:min-w-[140px] p-3 sm:p-5 rounded-xl sm:rounded-[2rem] border-2 transition-all backdrop-blur-sm ${i === currentStageIdx ? 'border-[#5c52d2] bg-blue-50/80 shadow-lg' : i < currentStageIdx ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-100 bg-white/40'}`}>
                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${i === currentStageIdx ? 'bg-white shadow-sm' : i < currentStageIdx ? 'bg-emerald-100' : ''}`}>
                                                 {i < currentStageIdx ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <s.icon className={`w-5 h-5 ${i === currentStageIdx ? 'text-[#5c52d2]' : 'text-slate-300'}`} />}
                                             </div>
@@ -508,7 +508,7 @@ export default function Interview() {
                                 </div>
 
                                 {/* Question Card */}
-                                <Card className="p-10 border-none shadow-2xl bg-white/90 backdrop-blur-sm rounded-[3rem] space-y-8 min-h-[400px] flex flex-col border border-white/20">
+                                <Card className="p-5 sm:p-10 border-none shadow-2xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3rem] space-y-6 sm:space-y-8 min-h-[300px] sm:min-h-[400px] flex flex-col border border-white/20">
                                     <AnimatePresence mode="wait">
                                         {isLoading ? (
                                             <div key="loading" className="flex-1 flex flex-col items-center justify-center space-y-6">

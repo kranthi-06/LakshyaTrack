@@ -137,19 +137,19 @@ const roadmapData = [
 export default function LearningHub() {
     return (
         <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
-                <main className="max-w-5xl mx-auto px-6 pt-16 space-y-12">
+                <main className="max-w-5xl mx-auto px-3 sm:px-6 pt-8 sm:pt-16 space-y-8 sm:space-y-12">
 
                     {/* Header Banner */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-white/90 backdrop-blur-sm border border-white/20 rounded-[2.5rem] p-10 md:p-14 flex flex-col md:flex-row items-center gap-10 shadow-xl"
+                        className="bg-white/90 backdrop-blur-sm border border-white/20 rounded-2xl sm:rounded-[2.5rem] p-6 sm:p-10 md:p-14 flex flex-col md:flex-row items-center gap-6 sm:gap-10 shadow-xl"
                     >
                         <div className="w-20 h-20 bg-blue-500 rounded-3xl flex items-center justify-center text-white shadow-xl shadow-blue-200 shrink-0">
                             <Calendar className="w-10 h-10" />
                         </div>
                         <div className="space-y-3 text-center md:text-left">
-                            <h1 className="text-4xl font-black text-slate-900 tracking-tight">4-Week Learning Journey</h1>
+                            <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">4-Week Learning Journey</h1>
                             <p className="text-slate-500 text-lg font-medium">Structured plan with curated resources and practical exercises</p>
                         </div>
                     </motion.div>
@@ -157,7 +157,7 @@ export default function LearningHub() {
                     {/* Subtitle */}
                     <div className="flex items-center gap-4 ml-2">
                         <BookOpen className="w-6 h-6 text-[#5c52d2]" />
-                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">Weekly Schedule</h2>
+                        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Weekly Schedule</h2>
                     </div>
 
                     {/* Weekly Cards */}
@@ -170,14 +170,14 @@ export default function LearningHub() {
                                 viewport={{ once: true }}
                                 transition={{ delay: index * 0.1 }}
                             >
-                                <Card className="border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[3.5rem] p-10 md:p-16 space-y-12 overflow-hidden relative group border border-white/20">
+                                <Card className="border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3.5rem] p-5 sm:p-10 md:p-16 space-y-8 sm:space-y-12 overflow-hidden relative group border border-white/20">
                                     {/* Week Badge */}
                                     <div className="flex items-start gap-8">
                                         <div className="w-16 h-16 bg-[#5c52d2] rounded-2xl flex items-center justify-center text-white font-black text-xl shrink-0 shadow-lg shadow-purple-100 transition-transform group-hover:scale-110">
                                             {week.week}
                                         </div>
                                         <div className="space-y-3">
-                                            <h3 className="text-3xl font-black text-slate-900 tracking-tight">{week.title}</h3>
+                                            <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">{week.title}</h3>
                                             <p className="text-slate-400 font-bold leading-relaxed max-w-2xl">
                                                 {week.description}
                                             </p>
@@ -208,7 +208,7 @@ export default function LearningHub() {
                                     </div>
 
                                     {/* Resource Section */}
-                                    <div className="bg-[#eff6ff]/60 border border-blue-100/50 rounded-[2.5rem] p-10 space-y-8">
+                                    <div className="bg-[#eff6ff]/60 border border-blue-100/50 rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-10 space-y-6 sm:space-y-8">
                                         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                                             <div className="flex items-center gap-3 text-[#5c52d2]">
                                                 <Library className="w-5 h-5" />

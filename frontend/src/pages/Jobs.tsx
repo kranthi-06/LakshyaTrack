@@ -317,12 +317,12 @@ export default function Jobs() {
 
     return (
         <div className="min-h-screen font-sans pb-20 relative overflow-hidden bg-slate-50 dark:bg-[#050510]">
-<main className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-6">
+<main className="max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 pt-4 sm:pt-6">
 
                     {/* ── Header ───────────────────────────────────── */}
                     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
                         <div className="space-y-1">
-                            <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight flex items-center gap-3">
+                            <h1 className="text-2xl sm:text-3xl md:text-4xl font-[900] text-slate-900 tracking-tight flex items-center gap-2 sm:gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#5c52d2] to-[#8b5cf6] flex items-center justify-center shadow-lg shadow-purple-200">
                                     <Zap className="w-5 h-5 text-white" />
                                 </div>
@@ -345,7 +345,7 @@ export default function Jobs() {
                             <Button
                                 onClick={handleAIDiscover}
                                 disabled={isRecommending}
-                                className="h-10 px-5 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#8b5cf6] text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-purple-200/50 hover:shadow-purple-300/50 transition-all"
+                                className="h-9 sm:h-10 px-3 sm:px-5 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#8b5cf6] text-white text-[10px] sm:text-xs font-bold uppercase tracking-wider shadow-lg shadow-purple-200/50 hover:shadow-purple-300/50 transition-all"
                             >
                                 <Sparkles className={`w-3.5 h-3.5 mr-2 ${isRecommending ? 'animate-pulse' : ''}`} />
                                 AI Discover
@@ -354,7 +354,7 @@ export default function Jobs() {
                     </div>
 
                     {/* ── Search + Filter Bar ─────────────────────── */}
-                    <Card className="p-4 sm:p-6 rounded-2xl border border-white/30 bg-white/80 backdrop-blur-md shadow-xl shadow-slate-100/50 mb-6">
+                    <Card className="p-3 sm:p-4 md:p-6 rounded-2xl border border-white/30 bg-white/80 backdrop-blur-md shadow-xl shadow-slate-100/50 mb-4 sm:mb-6">
                         {/* Main Search Row */}
                         <div className="flex flex-col sm:flex-row gap-3 mb-4">
                             <div className="flex-1 relative">
@@ -445,7 +445,7 @@ export default function Jobs() {
                     </Card>
 
                     {/* ── Category Tabs ────────────────────────────── */}
-                    <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
+                    <div className="flex items-center gap-2 mb-6 sm:mb-8 overflow-x-auto pb-2 scrollbar-hide no-scrollbar">
                         {CATEGORIES.map(cat => {
                             const isActive = activeCategory === cat.key;
                             const count = cat.key === 'all'

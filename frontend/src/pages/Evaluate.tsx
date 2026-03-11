@@ -284,7 +284,7 @@ export default function Evaluate() {
 
     return (
         <div className="min-h-screen font-sans pb-20 relative overflow-hidden bg-slate-50 dark:bg-[#050510]">
-<main className="max-w-[1300px] mx-auto px-6 pt-16 relative z-10">
+<main className="max-w-[1300px] mx-auto px-3 sm:px-6 pt-8 sm:pt-16 relative z-10">
                 {/* Header Section */}
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
@@ -311,7 +311,7 @@ export default function Evaluate() {
                                     key="result-h1"
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className="text-5xl md:text-6xl font-[1000] text-slate-900 tracking-tight leading-[1.1]"
+                            className="text-5xl md:text-6xl font-[1000] text-slate-900 tracking-tight leading-[1.1]"
                                 >
                                     Analysis <span className="bg-gradient-to-r from-emerald-500 to-teal-600 bg-clip-text text-transparent">Complete</span>
                                 </motion.h1>
@@ -320,13 +320,13 @@ export default function Evaluate() {
                                     key="initial-h1"
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className="text-5xl md:text-6xl font-[1000] text-slate-900 tracking-tight leading-[1.1]"
+                            className="text-5xl md:text-6xl font-[1000] text-slate-900 tracking-tight leading-[1.1]"
                                 >
                                     Evaluate Your <span className="bg-gradient-to-r from-[#5c52d2] to-[#7c66dc] bg-clip-text text-transparent">Potential</span>
                                 </motion.h1>
                             )}
                         </AnimatePresence>
-                        <p className="text-slate-500 text-xl font-medium max-w-2xl mx-auto">
+                        <p className="text-slate-500 text-base sm:text-xl font-medium max-w-2xl mx-auto">
                             {result ? 'Strategic deep-dive into your professional architecture and market alignment.' : 'Leverage advanced AI to dissect your professional profile and uncover hidden growth opportunities.'}
                         </p>
                     </div>
@@ -391,7 +391,7 @@ export default function Evaluate() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.5 }}
-                    className="relative rounded-[4rem] p-12 md:p-20 overflow-hidden shadow-2xl shadow-purple-200/50"
+                    className="relative rounded-2xl sm:rounded-[4rem] p-6 sm:p-12 md:p-20 overflow-hidden shadow-2xl shadow-purple-200/50"
                 >
                     <div className="absolute inset-0 bg-[#5c52d2]" />
                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-[#5c52d2] to-purple-700" />
@@ -404,14 +404,14 @@ export default function Evaluate() {
                                 <span className="text-[10px] font-black uppercase tracking-widest text-white">Advanced Career Intelligence</span>
                             </div>
                             <div className="space-y-4">
-                                <h2 className="text-4xl md:text-5xl font-black text-white leading-tight">Ready for a <span className="text-blue-200">Full Profile Audit?</span></h2>
+                                <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-white leading-tight">Ready for a <span className="text-blue-200">Full Profile Audit?</span></h2>
                                 <p className="text-white/80 text-lg font-bold leading-relaxed">
                                     Our Deep-Dive Evaluation generates a comprehensive 10-page trajectory report.
                                 </p>
                             </div>
                         </div>
 
-                        <Button className="group bg-white text-[#5c52d2] hover:bg-slate-50 transition-all rounded-[2rem] h-20 px-12 text-xl font-black shadow-2xl hover:scale-105 active:scale-95 shrink-0">
+                        <Button className="group bg-white text-[#5c52d2] hover:bg-slate-50 transition-all rounded-2xl sm:rounded-[2rem] h-14 sm:h-20 px-8 sm:px-12 text-base sm:text-xl font-black shadow-2xl hover:scale-105 active:scale-95 shrink-0 w-full sm:w-auto">
                             Start Full Evaluation
                             <div className="ml-4 w-8 h-8 bg-[#5c52d2]/10 rounded-full flex items-center justify-center group-hover:bg-[#5c52d2] group-hover:text-white transition-all">
                                 <ChevronRight className="w-5 h-5" />

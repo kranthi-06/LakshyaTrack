@@ -631,3 +631,292 @@ html.dark {
     color-adjust: exact !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* RESPONSIVE — World-class mobile responsiveness system             */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Base responsive resets ── */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+img, video, svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Responsive typography scaling ── */
+@media (max-width: 1280px) {
+  /* Laptop */
+  .text-5xl { font-size: 2.5rem !important; }
+  .text-6xl { font-size: 3rem !important; }
+  .text-7xl { font-size: 3.5rem !important; }
+  .text-8xl { font-size: 4rem !important; }
+  .text-\[5\.5rem\] { font-size: 3.2rem !important; }
+}
+
+@media (max-width: 1024px) {
+  /* Tablet */
+  .text-4xl { font-size: 1.875rem !important; }
+  .text-5xl { font-size: 2.25rem !important; }
+  .text-6xl { font-size: 2.5rem !important; }
+  .text-7xl { font-size: 3rem !important; }
+  .text-8xl { font-size: 3.5rem !important; }
+  .text-\[5\.5rem\] { font-size: 2.75rem !important; }
+}
+
+@media (max-width: 768px) {
+  /* Mobile */
+  .text-3xl { font-size: 1.5rem !important; }
+  .text-4xl { font-size: 1.625rem !important; }
+  .text-5xl { font-size: 1.75rem !important; }
+  .text-6xl { font-size: 2rem !important; }
+  .text-7xl { font-size: 2.25rem !important; }
+  .text-8xl { font-size: 2.75rem !important; }
+  .text-\[5\.5rem\] { font-size: 2rem !important; }
+  .text-2xl { font-size: 1.375rem !important; }
+  .text-xl { font-size: 1.125rem !important; }
+}
+
+@media (max-width: 480px) {
+  /* Small phones */
+  .text-3xl { font-size: 1.375rem !important; }
+  .text-4xl { font-size: 1.5rem !important; }
+  .text-5xl { font-size: 1.5rem !important; }
+  .text-6xl { font-size: 1.75rem !important; }
+  .text-7xl { font-size: 1.875rem !important; }
+  .text-8xl { font-size: 2rem !important; }
+  .text-\[5\.5rem\] { font-size: 1.75rem !important; }
+}
+
+/* ── Touch-friendly interactions ── */
+@media (max-width: 1024px) {
+  button,
+  a[role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  .cursor-pointer {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Ensure inputs are comfortable to tap */
+  input, select, textarea {
+    font-size: 16px !important; /* Prevent iOS zoom */
+    min-height: 44px;
+  }
+}
+
+/* ── Responsive table handling ── */
+@media (max-width: 768px) {
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+
+  table th,
+  table td {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+    font-size: 0.75rem !important;
+  }
+}
+
+/* ── Responsive card border-radius ── */
+@media (max-width: 768px) {
+  .rounded-\[3\.5rem\] { border-radius: 1.5rem !important; }
+  .rounded-\[3rem\] { border-radius: 1.25rem !important; }
+  .rounded-\[2\.5rem\] { border-radius: 1rem !important; }
+  .rounded-\[4rem\] { border-radius: 1.5rem !important; }
+  .rounded-3xl { border-radius: 1rem !important; }
+}
+
+/* ── Responsive padding on large cards ── */
+@media (max-width: 768px) {
+  .p-10 { padding: 1.5rem !important; }
+  .p-12 { padding: 1.5rem !important; }
+  .p-16 { padding: 1.5rem !important; }
+  .p-20 { padding: 1.5rem !important; }
+  .px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .px-10 { padding-left: 1.25rem !important; padding-right: 1.25rem !important; }
+  .px-12 { padding-left: 1.25rem !important; padding-right: 1.25rem !important; }
+  .py-32 { padding-top: 4rem !important; padding-bottom: 4rem !important; }
+  .py-24 { padding-top: 3rem !important; padding-bottom: 3rem !important; }
+  .pt-32 { padding-top: 5rem !important; }
+}
+
+/* ── Responsive gap adjustments ── */
+@media (max-width: 768px) {
+  .gap-20 { gap: 2rem !important; }
+  .gap-16 { gap: 1.5rem !important; }
+  .gap-12 { gap: 1rem !important; }
+  .gap-10 { gap: 1rem !important; }
+  .space-y-16 > * + * { margin-top: 2rem !important; }
+  .space-y-12 > * + * { margin-top: 1.5rem !important; }
+  .space-y-10 > * + * { margin-top: 1.25rem !important; }
+}
+
+/* ── Responsive button sizing ── */
+@media (max-width: 480px) {
+  .h-16 { height: 3rem !important; }
+  .h-20 { height: 3.5rem !important; }
+  .px-10 { padding-left: 1.5rem !important; padding-right: 1.5rem !important; }
+  .px-12 { padding-left: 1.5rem !important; padding-right: 1.5rem !important; }
+}
+
+/* ── Prevent horizontal overflow globally ── */
+body {
+  overflow-x: hidden;
+}
+
+main {
+  overflow-x: hidden;
+}
+
+/* ── Safe area padding for notched devices ── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .pb-20 {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── Mobile sidebar top bar improvements ── */
+@media (max-width: 1024px) {
+  .sticky.top-0 {
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+  }
+}
+
+/* ── Reduced motion for mobile performance ── */
+@media (max-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .animate-float,
+  .animate-float-delayed,
+  .animate-float-slow {
+    animation-duration: 0s !important;
+    animation: none !important;
+  }
+
+  .animate-gradient-slow,
+  .animated-gradient {
+    animation-duration: 30s !important;
+  }
+}
+
+/* ── Mobile: reduce blur effects for performance ── */
+@media (max-width: 768px) {
+  .backdrop-blur-xl {
+    -webkit-backdrop-filter: blur(10px) !important;
+    backdrop-filter: blur(10px) !important;
+  }
+
+  .backdrop-blur-3xl {
+    -webkit-backdrop-filter: blur(12px) !important;
+    backdrop-filter: blur(12px) !important;
+  }
+
+  .blur-\[80px\],
+  .blur-\[60px\],
+  .blur-\[100px\] {
+    filter: blur(30px) !important;
+  }
+
+  .blur-3xl {
+    filter: blur(24px) !important;
+  }
+}
+
+/* ── Responsive profile image and avatar ── */
+@media (max-width: 768px) {
+  .w-40.h-40 {
+    width: 7rem !important;
+    height: 7rem !important;
+  }
+
+  .w-32.h-32 {
+    width: 5rem !important;
+    height: 5rem !important;
+  }
+}
+
+/* ── Mobile: full-width containers ── */
+@media (max-width: 640px) {
+  .max-w-6xl,
+  .max-w-5xl,
+  .max-w-4xl,
+  .max-w-3xl {
+    max-width: 100% !important;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* ── Resume preview scaling on mobile ── */
+@media (max-width: 768px) {
+  .resume-preview-container {
+    transform: scale(0.35) !important;
+    margin-bottom: -400px !important;
+  }
+}
+
+/* ── Scrollbar hide utility ── */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ══════════════════════════════════════════════════════ */
+/* SPLINE BLEND TEXT — Dynamic color on Spline background */
+/* ══════════════════════════════════════════════════════ */
+
+/* Heading blend classes */
+.spline-blend-heading {
+  color: #ffffff;
+  mix-blend-mode: difference;
+  -webkit-text-stroke: 1px rgba(0,0,0,0.15);
+  text-shadow: 0 0 20px rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.spline-blend-subheading {
+  color: #ffffff;
+  mix-blend-mode: difference;
+  text-shadow: 0 0 15px rgba(255,255,255,0.15), 0 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Paragraph blend class - "white dynamic" */
+.spline-blend-paragraph {
+  color: #ffffff;
+  mix-blend-mode: difference;
+  text-shadow: 0 0 10px rgba(255,255,255,0.1);
+}
+
+/* Dark mode override for headings: back to "icy cyan" exclusion */
+.dark .spline-blend-heading {
+  color: #00E5FF;
+  mix-blend-mode: exclusion;
+  -webkit-text-stroke: 1.5px rgba(0,0,0,0.35);
+  text-shadow: 0 0 15px rgba(0,0,0,0.6), 0 0 40px rgba(0,229,255,0.4), 0 2px 4px rgba(0,0,0,0.4);
+}
+
+.dark .spline-blend-subheading {
+  color: #00E5FF;
+  mix-blend-mode: exclusion;
+  -webkit-text-stroke: 1px rgba(0,0,0,0.35);
+  text-shadow: 0 0 15px rgba(0,0,0,0.6), 0 0 30px rgba(0,229,255,0.3), 0 2px 4px rgba(0,0,0,0.4);
+}
+
+/* Dark mode override for paragraph: keep simple white or also dynamic? 
+   User asked for "small middle text to white dynamic" specifically for light theme, 
+   but we'll keep it dynamic for both unless specified. */
+.dark .spline-blend-paragraph {
+  color: #ffffff;
+  mix-blend-mode: difference;
+}

@@ -425,7 +425,7 @@ export default function Quiz() {
         <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
 
 
-                            <main className={`max-w-4xl mx-auto px-6 ${examMode.isExamActive ? 'pt-8' : 'pt-16'}`}>
+                            <main className={`max-w-4xl mx-auto px-3 sm:px-6 ${examMode.isExamActive ? 'pt-8' : 'pt-8 sm:pt-16'}`}>
                     <AnimatePresence mode="wait">
                         {step === 'setup' && (
                             <motion.div
@@ -445,7 +445,7 @@ export default function Quiz() {
                                         </div>
                                     </div>
                                     <div className="space-y-2">
-                                        <h1 className="text-4xl font-[900] text-slate-900 tracking-tight">
+                                        <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight">
                                             {isRoadmapQuiz ? `Skill Assessment: ${roadmapSkillName}` : 'Test Your Knowledge'}
                                         </h1>
                                         <p className="text-slate-400 text-lg font-medium max-w-lg mx-auto leading-relaxed">
@@ -690,7 +690,7 @@ export default function Quiz() {
                                     />
                                 </div>
 
-                                <Card className="p-12 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[3rem] space-y-10 min-h-[500px] flex flex-col justify-center border border-white/20">
+                                <Card className="p-6 sm:p-12 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3rem] space-y-8 sm:space-y-10 min-h-[400px] sm:min-h-[500px] flex flex-col justify-center border border-white/20">
                                     <h2 className="text-2xl font-[900] text-slate-900 leading-snug">
                                         {quizQuestions[currentQuestion].question}
                                     </h2>
@@ -786,7 +786,7 @@ export default function Quiz() {
                                     </motion.div>
                                 )}
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto pt-8">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 max-w-2xl mx-auto pt-8">
                                     <Card className="p-8 border-none bg-blue-50/90 backdrop-blur-sm rounded-3xl space-y-2 shadow-lg">
                                         <Target className="w-6 h-6 text-blue-500 mx-auto" />
                                         <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Accuracy</p>

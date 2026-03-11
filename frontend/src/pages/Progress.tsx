@@ -190,10 +190,10 @@ export default function Progress() {
 
     return (
         <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
-<main className="max-w-[1200px] mx-auto px-6 pt-16 space-y-16">
+<main className="max-w-[1200px] mx-auto px-3 sm:px-6 pt-8 sm:pt-16 space-y-8 sm:space-y-16">
                     {/* Header Container */}
                     <div className="text-center space-y-4">
-                        <h1 className="text-5xl font-[900] text-slate-900 tracking-tight">Your Learning Progress</h1>
+                        <h1 className="text-3xl sm:text-4xl md:text-5xl font-[900] text-slate-900 tracking-tight">Your Learning Progress</h1>
                         <p className="text-slate-400 text-lg font-medium">Track your growth and achievements across all activities</p>
                         <Button
                             onClick={handleRefreshProgress}
@@ -255,7 +255,7 @@ export default function Progress() {
                             )}
 
                             {/* Main Metrics (Top Row) */}
-                            <div className="grid md:grid-cols-3 gap-8 mb-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-8 mb-8">
                                 <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[3rem] relative overflow-hidden group border border-white/20">
                                     <div className="absolute top-0 right-0 p-8">
                                         <TrendingUp className="w-12 h-12 text-[#5c52d2]/10 rotate-12 transition-transform group-hover:rotate-0" />
@@ -306,7 +306,7 @@ export default function Progress() {
                             </div>
 
                             {/* Secondary Stats Cards */}
-                            <div className="grid md:grid-cols-3 gap-8 mb-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-8 mb-8">
                                 <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[3rem] relative overflow-hidden group border border-white/20">
                                     <div className="absolute top-0 right-0 p-8">
                                         <BrainCircuit className="w-12 h-12 text-blue-500/10 rotate-12 transition-transform group-hover:rotate-0" />
@@ -374,7 +374,7 @@ export default function Progress() {
                                     <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
                                         <BarChart3 className="w-5 h-5 text-slate-900" />
                                     </div>
-                                    <h2 className="text-3xl font-[900] text-slate-900 tracking-tight">Quiz History</h2>
+                                    <h2 className="text-2xl sm:text-3xl font-[900] text-slate-900 tracking-tight">Quiz History</h2>
                                 </div>
 
                                 <Card className="border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[2.5rem] overflow-hidden border border-white/20">
@@ -443,7 +443,7 @@ export default function Progress() {
                                     <div className="w-10 h-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center">
                                         <Mic2 className="w-5 h-5" />
                                     </div>
-                                    <h2 className="text-3xl font-[900] text-slate-900 tracking-tight">Interview Practice History</h2>
+                                    <h2 className="text-2xl sm:text-3xl font-[900] text-slate-900 tracking-tight">Interview Practice History</h2>
                                 </div>
 
                                 <div className="space-y-6">
@@ -491,7 +491,7 @@ export default function Progress() {
                                     <Rocket className="w-12 h-12" />
                                 </div>
                                 <div className="space-y-4 flex-1 text-center md:text-left">
-                                    <h3 className="text-3xl font-[900] text-slate-900 tracking-tight">Growth Insight Available</h3>
+                                    <h3 className="text-2xl sm:text-3xl font-[900] text-slate-900 tracking-tight">Growth Insight Available</h3>
                                     <p className="text-slate-500 text-lg font-medium leading-relaxed">
                                         Based on your recent quiz and interview performance, we've identified key patterns in your learning curve. Check out your personalized improvement strategy.
                                     </p>

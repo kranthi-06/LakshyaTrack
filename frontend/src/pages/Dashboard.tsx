@@ -110,8 +110,8 @@ export default function Dashboard() {
     });
 
     return (
-        <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-            <div className="max-w-[1360px] mx-auto space-y-8">
+        <div className="min-h-screen px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+            <div className="max-w-[1360px] mx-auto space-y-6 sm:space-y-8">
 
                 {/* ═══════════════════════════════════════ */}
                 {/* Welcome Header                          */}
@@ -139,12 +139,12 @@ export default function Dashboard() {
                 {/* ═══════════════════════════════════════ */}
                 {/* Stats Row                               */}
                 {/* ═══════════════════════════════════════ */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                     {stats.map((stat, i) => (
                         <motion.div
                             key={stat.label}
                             {...fadeIn(i + 1)}
-                            className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5 hover:shadow-lg hover:shadow-slate-200/40 dark:hover:shadow-slate-900/40 transition-all group"
+                            className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-3.5 sm:p-5 hover:shadow-lg hover:shadow-slate-200/40 dark:hover:shadow-slate-900/40 transition-all group"
                         >
                             <div className="flex items-center justify-between mb-3">
                                 <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center`}>
@@ -152,7 +152,7 @@ export default function Dashboard() {
                                 </div>
                                 <ArrowUpRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-[#6C63FF] transition-colors" />
                             </div>
-                            <p className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{stat.value}</p>
+                            <p className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{stat.value}</p>
                             <p className="text-[13px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">{stat.label}</p>
                             <p className="text-[11px] font-medium text-emerald-500 dark:text-emerald-400 mt-1">{stat.change}</p>
                         </motion.div>
@@ -210,7 +210,7 @@ export default function Dashboard() {
                         <Sparkles className="w-5 h-5 text-[#6C63FF]" />
                         Quick Actions
                     </h2>
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                         {quickActions.map((action, i) => (
                             <motion.div
                                 key={action.title}
@@ -249,7 +249,7 @@ export default function Dashboard() {
                         <BarChart3 className="w-5 h-5 text-emerald-500" />
                         Recommended for You
                     </h2>
-                    <div className="grid md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                         {[
                             { t: 'Complete Your Profile', d: 'Add work experience for better job matches', p: 75, path: '/profile', accent: '#6C63FF' },
                             { t: 'Take Skill Assessment', d: 'Evaluate your JavaScript skills', p: 0, path: '/evaluate', accent: '#10B981' },
