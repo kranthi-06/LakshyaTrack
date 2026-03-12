@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -33,12 +33,15 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { analyzeResumeText } from '@/services/resume';
 import { extractTextFromFile } from '@/utils/ocr';
-import AIBuilder from './ResumeBuilder/index';
+import { usePerformanceMode } from '../hooks/usePerformanceMode';
+
+const AIBuilder = lazy(() => import('./ResumeBuilder/index'));
 
 type Step = 'selection' | 'upload' | 'builder' | 'analysis' | 'templates';
 
 export default function ResumeBuilder() {
     const location = useLocation();
+    const { liteMode, isMobile } = usePerformanceMode();
     const editResume = (location.state as any)?.editResume || null;
     const [step, setStep] = useState<Step>(editResume ? 'builder' : 'selection');
     const [file, setFile] = useState<File | null>(null);
@@ -109,60 +112,80 @@ export default function ResumeBuilder() {
     // Create Spline background directly on document.body (outside React tree)
     // to guarantee it covers the full viewport without any parent CSS interference
     useEffect(() => {
-        if (step === 'selection') {
-            // Hide the network background canvas on this page
-            const networkBg = document.querySelector('.fixed.inset-0.pointer-events-none') as HTMLElement;
-            if (networkBg) {
-                networkBg.style.display = 'none';
+        if (step !== 'selection') return;
+
+        const useLightweightSpline = liteMode || isMobile;
+
+        // Hide the network background canvas on this page
+        const networkBg = document.querySelector('.fixed.inset-0.pointer-events-none') as HTMLElement;
+        if (networkBg) networkBg.style.display = 'none';
+
+        // Make all parent backgrounds transparent
+        const layoutRoot = document.querySelector('.flex.h-screen.overflow-hidden') as HTMLElement;
+        if (layoutRoot) layoutRoot.style.background = 'transparent';
+
+        const pageContent = document.querySelector('.min-h-full.relative.z-10') as HTMLElement;
+        if (pageContent) {
+            pageContent.style.background = 'transparent';
+            pageContent.style.zIndex = 'auto';
+            pageContent.style.position = 'static';
+        }
+
+        const mainArea = document.querySelector('main.flex-1.overflow-y-auto') as HTMLElement;
+        if (mainArea) {
+            mainArea.style.background = 'transparent';
+            mainArea.style.overflow = 'visible';
+            mainArea.style.transition = 'none';
+        }
+
+        const updateBgForTheme = () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            const sceneBg = isDark ? '#0a0a1a' : '#ffffff';
+            document.body.style.background = sceneBg;
+            document.documentElement.style.background = sceneBg;
+        };
+        updateBgForTheme();
+
+        const themeObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.attributeName === 'class') updateBgForTheme();
+            }
+        });
+        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+        const rootEl = document.getElementById('root');
+        if (rootEl) rootEl.style.background = 'transparent';
+
+        let splineContainer: HTMLDivElement | null = null;
+        let interval: ReturnType<typeof setInterval> | null = null;
+        let timeout: ReturnType<typeof setTimeout> | null = null;
+        let visibilityHandler: (() => void) | null = null;
+
+        if (useLightweightSpline) {
+            const splineFallback = document.createElement('div');
+            splineFallback.id = 'spline-bg-fallback';
+            splineFallback.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: 0;
+                pointer-events: none;
+                background:
+                    radial-gradient(circle at 20% 20%, rgba(92,82,210,0.18), transparent 45%),
+                    radial-gradient(circle at 80% 30%, rgba(124,58,237,0.14), transparent 42%),
+                    radial-gradient(circle at 50% 80%, rgba(59,130,246,0.12), transparent 45%);
+                transform: translateZ(0);
+            `;
+            document.body.insertBefore(splineFallback, document.body.firstChild);
+        } else {
+            const SPLINE_SCRIPT_URL = 'https://unpkg.com/@splinetool/viewer@1.12.68/build/spline-viewer.js';
+            if (!document.querySelector(`script[src="${SPLINE_SCRIPT_URL}"]`)) {
+                const splineScript = document.createElement('script');
+                splineScript.type = 'module';
+                splineScript.src = SPLINE_SCRIPT_URL;
+                document.head.appendChild(splineScript);
             }
 
-            // Make all parent backgrounds transparent
-            const layoutRoot = document.querySelector('.flex.h-screen.overflow-hidden') as HTMLElement;
-            if (layoutRoot) layoutRoot.style.background = 'transparent';
-
-            const pageContent = document.querySelector('.min-h-full.relative.z-10') as HTMLElement;
-            if (pageContent) {
-                pageContent.style.background = 'transparent';
-                // Remove z-index and position to break stacking context
-                // so mix-blend-mode can see through to the Spline layer
-                pageContent.style.zIndex = 'auto';
-                pageContent.style.position = 'static';
-            }
-
-            const mainArea = document.querySelector('main.flex-1.overflow-y-auto') as HTMLElement;
-            if (mainArea) {
-                mainArea.style.background = 'transparent';
-                mainArea.style.overflow = 'visible';
-                mainArea.style.transition = 'none';
-            }
-
-            // Set body/html background to match the Spline scene per theme
-            const updateBgForTheme = () => {
-                const isDark = document.documentElement.classList.contains('dark');
-                const sceneBg = isDark ? '#0a0a1a' : '#ffffff';
-                document.body.style.background = sceneBg;
-                document.documentElement.style.background = sceneBg;
-            };
-            updateBgForTheme();
-
-            // Watch for theme changes
-            const themeObserver = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    if (mutation.attributeName === 'class') {
-                        updateBgForTheme();
-                    }
-                }
-            });
-            themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-
-            // Also make the #root transparent
-            const rootEl = document.getElementById('root');
-            if (rootEl) rootEl.style.background = 'transparent';
-
-            // === CREATE SPLINE VIEWER DIRECTLY ON document.body ===
-            // Make it LARGER than viewport (130%) and center it with negative offsets
-            // so the 3D ribbons extend well beyond all screen edges
-            const splineContainer = document.createElement('div');
+            splineContainer = document.createElement('div');
             splineContainer.id = 'spline-bg-container';
             splineContainer.style.cssText = `
                 position: fixed;
@@ -174,6 +197,7 @@ export default function ResumeBuilder() {
                 pointer-events: none;
                 cursor: default;
                 overflow: hidden;
+                transform: translateZ(0);
             `;
 
             const splineViewer = document.createElement('spline-viewer');
@@ -189,7 +213,6 @@ export default function ResumeBuilder() {
             splineContainer.appendChild(splineViewer);
             document.body.insertBefore(splineContainer, document.body.firstChild);
 
-            // Fix watermark and cursor inside Shadow DOM
             const fixSplineViewer = () => {
                 const viewer = document.querySelector('#spline-bg-container spline-viewer') as any;
                 if (!viewer?.shadowRoot) return;
@@ -218,39 +241,59 @@ export default function ResumeBuilder() {
                 }
             };
 
-            fixSplineViewer();
-            const interval = setInterval(fixSplineViewer, 500);
-            const timeout = setTimeout(() => clearInterval(interval), 15000);
-
-            // === CLEANUP ===
-            return () => {
-                // Remove the Spline container from body
-                const el = document.getElementById('spline-bg-container');
-                if (el) el.remove();
-
-                // Stop watching theme changes
-                themeObserver.disconnect();
-
-                if (networkBg) networkBg.style.display = '';
-                if (layoutRoot) layoutRoot.style.background = '';
-                if (pageContent) {
-                    pageContent.style.background = '';
-                    pageContent.style.zIndex = '';
-                    pageContent.style.position = '';
+            visibilityHandler = () => {
+                if (!splineContainer) return;
+                const viewer = document.querySelector('#spline-bg-container spline-viewer') as any;
+                if (document.hidden) {
+                    splineContainer.style.visibility = 'hidden';
+                    if (typeof viewer?.pause === 'function') viewer.pause();
+                } else {
+                    splineContainer.style.visibility = 'visible';
+                    if (typeof viewer?.play === 'function') viewer.play();
                 }
-                if (mainArea) {
-                    mainArea.style.background = '';
-                    mainArea.style.overflow = '';
-                    mainArea.style.transition = '';
-                }
-                document.body.style.background = '';
-                document.documentElement.style.background = '';
-                if (rootEl) rootEl.style.background = '';
-                clearInterval(interval);
-                clearTimeout(timeout);
             };
+            document.addEventListener('visibilitychange', visibilityHandler);
+
+            fixSplineViewer();
+            visibilityHandler();
+            interval = setInterval(fixSplineViewer, 1000);
+            timeout = setTimeout(() => {
+                if (interval) clearInterval(interval);
+            }, 8000);
         }
-    }, [step]);
+
+        return () => {
+            const splineEl = document.getElementById('spline-bg-container');
+            if (splineEl) splineEl.remove();
+            const fallbackEl = document.getElementById('spline-bg-fallback');
+            if (fallbackEl) fallbackEl.remove();
+
+            themeObserver.disconnect();
+            if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
+
+            if (networkBg) networkBg.style.display = '';
+            if (layoutRoot) layoutRoot.style.background = '';
+            if (pageContent) {
+                pageContent.style.background = '';
+                pageContent.style.zIndex = '';
+                pageContent.style.position = '';
+            }
+            if (mainArea) {
+                mainArea.style.background = '';
+                mainArea.style.overflow = '';
+                mainArea.style.transition = '';
+            }
+
+            document.body.style.background = '';
+            document.documentElement.style.background = '';
+            if (rootEl) rootEl.style.background = '';
+
+            if (interval) clearInterval(interval);
+            if (timeout) clearTimeout(timeout);
+
+            splineContainer = null;
+        };
+    }, [step, liteMode, isMobile]);
 
     return (
         <div className={`font-sans ${step === 'selection' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
@@ -332,7 +375,17 @@ export default function ResumeBuilder() {
                         )}
 
                         {step === 'builder' && (
-                            <AIBuilder onBack={() => setStep('selection')} editResume={editResume} />
+                            <Suspense
+                                fallback={
+                                    <div className="max-w-4xl mx-auto py-10 space-y-6 animate-pulse">
+                                        <div className="h-16 bg-white/80 rounded-3xl border border-slate-100" />
+                                        <div className="h-10 bg-white/80 rounded-2xl border border-slate-100" />
+                                        <div className="h-[480px] bg-white/80 rounded-[3rem] border border-slate-100" />
+                                    </div>
+                                }
+                            >
+                                <AIBuilder onBack={() => setStep('selection')} editResume={editResume} />
+                            </Suspense>
                         )}
 
                         {step === 'upload' && (

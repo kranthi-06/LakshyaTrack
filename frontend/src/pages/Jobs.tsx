@@ -613,6 +613,7 @@ export default function Jobs() {
                                                 initial={{ opacity: 0, y: 20 }}
                                                 animate={{ opacity: 1, y: 0 }}
                                                 transition={{ delay: i * 0.05 }}
+                                                className="cv-auto"
                                             >
                                                 <OpportunityCard
                                                     opp={opp}
@@ -709,6 +710,7 @@ export default function Jobs() {
                                         initial={{ opacity: 0, y: 20 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: i * 0.04 }}
+                                        className="cv-auto"
                                     >
                                         <OpportunityCard opp={opp} onOpen={handleOpen} />
                                     </motion.div>

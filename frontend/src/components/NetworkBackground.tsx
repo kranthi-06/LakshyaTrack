@@ -9,7 +9,53 @@ interface Particle {
   opacity: number;
   pulseSpeed: number;
   pulsePhase: number;
-  hueOffset: number;
+}
+
+interface RenderSettings {
+  connectionDistance: number;
+  connectionDistanceSq: number;
+  mouseRadius: number;
+  mouseRadiusSq: number;
+  particleCountFactor: number;
+  minParticles: number;
+  targetFps: number;
+  frameInterval: number;
+  maxSpeed: number;
+  dprCap: number;
+}
+
+function detectLowPowerDevice() {
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4;
+  const lowCpu = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4;
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return lowMemory || lowCpu || prefersReducedMotion;
+}
+
+function buildSettings(width: number): RenderSettings {
+  const lowPower = detectLowPowerDevice();
+  const mobile = width < 1024;
+
+  const connectionDistance = lowPower ? 130 : mobile ? 150 : 170;
+  const mouseRadius = lowPower ? 140 : mobile ? 190 : 240;
+  const particleCountFactor = lowPower ? 0.000015 : mobile ? 0.00002 : 0.000028;
+  const minParticles = lowPower ? 22 : mobile ? 28 : 35;
+  const targetFps = lowPower ? 24 : mobile ? 28 : 30;
+  const maxSpeed = lowPower ? 0.95 : 1.2;
+  const dprCap = lowPower ? 1 : mobile ? 1.2 : 1.5;
+
+  return {
+    connectionDistance,
+    connectionDistanceSq: connectionDistance * connectionDistance,
+    mouseRadius,
+    mouseRadiusSq: mouseRadius * mouseRadius,
+    particleCountFactor,
+    minParticles,
+    targetFps,
+    frameInterval: 1000 / targetFps,
+    maxSpeed,
+    dprCap,
+  };
 }
 
 export default function NetworkBackground() {
@@ -18,27 +64,32 @@ export default function NetworkBackground() {
   const particlesRef = useRef<Particle[]>([]);
   const mouseRef = useRef({ x: -1000, y: -1000 });
   const timeRef = useRef(0);
-
-  const CONNECTION_DISTANCE = 170;
-  const MOUSE_RADIUS = 240;
-  const PARTICLE_COUNT_FACTOR = 0.000045;
+  const lastFrameTimeRef = useRef(0);
+  const sizeRef = useRef({ width: 0, height: 0 });
+  const settingsRef = useRef<RenderSettings>(buildSettings(window.innerWidth));
+  const isDocumentVisibleRef = useRef(!document.hidden);
+  const isCanvasVisibleRef = useRef(true);
 
   const isDark = () => document.documentElement.classList.contains('dark');
 
   const createParticles = useCallback((width: number, height: number) => {
-    const count = Math.max(55, Math.floor(width * height * PARTICLE_COUNT_FACTOR));
+    const settings = settingsRef.current;
+    const count = Math.max(
+      settings.minParticles,
+      Math.floor(width * height * settings.particleCountFactor),
+    );
+
     const particles: Particle[] = [];
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count; i += 1) {
       particles.push({
         x: Math.random() * width,
         y: Math.random() * height,
         vx: (Math.random() - 0.5) * 0.4,
         vy: (Math.random() - 0.5) * 0.4,
         radius: Math.random() * 2.5 + 1.2,
-        opacity: Math.random() * 0.45 + 0.4,
+        opacity: Math.random() * 0.45 + 0.35,
         pulseSpeed: Math.random() * 0.025 + 0.008,
         pulsePhase: Math.random() * Math.PI * 2,
-        hueOffset: Math.random() * 40 - 20,
       });
     }
     return particles;
@@ -50,22 +101,48 @@ export default function NetworkBackground() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const parent = canvas.parentElement;
+    if (!parent) return;
+
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.parentElement?.getBoundingClientRect();
-      if (!rect) return;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+      const rect = parent.getBoundingClientRect();
+      const nextSettings = buildSettings(rect.width);
+      settingsRef.current = nextSettings;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, nextSettings.dprCap);
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      sizeRef.current = { width: rect.width, height: rect.height };
       particlesRef.current = createParticles(rect.width, rect.height);
     };
 
     resize();
-    window.addEventListener('resize', resize);
+    window.addEventListener('resize', resize, { passive: true });
 
+    const visibilityHandler = () => {
+      isDocumentVisibleRef.current = !document.hidden;
+    };
+    document.addEventListener('visibilitychange', visibilityHandler);
+
+    const intersectionObserver = new IntersectionObserver(
+      ([entry]) => {
+        isCanvasVisibleRef.current = !!entry?.isIntersecting;
+      },
+      { threshold: 0.01 },
+    );
+    intersectionObserver.observe(parent);
+
+    let mouseMoveTimer: ReturnType<typeof setTimeout> | null = null;
     const handleMouseMove = (e: MouseEvent) => {
+      if (mouseMoveTimer) return;
+      mouseMoveTimer = setTimeout(() => {
+        mouseMoveTimer = null;
+      }, 32);
+
       const rect = canvas.getBoundingClientRect();
       mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
@@ -74,59 +151,50 @@ export default function NetworkBackground() {
       mouseRef.current = { x: -1000, y: -1000 };
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseleave', handleMouseLeave);
 
-    const animate = () => {
-      const rect = canvas.parentElement?.getBoundingClientRect();
-      if (!rect) return;
-      const w = rect.width;
-      const h = rect.height;
-      timeRef.current += 1;
+    const animate = (now: number) => {
+      const settings = settingsRef.current;
+      animationRef.current = requestAnimationFrame(animate);
 
+      if (!isDocumentVisibleRef.current || !isCanvasVisibleRef.current) return;
+
+      const elapsed = now - lastFrameTimeRef.current;
+      if (elapsed < settings.frameInterval) return;
+      lastFrameTimeRef.current = now - (elapsed % settings.frameInterval);
+
+      const { width: w, height: h } = sizeRef.current;
+      if (!w || !h) return;
+
+      timeRef.current += 1;
       ctx.clearRect(0, 0, w, h);
 
       const particles = particlesRef.current;
       const mouse = mouseRef.current;
       const dark = isDark();
 
-      // ── Theme-aware color palettes ──
-      // Light mode: warm violet/rose/amber — vivid and beautiful
-      // Dark mode: cool cyan/indigo/blue — like the reference image
-      const lightLineR = 139, lightLineG = 92, lightLineB = 246;   // violet
-      const lightMouseR = 236, lightMouseG = 72, lightMouseB = 153; // rose
-      const lightGlowR = 168, lightGlowG = 85, lightGlowB = 247;  // purple
-      const lightGlow2R = 251, lightGlow2G = 113, lightGlow2B = 133;// rose
-      const lightDotR = 124, lightDotG = 58, lightDotB = 237;      // vivid purple
-
-      const darkLineR = 56, darkLineG = 189, darkLineB = 248;      // cyan
-      const darkMouseR = 99, darkMouseG = 102, darkMouseB = 241;    // indigo
-      const darkGlowR = 56, darkGlowG = 189, darkGlowB = 248;      // cyan
-      const darkGlow2R = 99, darkGlow2G = 102, darkGlow2B = 241;    // indigo
-      const darkDotR = 147, darkDotG = 197, darkDotB = 253;         // light blue
-
-      const lineR = dark ? darkLineR : lightLineR;
-      const lineG = dark ? darkLineG : lightLineG;
-      const lineB = dark ? darkLineB : lightLineB;
-      const mouseR = dark ? darkMouseR : lightMouseR;
-      const mouseG = dark ? darkMouseG : lightMouseG;
-      const mouseB = dark ? darkMouseB : lightMouseB;
-      const glow1R = dark ? darkGlowR : lightGlowR;
-      const glow1G = dark ? darkGlowG : lightGlowG;
-      const glow1B = dark ? darkGlowB : lightGlowB;
-      const glow2R = dark ? darkGlow2R : lightGlow2R;
-      const glow2G = dark ? darkGlow2G : lightGlow2G;
-      const glow2B = dark ? darkGlow2B : lightGlow2B;
-      const dotR = dark ? darkDotR : lightDotR;
-      const dotG = dark ? darkDotG : lightDotG;
-      const dotB = dark ? darkDotB : lightDotB;
+      const lineR = dark ? 56 : 139;
+      const lineG = dark ? 189 : 92;
+      const lineB = dark ? 248 : 246;
+      const mouseR = dark ? 99 : 236;
+      const mouseG = dark ? 102 : 72;
+      const mouseB = dark ? 241 : 153;
+      const glow1R = dark ? 56 : 168;
+      const glow1G = dark ? 189 : 85;
+      const glow1B = dark ? 248 : 247;
+      const glow2R = dark ? 99 : 251;
+      const glow2G = dark ? 102 : 113;
+      const glow2B = dark ? 241 : 133;
+      const dotR = dark ? 147 : 124;
+      const dotG = dark ? 197 : 58;
+      const dotB = dark ? 253 : 237;
 
       const lineAlpha = dark ? 0.3 : 0.35;
-      const mouseLineAlpha = dark ? 0.45 : 0.45;
-      const glowAlpha = dark ? 0.65 : 0.65;
+      const mouseLineAlpha = 0.45;
+      const glowAlpha = 0.65;
       const dotAlpha = dark ? 0.95 : 0.9;
 
-      // Update positions
       for (const p of particles) {
         p.x += p.vx;
         p.y += p.vy;
@@ -137,40 +205,41 @@ export default function NetworkBackground() {
         p.x = Math.max(0, Math.min(w, p.x));
         p.y = Math.max(0, Math.min(h, p.y));
 
-        // Mouse interaction — particles gently move away
         const dx = p.x - mouse.x;
         const dy = p.y - mouse.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < MOUSE_RADIUS && dist > 0) {
-          const force = (MOUSE_RADIUS - dist) / MOUSE_RADIUS * 0.025;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < settings.mouseRadiusSq && distSq > 0) {
+          const dist = Math.sqrt(distSq);
+          const force = ((settings.mouseRadius - dist) / settings.mouseRadius) * 0.025;
           p.vx += (dx / dist) * force;
           p.vy += (dy / dist) * force;
         }
 
-        // Speed limit
-        const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-        if (speed > 1.2) {
-          p.vx = (p.vx / speed) * 1.2;
-          p.vy = (p.vy / speed) * 1.2;
+        const speed = Math.hypot(p.vx, p.vy);
+        if (speed > settings.maxSpeed) {
+          p.vx = (p.vx / speed) * settings.maxSpeed;
+          p.vy = (p.vy / speed) * settings.maxSpeed;
         }
 
-        // Damping
         p.vx *= 0.998;
         p.vy *= 0.998;
       }
 
-      // Draw connections between particles
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
+      for (let i = 0; i < particles.length; i += 1) {
+        const p1 = particles[i];
+        for (let j = i + 1; j < particles.length; j += 1) {
+          const p2 = particles[j];
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const distSq = dx * dx + dy * dy;
 
-          if (dist < CONNECTION_DISTANCE) {
-            const alpha = (1 - dist / CONNECTION_DISTANCE) * lineAlpha;
+          if (distSq < settings.connectionDistanceSq) {
+            const dist = Math.sqrt(distSq);
+            const alpha = (1 - dist / settings.connectionDistance) * lineAlpha;
+
             ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
             ctx.strokeStyle = `rgba(${lineR}, ${lineG}, ${lineB}, ${alpha})`;
             ctx.lineWidth = dark ? 0.8 : 0.7;
             ctx.stroke();
@@ -178,34 +247,30 @@ export default function NetworkBackground() {
         }
       }
 
-      // Draw lines from particles to mouse cursor
       for (const p of particles) {
         const dx = p.x - mouse.x;
         const dy = p.y - mouse.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < MOUSE_RADIUS) {
-          const alpha = (1 - dist / MOUSE_RADIUS) * mouseLineAlpha;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < settings.mouseRadiusSq) {
+          const dist = Math.sqrt(distSq);
+          const alpha = (1 - dist / settings.mouseRadius) * mouseLineAlpha;
+
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(mouse.x, mouse.y);
           ctx.strokeStyle = `rgba(${mouseR}, ${mouseG}, ${mouseB}, ${alpha})`;
-          ctx.lineWidth = dark ? 1.0 : 0.8;
+          ctx.lineWidth = dark ? 1 : 0.8;
           ctx.stroke();
         }
       }
 
-      // Draw particles with glow
       for (const p of particles) {
         const pulse = Math.sin(timeRef.current * p.pulseSpeed + p.pulsePhase);
         const currentRadius = p.radius + pulse * 0.7;
         const currentOpacity = p.opacity + pulse * 0.15;
 
-        // Outer glow
         const glowRadius = currentRadius * (dark ? 5.5 : 5);
-        const gradient = ctx.createRadialGradient(
-          p.x, p.y, 0,
-          p.x, p.y, glowRadius
-        );
+        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowRadius);
         gradient.addColorStop(0, `rgba(${glow1R}, ${glow1G}, ${glow1B}, ${currentOpacity * glowAlpha})`);
         gradient.addColorStop(0.35, `rgba(${glow2R}, ${glow2G}, ${glow2B}, ${currentOpacity * glowAlpha * 0.3})`);
         gradient.addColorStop(1, `rgba(${glow1R}, ${glow1G}, ${glow1B}, 0)`);
@@ -215,20 +280,16 @@ export default function NetworkBackground() {
         ctx.fillStyle = gradient;
         ctx.fill();
 
-        // Core bright dot
         ctx.beginPath();
         ctx.arc(p.x, p.y, currentRadius, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${dotR}, ${dotG}, ${dotB}, ${currentOpacity * dotAlpha})`;
         ctx.fill();
 
-        // Tiny white center highlight
         ctx.beginPath();
         ctx.arc(p.x, p.y, currentRadius * 0.4, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(255, 255, 255, ${currentOpacity * (dark ? 0.7 : 0.5)})`;
         ctx.fill();
       }
-
-      animationRef.current = requestAnimationFrame(animate);
     };
 
     animationRef.current = requestAnimationFrame(animate);
@@ -237,6 +298,9 @@ export default function NetworkBackground() {
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseleave', handleMouseLeave);
+      document.removeEventListener('visibilitychange', visibilityHandler);
+      intersectionObserver.disconnect();
+      if (mouseMoveTimer) clearTimeout(mouseMoveTimer);
       cancelAnimationFrame(animationRef.current);
     };
   }, [createParticles]);
@@ -253,7 +317,9 @@ export default function NetworkBackground() {
         height: '100%',
         pointerEvents: 'auto',
         zIndex: 0,
+        willChange: 'transform',
       }}
     />
   );
 }
+

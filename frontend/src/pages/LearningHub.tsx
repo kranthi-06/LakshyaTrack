@@ -169,6 +169,7 @@ export default function LearningHub() {
                                 whileInView={{ opacity: 1, x: 0 }}
                                 viewport={{ once: true }}
                                 transition={{ delay: index * 0.1 }}
+                                className="cv-auto"
                             >
                                 <Card className="border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3.5rem] p-5 sm:p-10 md:p-16 space-y-8 sm:space-y-12 overflow-hidden relative group border border-white/20">
                                     {/* Week Badge */}
@@ -231,6 +232,8 @@ export default function LearningHub() {
                                                     src={week.resource.thumbnail}
                                                     alt={week.resource.title}
                                                     className="w-full h-full object-cover group-hover/res:scale-105 transition-transform duration-700 opacity-90 group-hover/res:opacity-100"
+                                                    loading="lazy"
+                                                    decoding="async"
                                                 />
                                                 <div className="absolute inset-0 bg-black/5 group-hover/res:bg-black/0 transition-colors" />
                                                 <div className="absolute inset-0 flex items-center justify-center">

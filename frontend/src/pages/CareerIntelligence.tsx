@@ -626,7 +626,7 @@ export default function CareerIntelligence() {
                                             const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
                                             return (
-                                                <div key={levelIdx} className="space-y-6">
+                                                <div key={levelIdx} className="space-y-6 cv-auto">
                                                     {/* Level Header */}
                                                     <div className="flex items-center gap-4">
                                                         <div className={`px-6 py-2 rounded-xl bg-gradient-to-r ${colors.accent} text-white text-sm font-black uppercase tracking-widest shadow-lg`}>
@@ -650,7 +650,7 @@ export default function CareerIntelligence() {
                                                         {level.skills?.map((skill: any, skillIdx: number) => (
                                                             <Card
                                                                 key={skill.id}
-                                                                className={`p-6 rounded-[2rem] border-2 transition-all ${getStatusStyle(skill.status)}`}
+                                                                className={`p-6 rounded-[2rem] border-2 transition-all cv-auto ${getStatusStyle(skill.status)}`}
                                                             >
                                                                 <div className="space-y-4">
                                                                     <div className="flex items-start justify-between">
@@ -736,6 +736,8 @@ export default function CareerIntelligence() {
                                                                             src={res.thumbnail}
                                                                             alt={res.title}
                                                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                                            loading="lazy"
+                                                                            decoding="async"
                                                                         />
                                                                     ) : (
                                                                         <div className="w-full h-full flex items-center justify-center bg-slate-200">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, MouseEvent } from 'react';
+import { useState, useEffect, useMemo, MouseEvent } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform, useSpring, useMotionValue } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { PremiumBackground } from '../components/PremiumBackground';
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { usePerformanceMode } from '../hooks/usePerformanceMode';
 
 // 3D Tilt Card Component
 const TiltCard = ({ children, className }: { children: React.ReactNode, className?: string }) => {
@@ -69,6 +70,7 @@ export default function Landing() {
     const [activeFeature, setActiveFeature] = useState('resume');
     const [scrolled, setScrolled] = useState(false);
     const [toast, setToast] = useState<{ message: string, type: 'success' | 'info' } | null>(null);
+    const { liteMode, isMobile } = usePerformanceMode();
 
     const { scrollYProgress } = useScroll();
     const scaleX = useSpring(scrollYProgress, {
@@ -78,10 +80,34 @@ export default function Landing() {
     });
 
     useEffect(() => {
-        const handleScroll = () => setScrolled(window.scrollY > 50);
-        window.addEventListener('scroll', handleScroll);
-        return () => window.removeEventListener('scroll', handleScroll);
+        let rafId = 0;
+        const handleScroll = () => {
+            cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+                const next = window.scrollY > 50;
+                setScrolled((prev) => (prev === next ? prev : next));
+            });
+        };
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => {
+            cancelAnimationFrame(rafId);
+            window.removeEventListener('scroll', handleScroll);
+        };
     }, []);
+
+    const floatingParticles = useMemo(() => {
+        const count = liteMode ? 0 : isMobile ? 5 : 20;
+        return Array.from({ length: count }).map((_, index) => ({
+            id: index,
+            width: Math.random() * 300 + 50,
+            height: Math.random() * 300 + 50,
+            left: `${Math.random() * 100}%`,
+            top: `${Math.random() * 100}%`,
+            moveY: Math.random() * 100 - 50,
+            moveX: Math.random() * 100 - 50,
+            duration: Math.random() * 10 + 10,
+        }));
+    }, [isMobile, liteMode]);
 
     const showToast = (message: string, type: 'success' | 'info' = 'info') => {
         setToast({ message, type });
@@ -194,24 +220,24 @@ export default function Landing() {
 
                 {/* Floating Particles */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                    {[...Array(window.innerWidth < 768 ? 5 : 20)].map((_, i) => (
+                    {floatingParticles.map((particle) => (
                         <motion.div
-                            key={i}
+                            key={particle.id}
                             className="absolute rounded-full bg-white/10 blur-xl"
                             style={{
-                                width: Math.random() * 300 + 50,
-                                height: Math.random() * 300 + 50,
-                                left: `${Math.random() * 100}%`,
-                                top: `${Math.random() * 100}%`,
+                                width: particle.width,
+                                height: particle.height,
+                                left: particle.left,
+                                top: particle.top,
                             }}
                             animate={{
-                                y: [0, Math.random() * 100 - 50],
-                                x: [0, Math.random() * 100 - 50],
+                                y: [0, particle.moveY],
+                                x: [0, particle.moveX],
                                 scale: [1, 1.2, 1],
                                 opacity: [0.1, 0.3, 0.1],
                             }}
                             transition={{
-                                duration: Math.random() * 10 + 10,
+                                duration: particle.duration,
                                 repeat: Infinity,
                                 ease: "linear",
                             }}

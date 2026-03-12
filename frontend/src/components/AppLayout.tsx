@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, memo, lazy, Suspense } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AnimatePresence, motion } from 'framer-motion';
-import NetworkBackground from './NetworkBackground';
 import { GraduationCap } from 'lucide-react';
+import { usePerformanceMode } from '../hooks/usePerformanceMode';
+
+const NetworkBackground = lazy(() => import('./NetworkBackground'));
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -11,7 +13,7 @@ interface AppLayoutProps {
 
 const SIDEBAR_KEY = 'vm-sidebar-collapsed';
 
-export function AppLayout({ children }: AppLayoutProps) {
+export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
     const [collapsed, setCollapsed] = useState(() => {
         const stored = localStorage.getItem(SIDEBAR_KEY);
         return stored === 'true';
@@ -19,26 +21,64 @@ export function AppLayout({ children }: AppLayoutProps) {
     const [isMobile, setIsMobile] = useState(false);
     const [isSmallScreen, setIsSmallScreen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [enableInteractiveBg, setEnableInteractiveBg] = useState(false);
     const location = useLocation();
+    const { liteMode } = usePerformanceMode();
 
     // Close mobile sidebar on route change
     useEffect(() => {
         setMobileOpen(false);
     }, [location.pathname]);
 
-    // Detect mobile and small screen
+    // Detect mobile and small screen (debounced)
     useEffect(() => {
+        let timeout: ReturnType<typeof setTimeout>;
         const check = () => {
-            const mobile = window.innerWidth < 1024;
-            const small = window.innerWidth < 768;
-            setIsMobile(mobile);
-            setIsSmallScreen(small);
-            if (mobile) setCollapsed(true);
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                const mobile = window.innerWidth < 1024;
+                const small = window.innerWidth < 768;
+                setIsMobile(mobile);
+                setIsSmallScreen(small);
+                if (mobile) setCollapsed(true);
+            }, 100);
         };
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
+        // Initial check (no debounce)
+        const mobile = window.innerWidth < 1024;
+        const small = window.innerWidth < 768;
+        setIsMobile(mobile);
+        setIsSmallScreen(small);
+        if (mobile) setCollapsed(true);
+
+        window.addEventListener('resize', check, { passive: true });
+        return () => {
+            window.removeEventListener('resize', check);
+            clearTimeout(timeout);
+        };
     }, []);
+
+    // Defer interactive background until idle to avoid blocking route transitions.
+    useEffect(() => {
+        if (isSmallScreen || liteMode) {
+            setEnableInteractiveBg(false);
+            return;
+        }
+
+        if ('requestIdleCallback' in window) {
+            const idleId = requestIdleCallback(() => setEnableInteractiveBg(true), { timeout: 1500 });
+            return () => cancelIdleCallback(idleId);
+        }
+
+        const timeoutId = setTimeout(() => setEnableInteractiveBg(true), 600);
+        return () => clearTimeout(timeoutId);
+    }, [isSmallScreen, liteMode]);
+
+    useEffect(() => {
+        document.documentElement.setAttribute('data-mobile-perf-mode', liteMode ? 'true' : 'false');
+        return () => {
+            document.documentElement.removeAttribute('data-mobile-perf-mode');
+        };
+    }, [liteMode]);
 
     // Prevent body scroll when mobile sidebar is open
     useEffect(() => {
@@ -50,7 +90,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         return () => { document.body.style.overflow = ''; };
     }, [mobileOpen]);
 
-    const handleToggle = () => {
+    const handleToggle = useCallback(() => {
         if (isMobile) {
             setMobileOpen(prev => !prev);
         } else {
@@ -59,7 +99,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 return !prev;
             });
         }
-    };
+    }, [isMobile]);
 
     const sidebarWidth = collapsed ? 72 : 264;
 
@@ -108,9 +148,11 @@ export function AppLayout({ children }: AppLayoutProps) {
                     {/* Gradient base — always visible */}
                     <div className="absolute inset-0 bg-gradient-to-br from-violet-50/40 via-rose-50/20 to-amber-50/15 dark:from-[#020817] dark:via-[#0a1628] dark:to-[#050510]" />
                     {/* Interactive canvas — skip on small screens for performance */}
-                    {!isSmallScreen && (
+                    {!isSmallScreen && !liteMode && enableInteractiveBg && (
                         <div className="absolute inset-0 pointer-events-auto">
-                            <NetworkBackground />
+                            <Suspense fallback={null}>
+                                <NetworkBackground />
+                            </Suspense>
                         </div>
                     )}
                 </div>
@@ -149,4 +191,4 @@ export function AppLayout({ children }: AppLayoutProps) {
             </main>
         </div>
     );
-}
+});

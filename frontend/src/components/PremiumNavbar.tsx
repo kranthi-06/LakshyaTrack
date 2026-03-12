@@ -98,6 +98,8 @@ export const PremiumNavbar = () => {
                                                 src={(user as any)?.profile?.profile_photo_url || (localStorage.getItem(`user_profile_${user?.email}`) ? JSON.parse(localStorage.getItem(`user_profile_${user?.email}`)!).image : '')}
                                                 alt="Profile"
                                                 className="w-full h-full object-cover"
+                                                loading="lazy"
+                                                decoding="async"
                                                 onError={(e) => {
                                                     // fallback if image is broken
                                                     e.currentTarget.style.display = 'none';

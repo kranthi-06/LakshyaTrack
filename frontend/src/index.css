@@ -781,6 +781,24 @@ body {
 
 main {
   overflow-x: hidden;
+  /* GPU compositing for smooth scrolling */
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Smooth scrollable containers ── */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── System-level reduced motion: disable ALL animations ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ── Safe area padding for notched devices ── */
@@ -919,4 +937,36 @@ main {
 .dark .spline-blend-paragraph {
   color: #ffffff;
   mix-blend-mode: difference;
+}
+
+/* Performance utilities */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 900px;
+}
+
+.gpu-layer {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* App-wide lightweight mode toggled from AppLayout */
+html[data-mobile-perf-mode='true'] .animate-float,
+html[data-mobile-perf-mode='true'] .animate-float-delayed,
+html[data-mobile-perf-mode='true'] .animate-float-slow {
+  animation: none !important;
+}
+
+html[data-mobile-perf-mode='true'] .animated-gradient,
+html[data-mobile-perf-mode='true'] .animate-gradient-slow {
+  animation-duration: 45s !important;
+}
+
+html[data-mobile-perf-mode='true'] .blur-\[120px\],
+html[data-mobile-perf-mode='true'] .blur-\[100px\],
+html[data-mobile-perf-mode='true'] .blur-\[80px\],
+html[data-mobile-perf-mode='true'] .blur-\[60px\],
+html[data-mobile-perf-mode='true'] .blur-3xl {
+  filter: blur(20px) !important;
 }

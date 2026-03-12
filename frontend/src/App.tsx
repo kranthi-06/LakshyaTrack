@@ -4,8 +4,13 @@ import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { AppLayout } from './components/AppLayout';
-import { Suspense, lazy } from 'react';
-import AuthLoadingScreen from './components/AuthLoadingScreen';
+import { Suspense, lazy, memo, useEffect } from 'react';
+import RouteSkeleton from './components/RouteSkeleton';
+import {
+  getPageImporter,
+  injectRoutePrefetchHints,
+  prefetchRoutes,
+} from './utils/routePrefetch';
 
 // ── Eagerly loaded (needed immediately on first paint) ──
 import Login from './pages/Login';
@@ -13,46 +18,76 @@ import Register from './pages/Register';
 import Landing from './pages/Landing';
 
 // ── Lazily loaded (code-split per route) ──
-const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const AuthCallback = lazy(() => import('./pages/AuthCallback'));
-const ResumeBuilder = lazy(() => import('./pages/ResumeBuilder'));
-const CareerIntelligence = lazy(() => import('./pages/CareerIntelligence'));
-const LearningHub = lazy(() => import('./pages/LearningHub'));
-const Evaluate = lazy(() => import('./pages/Evaluate'));
-const Quiz = lazy(() => import('./pages/Quiz'));
-const Interview = lazy(() => import('./pages/Interview'));
-const Jobs = lazy(() => import('./pages/Jobs'));
-const Progress = lazy(() => import('./pages/Progress'));
-const Profile = lazy(() => import('./pages/Profile'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const AdminInactivity = lazy(() => import('./pages/AdminInactivity'));
-const AdminCommandCentre = lazy(() => import('./pages/AdminCommandCentre'));
+const lazyPage = (path: string) =>
+  lazy(() => {
+    const importer = getPageImporter(path);
+    if (!importer) return import('./pages/Dashboard');
+    return importer();
+  });
+
+const VerifyEmail = lazyPage('/verify-email');
+const Dashboard = lazyPage('/dashboard');
+const AuthCallback = lazyPage('/auth/callback');
+const ResumeBuilder = lazyPage('/resume-builder');
+const CareerIntelligence = lazyPage('/career');
+const LearningHub = lazyPage('/learning');
+const Evaluate = lazyPage('/evaluate');
+const Quiz = lazyPage('/quiz');
+const Interview = lazyPage('/interview');
+const Jobs = lazyPage('/jobs');
+const Progress = lazyPage('/progress');
+const Profile = lazyPage('/profile');
+const AdminDashboard = lazyPage('/admin/users');
+const AdminInactivity = lazyPage('/admin/inactivity');
+const AdminCommandCentre = lazyPage('/admin/command-centre');
 
 /** Wrap a page with AppLayout + ProtectedRoute */
-function ProtectedPage({ children }: { children: React.ReactNode }) {
+const ProtectedPage = memo(function ProtectedPage({ children }: { children: React.ReactNode }) {
   return (
     <ProtectedRoute>
       <AppLayout>{children}</AppLayout>
     </ProtectedRoute>
   );
-}
+});
 
 /** Wrap an admin page with AppLayout + AdminRoute */
-function AdminPage({ children, requireBlackAdmin }: { children: React.ReactNode; requireBlackAdmin?: boolean }) {
+const AdminPage = memo(function AdminPage({ children, requireBlackAdmin }: { children: React.ReactNode; requireBlackAdmin?: boolean }) {
   return (
     <AdminRoute requireBlackAdmin={requireBlackAdmin}>
       <AppLayout>{children}</AppLayout>
     </AdminRoute>
   );
+});
+
+/** Prefetch commonly visited routes during idle time */
+function usePrefetchRoutes() {
+  useEffect(() => {
+    const criticalRoutes = ['/dashboard', '/resume-builder', '/career', '/quiz', '/progress', '/profile'];
+    injectRoutePrefetchHints(criticalRoutes);
+
+    const prefetch = () => {
+      prefetchRoutes(criticalRoutes);
+    };
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if ('requestIdleCallback' in window) {
+      const id = requestIdleCallback(prefetch, { timeout: 3000 });
+      return () => cancelIdleCallback(id);
+    } else {
+      const id = setTimeout(prefetch, 2000);
+      return () => clearTimeout(id);
+    }
+  }, []);
 }
 
 function App() {
+  // Prefetch commonly visited routes during idle time
+  usePrefetchRoutes();
+
   return (
     <ThemeProvider>
     <Router>
       <AuthProvider>
-        <Suspense fallback={<AuthLoadingScreen />}>
+        <Suspense fallback={<RouteSkeleton />}>
           <Routes>
             {/* Public routes — no layout */}
             <Route path="/" element={<Landing />} />

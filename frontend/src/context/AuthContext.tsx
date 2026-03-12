@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { login as loginApi, register as registerApi, getMe, verifyOtp as verifyOtpApi, sendOtp as sendOtpApi } from '../services/auth';
 import { setAuthInitialized } from '../services/api';
+import { invalidateCache } from '../services/cache';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
@@ -77,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      * so we never accidentally wipe a valid session due to a connectivity blip.
      * During initial load, enforces a timeout so the app doesn't hang forever.
      */
-    const fetchCurrentUser = useCallback(async (withTimeout = false): Promise<User | null> => {
+    const fetchCurrentUser = useCallback(async (withTimeout = false, bypassCache = false): Promise<User | null> => {
         const token = localStorage.getItem(TOKEN_KEY);
         if (!token || token === 'undefined' || token === 'null') {
             return null;
@@ -88,13 +89,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // During init: race against a timeout so a hung backend doesn't
                 // leave the user stuck on the loading screen forever.
                 userData = await Promise.race([
-                    getMe(),
+                    getMe(bypassCache),
                     new Promise<null>((_, reject) =>
                         setTimeout(() => reject(new Error('backend_timeout')), BACKEND_FETCH_TIMEOUT_MS)
                     ),
                 ]);
             } else {
-                userData = await getMe();
+                userData = await getMe(bypassCache);
             }
             return userData;
         } catch (err: any) {
@@ -106,6 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (initCompleteRef.current) {
                     console.warn('AuthContext: Token invalid (401) — clearing.');
                     localStorage.removeItem(TOKEN_KEY);
+                    invalidateCache('auth:');
                 }
                 return null;
             }
@@ -231,6 +233,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.log('AuthContext: onAuthStateChange', event);
 
             if (event === 'SIGNED_IN' && session) {
+                invalidateCache('auth:');
                 localStorage.setItem(TOKEN_KEY, session.access_token);
 
                 try {
@@ -254,6 +257,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const status = err?.response?.status;
                     if (status === 401) {
                         localStorage.removeItem(TOKEN_KEY);
+                        invalidateCache('auth:');
                         await supabase.auth.signOut().catch(() => { });
                         if (mountedRef.current) updateUser(null);
                     }
@@ -273,6 +277,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (explicitLogoutRef.current || !hasValidToken()) {
                     explicitLogoutRef.current = false;
                     localStorage.removeItem(TOKEN_KEY);
+                    invalidateCache('auth:');
                     if (mountedRef.current) {
                         updateUser(null);
                         navigate('/login', { replace: true });
@@ -297,6 +302,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const response = await loginApi(data.username || data.email, data.password);
         if (response.access_token) {
             localStorage.setItem(TOKEN_KEY, response.access_token);
+            invalidateCache('auth:');
             const userData = await getMe();
             updateUser(userData);
             navigate('/dashboard', { replace: true });
@@ -313,6 +319,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const response = await verifyOtpApi(email, otp);
         if (response.access_token) {
             localStorage.setItem(TOKEN_KEY, response.access_token);
+            invalidateCache('auth:');
             const userData = await getMe();
             updateUser(userData);
         }
@@ -325,7 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ── Refresh User Data ───────────────────────────────────────
     const refreshUser = useCallback(async () => {
-        const userData = await fetchCurrentUser();
+        const userData = await fetchCurrentUser(false, true);
         if (userData && mountedRef.current) updateUser(userData);
     }, [fetchCurrentUser, updateUser]);
 
@@ -346,6 +353,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = useCallback(async () => {
         explicitLogoutRef.current = true; // Mark this as an explicit user action
         localStorage.removeItem(TOKEN_KEY);
+        invalidateCache('auth:');
         // Sign out from Supabase too (if applicable)
         await supabase.auth.signOut().catch(() => { });
         updateUser(null);

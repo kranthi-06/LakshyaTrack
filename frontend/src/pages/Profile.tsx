@@ -73,7 +73,7 @@ function LazyResumePreview({ resume, onDelete, onDownload, onEdit }: {
     }, []);
 
     return (
-        <div ref={containerRef} className="bg-white rounded-3xl shadow-lg border border-slate-100 overflow-hidden group">
+        <div ref={containerRef} className="bg-white rounded-3xl shadow-lg border border-slate-100 overflow-hidden group cv-auto">
             {/* Action Bar */}
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div>

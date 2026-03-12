@@ -398,28 +398,32 @@ async def live_search_opportunities(
     db_opps = []
     ai_opps = []
 
-    # ── Step 1: Quick DB search (safe) ──
-    try:
-        db_results = browse_opportunities(
-            db=db,
-            category=category if category and category != "all" else None,
-            search_query=search_query,
-            page=1,
-            per_page=per_page,
-        )
-        db_opps = db_results.get("opportunities", [])
-    except Exception as e:
-        logger.error(f"Live search DB query error: {e}")
-        db_opps = []
+    # ── Step 1 & 2: Run DB search and AI generation CONCURRENTLY ──
+    async def get_db_results():
+        try:
+            db_results = await asyncio.to_thread(
+                browse_opportunities,
+                db=db,
+                category=category if category and category != "all" else None,
+                search_query=search_query,
+                page=1,
+                per_page=per_page,
+            )
+            return db_results.get("opportunities", [])
+        except Exception as e:
+            logger.error(f"Live search DB query error: {e}")
+            return []
 
-    # ── Step 2: AI generation for the search query (safe) ──
-    try:
-        ai_opps = await _ai_search_generate(search_query, category, db)
-        if not isinstance(ai_opps, list):
-            ai_opps = []
-    except Exception as e:
-        logger.error(f"AI live search generation error: {e}")
-        ai_opps = []
+    async def get_ai_results():
+        try:
+            ai_res = await _ai_search_generate(search_query, category, db)
+            return ai_res if isinstance(ai_res, list) else []
+        except Exception as e:
+            logger.error(f"AI live search generation error: {e}")
+            return []
+
+    # Wait for both to finish simultaneously
+    db_opps, ai_opps = await asyncio.gather(get_db_results(), get_ai_results())
 
     # ── Step 3: Merge & deduplicate ──
     seen_titles = set()

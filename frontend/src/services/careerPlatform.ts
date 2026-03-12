@@ -4,6 +4,18 @@
  * Follows the existing api.ts/resume.ts pattern.
  */
 import api from './api';
+import { cachedRequest, invalidateCache } from './cache';
+
+const CACHE_KEYS = {
+    activeRoadmap: 'roadmap:active',
+    allRoadmaps: 'roadmap:all',
+    quizHistory: (skillId?: string) => `quiz:history:${skillId || 'all'}`,
+    progressCurrent: (resumeAtsScore: number) => `progress:current:${resumeAtsScore}`,
+    progressHistory: (limit: number) => `progress:history:${limit}`,
+    advancedInterviewHistory: 'interview:advanced:history',
+    multistageHistory: 'interview:multistage:history',
+    opportunitiesFilters: 'opportunities:filters',
+};
 
 // ════════════════════════════════════════════
 // 1. ROADMAP ENGINE
@@ -23,26 +35,44 @@ export const generateRoadmap = async (
         topic_name: topicName || undefined,
         difficulty: difficulty || undefined,
     });
+    invalidateCache('roadmap:');
+    invalidateCache('progress:');
     return res.data;
 };
 
 export const getActiveRoadmap = async () => {
-    const res = await api.get('/roadmap/active');
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.activeRoadmap,
+        async () => {
+            const res = await api.get('/roadmap/active');
+            return res.data;
+        },
+        { ttlMs: 120_000, persist: true },
+    );
 };
 
 export const getAllRoadmaps = async () => {
-    const res = await api.get('/roadmap/all');
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.allRoadmaps,
+        async () => {
+            const res = await api.get('/roadmap/all');
+            return res.data;
+        },
+        { ttlMs: 120_000, persist: true },
+    );
 };
 
 export const setActiveRoadmap = async (roadmapId: string) => {
     const res = await api.post('/roadmap/set-active', { roadmap_id: roadmapId });
+    invalidateCache('roadmap:');
+    invalidateCache('progress:');
     return res.data;
 };
 
 export const deleteRoadmap = async (roadmapId: string) => {
     const res = await api.post('/roadmap/delete', { roadmap_id: roadmapId });
+    invalidateCache('roadmap:');
+    invalidateCache('progress:');
     return res.data;
 };
 
@@ -52,6 +82,8 @@ export const updateSkillStatus = async (roadmapId: string, skillId: string, stat
         skill_id: skillId,
         status
     });
+    invalidateCache('roadmap:');
+    invalidateCache('progress:');
     return res.data;
 };
 
@@ -82,13 +114,22 @@ export const submitSkillQuiz = async (
         level,
         answers
     });
+    invalidateCache('quiz:');
+    invalidateCache('progress:');
+    invalidateCache('roadmap:');
     return res.data;
 };
 
 export const getQuizHistory = async (skillId?: string) => {
     const params = skillId ? `?skill_id=${skillId}` : '';
-    const res = await api.get(`/quiz-gating/history${params}`);
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.quizHistory(skillId),
+        async () => {
+            const res = await api.get(`/quiz-gating/history${params}`);
+            return res.data;
+        },
+        { ttlMs: 60_000, persist: true },
+    );
 };
 
 export const checkQuizPassed = async (skillId: string) => {
@@ -161,12 +202,20 @@ export const finishAdvancedInterview = async (
         responses,
         resume_summary: resumeSummary
     });
+    invalidateCache('interview:');
+    invalidateCache('progress:');
     return res.data;
 };
 
 export const getAdvancedInterviewHistory = async () => {
-    const res = await api.get('/interview-advanced/history-advanced');
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.advancedInterviewHistory,
+        async () => {
+            const res = await api.get('/interview-advanced/history-advanced');
+            return res.data;
+        },
+        { ttlMs: 60_000, persist: true },
+    );
 };
 
 // ════════════════════════════════════════════
@@ -193,8 +242,14 @@ export const browseOpportunities = async (params: {
 };
 
 export const getFilterOptions = async () => {
-    const res = await api.get('/opportunities/filters');
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.opportunitiesFilters,
+        async () => {
+            const res = await api.get('/opportunities/filters');
+            return res.data;
+        },
+        { ttlMs: 15 * 60_000, persist: true },
+    );
 };
 
 export const discoverOpportunities = async (targetRole: string, skills: string[] = [], level: string = 'Beginner') => {
@@ -232,6 +287,7 @@ export const getRecommendations = async (skills: string[] = [], targetRole: stri
 
 export const fetchExternalSources = async () => {
     const res = await api.post('/opportunities/fetch-external');
+    invalidateCache(CACHE_KEYS.opportunitiesFilters);
     return res.data;
 };
 
@@ -248,20 +304,33 @@ export const liveSearchOpportunities = async (searchQuery: string, category?: st
 // ════════════════════════════════════════════
 
 export const getCurrentProgress = async (resumeAtsScore: number = 0) => {
-    const res = await api.get(`/progress/current?resume_ats_score=${resumeAtsScore}`);
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.progressCurrent(resumeAtsScore),
+        async () => {
+            const res = await api.get(`/progress/current?resume_ats_score=${resumeAtsScore}`);
+            return res.data;
+        },
+        { ttlMs: 60_000, persist: true },
+    );
 };
 
 export const saveProgressSnapshot = async (resumeAtsScore: number = 0) => {
     const res = await api.post('/progress/snapshot', {
         resume_ats_score: resumeAtsScore
     });
+    invalidateCache('progress:');
     return res.data;
 };
 
 export const getProgressHistory = async (limit: number = 30) => {
-    const res = await api.get(`/progress/history?limit=${limit}`);
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.progressHistory(limit),
+        async () => {
+            const res = await api.get(`/progress/history?limit=${limit}`);
+            return res.data;
+        },
+        { ttlMs: 60_000, persist: true },
+    );
 };
 
 // ════════════════════════════════════════════
@@ -310,6 +379,7 @@ export const createMultistageSession = async (
         interview_mode: interviewMode,
         difficulty
     });
+    invalidateCache('interview:');
     return res.data;
 };
 
@@ -387,6 +457,7 @@ export const evaluateInterviewStage = async (
         stage,
         ...data
     });
+    invalidateCache('interview:');
     return res.data;
 };
 
@@ -404,10 +475,18 @@ export const getMultistageFinalAnalysis = async (
         coding_eval: codingEval,
         hr_eval: hrEval
     });
+    invalidateCache('interview:');
+    invalidateCache('progress:');
     return res.data;
 };
 
 export const getMultistageHistory = async () => {
-    const res = await api.get('/interview-multistage/history');
-    return res.data;
+    return cachedRequest(
+        CACHE_KEYS.multistageHistory,
+        async () => {
+            const res = await api.get('/interview-multistage/history');
+            return res.data;
+        },
+        { ttlMs: 60_000, persist: true },
+    );
 };

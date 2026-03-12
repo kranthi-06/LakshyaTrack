@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../context/ThemeContext';
+import { prefetchRoute } from '../utils/routePrefetch';
 import {
     LayoutDashboard,
     FileText,
@@ -48,6 +49,9 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
     const isAdmin = user?.role === 'admin' || user?.role === 'black_admin';
     const displayName = user?.profile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'User';
     const profilePhoto = (user as any)?.profile?.profile_photo_url || null;
+    const prefetchPath = useCallback((path: string) => {
+        prefetchRoute(path);
+    }, []);
 
     // Keyboard shortcut: Ctrl+B / Cmd+B
     useEffect(() => {
@@ -112,6 +116,9 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                         <Link
                             key={item.label}
                             to={item.path}
+                            onMouseEnter={() => prefetchPath(item.path)}
+                            onFocus={() => prefetchPath(item.path)}
+                            onTouchStart={() => prefetchPath(item.path)}
                             className={`relative flex items-center gap-3 rounded-xl transition-all duration-200 group
                                 ${collapsed ? 'justify-center px-0 py-2.5 mx-auto' : 'px-3 py-2.5'}
                                 ${isActive
@@ -146,6 +153,9 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                         <div className={`my-3 border-t border-slate-200/80 dark:border-slate-800/60 ${collapsed ? 'mx-2' : 'mx-1'}`} />
                         <Link
                             to="/admin/users"
+                            onMouseEnter={() => prefetchPath('/admin/users')}
+                            onFocus={() => prefetchPath('/admin/users')}
+                            onTouchStart={() => prefetchPath('/admin/users')}
                             className={`relative flex items-center gap-3 rounded-xl transition-all duration-200
                                 ${collapsed ? 'justify-center px-0 py-2.5 mx-auto' : 'px-3 py-2.5'}
                                 ${location.pathname.startsWith('/admin')
@@ -177,6 +187,9 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                 {/* Profile link */}
                 <Link
                     to="/profile"
+                    onMouseEnter={() => prefetchPath('/profile')}
+                    onFocus={() => prefetchPath('/profile')}
+                    onTouchStart={() => prefetchPath('/profile')}
                     className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all group
                         ${collapsed ? 'justify-center px-0' : ''}
                         ${location.pathname === '/profile' ? 'bg-slate-100 dark:bg-slate-800' : ''}`}
@@ -184,7 +197,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                 >
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6C63FF] to-[#4F46E5] flex items-center justify-center flex-shrink-0 overflow-hidden">
                         {profilePhoto ? (
-                            <img src={profilePhoto} alt="" className="w-full h-full object-cover" />
+                            <img src={profilePhoto} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         ) : (
                             <User className="w-4 h-4 text-white" />
                         )}

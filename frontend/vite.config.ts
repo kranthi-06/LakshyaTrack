@@ -24,8 +24,14 @@ export default defineConfig({
     drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
   },
   build: {
-    // Increase chunk size warning threshold (some lazy chunks will be large)
+    // Target modern browsers for smaller output
+    target: 'es2020',
+    // Increase chunk size warning threshold
     chunkSizeWarningLimit: 600,
+    // Enable CSS code splitting
+    cssCodeSplit: true,
+    // Minify with esbuild (fastest)
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         // Vendor chunk splitting for better caching
@@ -33,8 +39,25 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-motion': ['framer-motion'],
           'vendor-icons': ['lucide-react'],
+          'vendor-charts': ['recharts'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-particles': ['react-tsparticles', 'tsparticles-slim', 'tsparticles-engine'],
+          'vendor-ocr': ['pdfjs-dist', 'tesseract.js'],
         },
       },
     },
+    // Enable source map for debugging (optional, disable in prod for smaller bundles)
+    sourcemap: false,
+  },
+  // ── Optimized dependency pre-bundling ──
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      'framer-motion',
+      'lucide-react',
+      'axios',
+    ],
   },
 })
