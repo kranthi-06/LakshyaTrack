@@ -55,6 +55,21 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
         theme: editResume.theme,
     } : null;
 
+    // Step 8 (Visual Studio) gets full-width 3-panel layout
+    if (step === 8) {
+        return (
+            <motion.div
+                key="ai-builder-studio"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="w-full"
+            >
+                <StepVisualBuilder data={data} onChange={update} editMeta={editMeta} onBack={prev} />
+            </motion.div>
+        );
+    }
+
     return (
         <motion.div
             key="ai-builder"
@@ -98,7 +113,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
                         {step === 5 && <StepProjects data={data} onChange={update} />}
                         {step === 6 && <StepSkills data={data} onChange={update} />}
                         {step === 7 && <StepATSPreview data={data} onChange={update} />}
-                        {step === 8 && <StepVisualBuilder data={data} onChange={update} editMeta={editMeta} />}
                     </motion.div>
                 </AnimatePresence>
 

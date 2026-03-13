@@ -297,7 +297,7 @@ export default function ResumeBuilder() {
 
     return (
         <div className={`font-sans ${step === 'selection' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
-                <main className="max-w-[1200px] mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+                <main className={step === 'builder' ? 'w-full' : 'max-w-[1200px] mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8'}>
                     <AnimatePresence mode="wait">
                         {step === 'selection' && (
                             <motion.div

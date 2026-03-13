@@ -5,7 +5,7 @@ import {
     Palette, Download, FileText, FileType2, Eye, Sparkles,
     CheckCircle2, Loader2, Wand2, PanelRightOpen, PanelRightClose,
     ChevronDown, ChevronRight, Search, Filter, GripVertical, Save,
-    Maximize2, X, AlertTriangle, FileStack
+    Maximize2, X, AlertTriangle, FileStack, ArrowLeft, Layers
 } from 'lucide-react';
 import { SectionCard } from './components';
 import {
@@ -33,6 +33,7 @@ interface StepVisualBuilderProps {
     data: ResumeData;
     onChange: (d: Partial<ResumeData>) => void;
     editMeta?: EditMeta | null;
+    onBack?: () => void;
 }
 
 /* Render the correct base template component */
@@ -101,7 +102,7 @@ function MiniThumb({ base, color }: { base: BaseTemplate; color: string }) {
 /* A4 page height in pixels at 96dpi (794px width) */
 const A4_PAGE_HEIGHT = 1122;
 
-export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilderProps) {
+export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisualBuilderProps) {
     const [selectedId, setSelectedId] = useState('ats-modern');
     const [customColor, setCustomColor] = useState<string | null>(null);
     const [exporting, setExporting] = useState<string | null>(null);
@@ -116,6 +117,8 @@ export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilde
     const [showFullPreview, setShowFullPreview] = useState(false);
     const [pageCount, setPageCount] = useState(1);
     const [fsScale, setFsScale] = useState(0.7); // Fullscreen preview dynamic scale
+    const [rightPanelOpen, setRightPanelOpen] = useState(true);
+    const [recentTemplates, setRecentTemplates] = useState<string[]>([]);
     const previewRef = useRef<HTMLDivElement>(null);
     const fsScrollRef = useRef<HTMLDivElement>(null);
 
@@ -228,6 +231,15 @@ export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilde
         setExpandedCats(prev => {
             const next = new Set(prev);
             next.has(cat) ? next.delete(cat) : next.add(cat);
+            return next;
+        });
+    };
+
+    const selectTemplate = (id: string) => {
+        setSelectedId(id);
+        setOptimized(false);
+        setRecentTemplates(prev => {
+            const next = [id, ...prev.filter(t => t !== id)].slice(0, 5);
             return next;
         });
     };
@@ -367,63 +379,304 @@ export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilde
     };
 
     return (
-        <SectionCard icon={Palette} title="Visual Resume Studio" subtitle={`${TEMPLATE_CATALOG.length} templates • Live editor • AI optimizer • Export`}>
-            <div className="space-y-6">
+        <div className="flex flex-col h-[calc(100vh-4rem)] w-full" style={{ minHeight: 0 }}>
+            {/* ── EDITOR HEADER BAR ── */}
+            <div className="flex items-center justify-between px-4 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-gray-200/60 dark:border-slate-700/60 flex-shrink-0 z-20">
+                <div className="flex items-center gap-3">
+                    {onBack && (
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={onBack}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition-all"
+                        >
+                            <ArrowLeft className="w-3.5 h-3.5" /> Back
+                        </motion.button>
+                    )}
+                    <div className="w-px h-5 bg-gray-200 dark:bg-slate-700 hidden sm:block" />
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] rounded-lg flex items-center justify-center shadow-md shadow-purple-200/40">
+                            <Palette className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="hidden sm:block">
+                            <h1 className="text-sm font-black text-gray-900 dark:text-white tracking-tight">Visual Resume Studio</h1>
+                            <p className="text-[9px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-widest">{TEMPLATE_CATALOG.length} templates • Live editor</p>
+                        </div>
+                    </div>
+                </div>
 
-                {/* ── TEMPLATE MARKETPLACE ── */}
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                        <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">
-                            Template Library <span className="text-[10px] font-bold text-[#5c52d2] ml-1.5 px-2 py-0.5 bg-purple-50 rounded-full">{TEMPLATE_CATALOG.length} templates</span>
-                        </h3>
-                        <div className="flex items-center gap-2">
-                            {/* Search */}
-                            <div className="relative">
-                                <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300" />
-                                <input
-                                    type="text"
-                                    placeholder="Search templates..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    className="pl-7 pr-3 py-1.5 text-[10px] border border-gray-200 rounded-xl w-44 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-[#5c52d2] bg-white"
-                                />
-                            </div>
-                            {/* Colors */}
-                            <div className="flex items-center gap-0.5">
-                                {THEME_COLORS.map(theme => (
-                                    <button
-                                        key={theme.id}
-                                        onClick={() => setCustomColor(customColor === theme.color ? null : theme.color)}
-                                        className={`w-5 h-5 rounded-md transition-all flex items-center justify-center ${customColor === theme.color ? 'ring-2 ring-offset-1 ring-gray-300 scale-110' : 'opacity-50 hover:opacity-100 hover:scale-105'}`}
-                                        style={{ backgroundColor: theme.color }}
-                                        title={theme.label}
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    {/* Zoom Control */}
+                    <div className="hidden sm:flex items-center gap-2 bg-gray-50 dark:bg-slate-800 rounded-lg px-2.5 py-1.5">
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">Zoom</span>
+                        <input type="range" min="0.3" max="1" step="0.05" value={previewScale} onChange={e => setPreviewScale(parseFloat(e.target.value))} className="w-16 h-1 accent-[#5c52d2]" />
+                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 w-7">{Math.round(previewScale * 100)}%</span>
+                    </div>
+
+                    {/* Page Indicator */}
+                    <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-slate-800 rounded-lg px-2.5 py-1.5">
+                        <FileStack className="w-3 h-3 text-gray-400" />
+                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${pageCount > 1 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400'}`}>
+                            {pageCount} {pageCount === 1 ? 'pg' : 'pgs'}
+                        </span>
+                    </div>
+
+                    {/* Preview Button */}
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setShowFullPreview(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white rounded-lg text-[10px] font-bold shadow-md shadow-purple-200/40 hover:shadow-lg transition-all"
+                    >
+                        <Maximize2 className="w-3 h-3" /> Preview
+                    </motion.button>
+
+                    {/* Template Panel Toggle */}
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setRightPanelOpen(prev => !prev)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                            rightPanelOpen
+                                ? 'bg-purple-100 dark:bg-purple-900/40 text-[#5c52d2] dark:text-purple-300'
+                                : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400 hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                        }`}
+                        title={rightPanelOpen ? 'Close Templates' : 'Open Templates'}
+                    >
+                        {rightPanelOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
+                        <span className="hidden sm:inline">Templates</span>
+                    </motion.button>
+                </div>
+            </div>
+
+            {/* ── MAIN 3-PANEL BODY ── */}
+            <div className="flex flex-1 overflow-hidden relative">
+
+                {/* ═══════════════════════════════════════════════ */}
+                {/* CENTER EDITOR AREA                              */}
+                {/* ═══════════════════════════════════════════════ */}
+                <div className="flex-1 flex flex-col overflow-hidden transition-all duration-300">
+
+                    {/* AI Optimizer Bar */}
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-4 py-2.5 bg-gradient-to-r from-purple-50/80 to-indigo-50/80 dark:from-purple-900/20 dark:to-indigo-900/20 border-b border-purple-100/50 dark:border-purple-800/30 flex-shrink-0">
+                        <Wand2 className="w-4 h-4 text-[#5c52d2]" />
+                        <div className="flex-1 min-w-[120px]">
+                            <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200">AI Content Optimizer</p>
+                        </div>
+                        <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={handleOptimize}
+                            disabled={optimizing}
+                            className="px-4 py-1.5 bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white rounded-lg font-bold text-[10px] shadow-md shadow-purple-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5"
+                        >
+                            {optimizing ? (
+                                <><Loader2 className="w-3 h-3 animate-spin" /> Optimizing...</>
+                            ) : optimized ? (
+                                <><CheckCircle2 className="w-3 h-3" /> Re-optimize</>
+                            ) : (
+                                <><Sparkles className="w-3 h-3" /> Optimize</>
+                            )}
+                        </motion.button>
+                        {optimized && (
+                            <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                <CheckCircle2 className="w-2.5 h-2.5" /> Enhanced
+                            </span>
+                        )}
+
+                        {/* Color swatches inline in optimizer bar */}
+                        <div className="hidden sm:flex items-center gap-0.5 ml-auto">
+                            {THEME_COLORS.map(theme => (
+                                <button
+                                    key={theme.id}
+                                    onClick={() => setCustomColor(customColor === theme.color ? null : theme.color)}
+                                    className={`w-4 h-4 rounded transition-all flex items-center justify-center ${customColor === theme.color ? 'ring-2 ring-offset-1 ring-gray-300 scale-110' : 'opacity-50 hover:opacity-100 hover:scale-105'}`}
+                                    style={{ backgroundColor: theme.color }}
+                                    title={theme.label}
+                                >
+                                    {customColor === theme.color && <CheckCircle2 className="w-2 h-2 text-white" />}
+                                </button>
+                            ))}
+                            {customColor && (
+                                <button onClick={() => setCustomColor(null)} className="text-[8px] text-gray-400 hover:text-gray-600 ml-1 underline">Reset</button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Page Overflow Warning */}
+                    {pageCount > 1 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-b border-amber-200/50 dark:border-amber-700/40 flex-shrink-0"
+                        >
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                            <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 flex-1">Resume exceeds one page — consider trimming or using a compact template.</p>
+                            <span className="text-[9px] font-black text-amber-500 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-md">{pageCount} pages</span>
+                        </motion.div>
+                    )}
+
+                    {/* Selected template info strip */}
+                    <div className="flex items-center gap-3 px-4 py-1.5 bg-gray-50/80 dark:bg-slate-800/60 border-b border-gray-100 dark:border-slate-700/40 flex-shrink-0 text-[9px] text-gray-400 dark:text-gray-500 font-medium overflow-x-auto">
+                        <span><span className="font-bold text-gray-600 dark:text-gray-300">Template:</span> {selected.name}</span>
+                        <span className="w-px h-3 bg-gray-200 dark:bg-slate-600" />
+                        <span><span className="font-bold text-gray-600 dark:text-gray-300">Layout:</span> {selected.layout_type}</span>
+                        <span className="w-px h-3 bg-gray-200 dark:bg-slate-600" />
+                        <span><span className="font-bold text-gray-600 dark:text-gray-300">ATS:</span> {selected.ats_priority}</span>
+                        <span className="w-px h-3 bg-gray-200 dark:bg-slate-600 hidden sm:block" />
+                        <span className="hidden sm:inline"><span className="font-bold text-gray-600 dark:text-gray-300">For:</span> {selected.recommended_for_roles.slice(0, 3).join(', ')}</span>
+                    </div>
+
+                    {/* ── RESUME PREVIEW CANVAS ── */}
+                    <div className="flex-1 overflow-auto bg-gray-100 dark:bg-slate-900/60" style={{ backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+                        <div className="flex justify-center py-6 px-4" style={{ minHeight: '100%' }}>
+                            <div
+                                className="shadow-2xl border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden relative bg-white flex-shrink-0"
+                                style={{ width: `${794 * previewScale}px`, transformOrigin: 'top center' }}
+                            >
+                                <div
+                                    id="resume-preview-container"
+                                    ref={previewRef}
+                                    style={{ width: '794px', transform: `scale(${previewScale})`, transformOrigin: 'top left' }}
+                                >
+                                    <RenderTemplate base={selected.base} data={data} color={accentColor} />
+                                </div>
+
+                                {/* Page Break Indicators */}
+                                {pageCount > 1 && Array.from({ length: pageCount - 1 }, (_, i) => (
+                                    <div
+                                        key={`page-break-${i}`}
+                                        className="absolute left-0 right-0 pointer-events-none z-10"
+                                        style={{ top: `${(i + 1) * A4_PAGE_HEIGHT * previewScale}px` }}
                                     >
-                                        {customColor === theme.color && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                                    </button>
+                                        <div className="relative">
+                                            <div className="w-full border-t-2 border-dashed border-red-300" />
+                                            <span className="absolute right-2 -top-3 bg-red-100 text-red-500 text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                                                Page {i + 2} starts here
+                                            </span>
+                                        </div>
+                                    </div>
                                 ))}
-                                {customColor && (
-                                    <button onClick={() => setCustomColor(null)} className="text-[9px] text-gray-400 hover:text-gray-600 ml-1 underline">Reset</button>
-                                )}
                             </div>
                         </div>
                     </div>
 
-                    {/* Category groups */}
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                    {/* ── EXPORT ACTIONS BAR ── */}
+                    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-4 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-gray-200/60 dark:border-slate-700/60 flex-shrink-0">
+                        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportPDF} disabled={!!exporting}
+                            className="px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold text-xs shadow-md shadow-red-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5">
+                            {exporting === 'pdf' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...</> : <><FileText className="w-3.5 h-3.5" /> PDF</>}
+                        </motion.button>
+                        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportDOCX} disabled={!!exporting}
+                            className="px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5">
+                            {exporting === 'docx' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...</> : <><FileType2 className="w-3.5 h-3.5" /> DOCX</>}
+                        </motion.button>
+                        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleDownloadJSON}
+                            className="px-5 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl font-bold text-xs shadow-md hover:bg-gray-800 transition-all flex items-center gap-1.5">
+                            <Download className="w-3.5 h-3.5" /> JSON
+                        </motion.button>
+                        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSaveToProfile} disabled={saving}
+                            className="px-5 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-bold text-xs shadow-md shadow-green-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5">
+                            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</> : saved ? <><CheckCircle2 className="w-3.5 h-3.5" /> Saved!</> : <><Save className="w-3.5 h-3.5" /> Save</>}
+                        </motion.button>
+                    </div>
+                </div>
+
+                {/* ═══════════════════════════════════════════════ */}
+                {/* RIGHT TEMPLATE PANEL (toggleable)               */}
+                {/* ═══════════════════════════════════════════════ */}
+                {/* Desktop inline panel */}
+                <div
+                    className="hidden md:flex flex-col border-l border-gray-200/60 dark:border-slate-700/60 bg-white/98 dark:bg-slate-900/98 backdrop-blur-md flex-shrink-0 overflow-hidden"
+                    style={{
+                        width: rightPanelOpen ? '320px' : '0px',
+                        opacity: rightPanelOpen ? 1 : 0,
+                        transition: 'all 0.25s ease',
+                    }}
+                >
+                    {/* Panel Header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700/60 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-[#5c52d2]" />
+                            <h3 className="text-xs font-black text-gray-700 dark:text-gray-200 uppercase tracking-wider">Templates</h3>
+                            <span className="text-[9px] font-bold text-[#5c52d2] bg-purple-50 dark:bg-purple-900/40 px-1.5 py-0.5 rounded-full">{TEMPLATE_CATALOG.length}</span>
+                        </div>
+                        <button
+                            onClick={() => setRightPanelOpen(false)}
+                            className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 dark:text-gray-500 transition-colors"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+
+                    {/* Search */}
+                    <div className="px-3 py-2 flex-shrink-0">
+                        <div className="relative">
+                            <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300 dark:text-gray-600" />
+                            <input
+                                type="text"
+                                placeholder="Search templates..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full pl-7 pr-3 py-2 text-[11px] border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 dark:focus:ring-purple-800 focus:border-[#5c52d2] bg-gray-50/50 dark:bg-slate-800/50 text-gray-700 dark:text-gray-300"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Scrollable Template Content */}
+                    <div className="flex-1 overflow-y-auto px-3 pb-3" style={{ scrollBehavior: 'smooth' }}>
+                        {/* Recent Templates */}
+                        {recentTemplates.length > 0 && !searchQuery && (
+                            <div className="mb-3">
+                                <h4 className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 px-1 flex items-center gap-1">
+                                    <Filter className="w-2.5 h-2.5" /> Recent
+                                </h4>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                    {recentTemplates.map(tid => {
+                                        const tmpl = TEMPLATE_CATALOG.find(t => t.template_id === tid);
+                                        if (!tmpl) return null;
+                                        const isSelected = selectedId === tmpl.template_id;
+                                        const displayColor = customColor || tmpl.default_color;
+                                        return (
+                                            <button
+                                                key={`recent-${tmpl.template_id}`}
+                                                onClick={() => selectTemplate(tmpl.template_id)}
+                                                className={`relative p-1.5 rounded-xl border-2 text-left transition-all ${isSelected
+                                                    ? 'border-[#5c52d2] bg-purple-50/50 dark:bg-purple-900/30 shadow-md'
+                                                    : 'border-gray-100 dark:border-slate-700 hover:border-gray-200 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50'
+                                                }`}
+                                            >
+                                                {isSelected && (
+                                                    <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#5c52d2] rounded-full flex items-center justify-center shadow z-10">
+                                                        <CheckCircle2 className="w-2 h-2 text-white" />
+                                                    </div>
+                                                )}
+                                                <div className="w-full h-8 rounded-lg border border-gray-100 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800 mb-0.5">
+                                                    <MiniThumb base={tmpl.base} color={displayColor} />
+                                                </div>
+                                                <p className="text-[7px] font-bold text-gray-600 dark:text-gray-400 truncate">{tmpl.name}</p>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Category Groups */}
                         {TEMPLATE_CATEGORIES.map(cat => {
                             const templates = filteredCatalog.filter(t => t.category === cat);
                             if (templates.length === 0) return null;
                             const isExpanded = expandedCats.has(cat);
                             return (
-                                <div key={cat}>
+                                <div key={cat} className="mb-1">
                                     <button
                                         onClick={() => toggleCategory(cat)}
-                                        className="w-full flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-gray-50 transition-colors"
+                                        className="sticky top-0 z-10 w-full flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm"
                                     >
-                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1.5">
-                                            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                        <span className="text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            {isExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
                                             {cat}
-                                            <span className="text-[9px] font-normal text-gray-300">({templates.length})</span>
+                                            <span className="text-[8px] font-normal text-gray-300 dark:text-gray-600">({templates.length})</span>
                                         </span>
                                     </button>
                                     <AnimatePresence>
@@ -435,7 +688,7 @@ export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilde
                                                 transition={{ duration: 0.2 }}
                                                 className="overflow-hidden"
                                             >
-                                                <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1.5 p-1">
+                                                <div className="grid grid-cols-3 gap-1.5 p-1">
                                                     {templates.map(tmpl => {
                                                         const isSelected = selectedId === tmpl.template_id;
                                                         const displayColor = customColor || tmpl.default_color;
@@ -444,26 +697,26 @@ export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilde
                                                                 key={tmpl.template_id}
                                                                 whileHover={{ scale: 1.05 }}
                                                                 whileTap={{ scale: 0.95 }}
-                                                                onClick={() => { setSelectedId(tmpl.template_id); setOptimized(false); }}
+                                                                onClick={() => selectTemplate(tmpl.template_id)}
                                                                 className={`relative p-1.5 rounded-xl border-2 text-left transition-all ${isSelected
-                                                                    ? 'border-[#5c52d2] bg-purple-50/50 shadow-md'
-                                                                    : 'border-gray-100 hover:border-gray-200 bg-white'
-                                                                    }`}
-                                                                title={`${tmpl.name} — ATS: ${tmpl.ats_priority} — ${tmpl.recommended_for_roles.join(', ')}`}
+                                                                    ? 'border-[#5c52d2] bg-purple-50/50 dark:bg-purple-900/30 shadow-md'
+                                                                    : 'border-gray-100 dark:border-slate-700 hover:border-gray-200 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50'
+                                                                }`}
+                                                                title={`${tmpl.name} — ATS: ${tmpl.ats_priority}`}
                                                             >
                                                                 {isSelected && (
-                                                                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#5c52d2] rounded-full flex items-center justify-center shadow z-10">
-                                                                        <CheckCircle2 className="w-2.5 h-2.5 text-white" />
+                                                                    <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#5c52d2] rounded-full flex items-center justify-center shadow z-10">
+                                                                        <CheckCircle2 className="w-2 h-2 text-white" />
                                                                     </div>
                                                                 )}
-                                                                <div className="w-full h-10 rounded-lg border border-gray-100 overflow-hidden bg-white mb-1">
+                                                                <div className="w-full h-10 rounded-lg border border-gray-100 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800 mb-1">
                                                                     <MiniThumb base={tmpl.base} color={displayColor} />
                                                                 </div>
-                                                                <p className="text-[8px] font-bold text-gray-700 truncate leading-tight">{tmpl.name}</p>
-                                                                <span className={`text-[7px] font-bold px-1 py-px rounded ${tmpl.ats_priority === 'high' ? 'bg-emerald-50 text-emerald-500' :
-                                                                    tmpl.ats_priority === 'medium' ? 'bg-amber-50 text-amber-500' :
-                                                                        'bg-gray-50 text-gray-400'
-                                                                    }`}>{tmpl.ats_priority}</span>
+                                                                <p className="text-[7px] font-bold text-gray-700 dark:text-gray-300 truncate leading-tight">{tmpl.name}</p>
+                                                                <span className={`text-[6px] font-bold px-1 py-px rounded ${tmpl.ats_priority === 'high' ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-500' :
+                                                                    tmpl.ats_priority === 'medium' ? 'bg-amber-50 dark:bg-amber-900/40 text-amber-500' :
+                                                                        'bg-gray-50 dark:bg-slate-700 text-gray-400'
+                                                                }`}>{tmpl.ats_priority}</span>
                                                             </motion.button>
                                                         );
                                                     })}
@@ -475,160 +728,108 @@ export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilde
                             );
                         })}
                     </div>
-
-                    {/* Selected template info */}
-                    <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-xl text-[10px] text-gray-400 font-medium flex-wrap">
-                        <span><span className="font-bold text-gray-600">Selected:</span> {selected.name}</span>
-                        <span><span className="font-bold text-gray-600">Layout:</span> {selected.layout_type}</span>
-                        <span><span className="font-bold text-gray-600">ATS:</span> {selected.ats_priority}</span>
-                        <span><span className="font-bold text-gray-600">For:</span> {selected.recommended_for_roles.slice(0, 3).join(', ')}</span>
-                    </div>
                 </div>
 
-                {/* ── AI OPTIMIZER BAR ── */}
-                <div className="flex flex-wrap items-center gap-3 p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100">
-                    <Wand2 className="w-5 h-5 text-[#5c52d2]" />
-                    <div className="flex-1 min-w-[200px]">
-                        <p className="text-xs font-bold text-gray-800">AI Content Optimizer</p>
-                        <p className="text-[10px] text-gray-400">Enhance wording for the selected template style</p>
-                    </div>
-                    <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={handleOptimize}
-                        disabled={optimizing}
-                        className="px-5 py-2.5 bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white rounded-xl font-bold text-xs shadow-lg shadow-purple-200 hover:shadow-xl transition-all disabled:opacity-60 flex items-center gap-2"
-                    >
-                        {optimizing ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> Optimizing...</>
-                        ) : optimized ? (
-                            <><CheckCircle2 className="w-4 h-4" /> Re-optimize</>
-                        ) : (
-                            <><Sparkles className="w-4 h-4" /> Optimize Content</>
-                        )}
-                    </motion.button>
-                    {optimized && (
-                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> AI Enhanced
-                        </span>
-                    )}
-                </div>
-
-                {/* ── PAGE OVERFLOW WARNING ── */}
-                {pageCount > 1 && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex items-center gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200"
-                    >
-                        <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-amber-800">Your resume exceeds one page</p>
-                            <p className="text-[10px] text-amber-600 mt-0.5">Recruiters usually prefer one-page resumes. Consider trimming content or using a more compact template.</p>
-                        </div>
-                        <span className="text-[10px] font-black text-amber-500 bg-amber-100 px-2.5 py-1 rounded-lg whitespace-nowrap">
-                            {pageCount} pages
-                        </span>
-                    </motion.div>
-                )}
-
-                {/* ── LIVE PREVIEW HEADER ── */}
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                        <Eye className="w-4 h-4 text-[#5c52d2]" />
-                        <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Live Preview & Editor</h3>
-                    </div>
-                    <div className="flex items-center gap-3 flex-wrap">
-                        {/* Preview Button */}
-                        <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setShowFullPreview(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white rounded-lg text-[10px] font-bold shadow-md shadow-purple-200 hover:shadow-lg transition-all"
+                {/* Mobile slide drawer */}
+                <AnimatePresence>
+                    {rightPanelOpen && (
+                        <motion.div
+                            key="mobile-template-drawer"
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                            className="md:hidden fixed right-0 top-0 h-full w-[320px] z-50 bg-white dark:bg-slate-900 shadow-2xl border-l border-gray-200 dark:border-slate-700 flex flex-col"
                         >
-                            <Maximize2 className="w-3 h-3" />
-                            Preview
-                        </motion.button>
-
-                        {/* Zoom Control */}
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-gray-400 font-bold">Zoom:</span>
-                            <input type="range" min="0.3" max="1" step="0.05" value={previewScale} onChange={e => setPreviewScale(parseFloat(e.target.value))} className="w-20 h-1 accent-[#5c52d2]" />
-                            <span className="text-[10px] font-bold text-gray-500 w-8">{Math.round(previewScale * 100)}%</span>
-                        </div>
-
-                        {/* Divider */}
-                        <div className="w-px h-4 bg-gray-200" />
-
-                        {/* Page Indicator */}
-                        <div className="flex items-center gap-1.5">
-                            <FileStack className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-[10px] font-bold text-gray-400">Pages:</span>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${pageCount > 1
-                                ? 'bg-amber-100 text-amber-600'
-                                : 'bg-emerald-50 text-emerald-600'
-                                }`}>
-                                {pageCount}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ── LIVE PREVIEW AREA ── */}
-                <div className={`bg-gray-100 rounded-2xl p-4 overflow-auto border border-gray-200 shadow-inner transition-all duration-300 ${showPanel ? 'max-h-[750px]' : 'max-h-[700px]'}`}>
-                    <div
-                        className="mx-auto shadow-2xl border border-gray-200 rounded-lg overflow-hidden relative"
-                        style={{ width: `${794 * previewScale}px`, transformOrigin: 'top center' }}
-                    >
-                        <div
-                            id="resume-preview-container"
-                            ref={previewRef}
-                            style={{ width: '794px', transform: `scale(${previewScale})`, transformOrigin: 'top left' }}
-                        >
-                            <RenderTemplate base={selected.base} data={data} color={accentColor} />
-                        </div>
-
-                        {/* ── PAGE BREAK INDICATORS ── */}
-                        {pageCount > 1 && Array.from({ length: pageCount - 1 }, (_, i) => (
-                            <div
-                                key={`page-break-${i}`}
-                                className="absolute left-0 right-0 pointer-events-none z-10"
-                                style={{ top: `${(i + 1) * A4_PAGE_HEIGHT * previewScale}px` }}
-                            >
+                            {/* Drawer Header */}
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700 flex-shrink-0">
+                                <div className="flex items-center gap-2">
+                                    <Layers className="w-4 h-4 text-[#5c52d2]" />
+                                    <h3 className="text-xs font-black text-gray-700 dark:text-gray-200 uppercase tracking-wider">Templates</h3>
+                                </div>
+                                <button onClick={() => setRightPanelOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-gray-500">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            {/* Mobile Search */}
+                            <div className="px-3 py-2 flex-shrink-0">
                                 <div className="relative">
-                                    <div className="w-full border-t-2 border-dashed border-red-300" />
-                                    <span className="absolute right-2 -top-3 bg-red-100 text-red-500 text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm">
-                                        Page {i + 2} starts here
-                                    </span>
+                                    <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search templates..."
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                        className="w-full pl-7 pr-3 py-2 text-[11px] border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-[#5c52d2] bg-gray-50/50 dark:bg-slate-800/50"
+                                    />
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                </div>
+                            {/* Mobile Template Grid */}
+                            <div className="flex-1 overflow-y-auto px-3 pb-3">
+                                {TEMPLATE_CATEGORIES.map(cat => {
+                                    const templates = filteredCatalog.filter(t => t.category === cat);
+                                    if (templates.length === 0) return null;
+                                    const isExpanded = expandedCats.has(cat);
+                                    return (
+                                        <div key={cat} className="mb-1">
+                                            <button
+                                                onClick={() => toggleCategory(cat)}
+                                                className="w-full flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800"
+                                            >
+                                                <span className="text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                    {isExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
+                                                    {cat} <span className="text-[8px] text-gray-300">({templates.length})</span>
+                                                </span>
+                                            </button>
+                                            {isExpanded && (
+                                                <div className="grid grid-cols-3 gap-1.5 p-1">
+                                                    {templates.map(tmpl => {
+                                                        const isSelected = selectedId === tmpl.template_id;
+                                                        const displayColor = customColor || tmpl.default_color;
+                                                        return (
+                                                            <button
+                                                                key={tmpl.template_id}
+                                                                onClick={() => { selectTemplate(tmpl.template_id); setRightPanelOpen(false); }}
+                                                                className={`relative p-1.5 rounded-xl border-2 text-left transition-all ${isSelected
+                                                                    ? 'border-[#5c52d2] bg-purple-50/50 shadow-md'
+                                                                    : 'border-gray-100 hover:border-gray-200 bg-white'
+                                                                }`}
+                                                            >
+                                                                {isSelected && (
+                                                                    <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#5c52d2] rounded-full flex items-center justify-center shadow z-10">
+                                                                        <CheckCircle2 className="w-2 h-2 text-white" />
+                                                                    </div>
+                                                                )}
+                                                                <div className="w-full h-10 rounded-lg border border-gray-100 overflow-hidden bg-white mb-1">
+                                                                    <MiniThumb base={tmpl.base} color={displayColor} />
+                                                                </div>
+                                                                <p className="text-[7px] font-bold text-gray-700 truncate">{tmpl.name}</p>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
-                {/* ── EXPORT ACTIONS ── */}
-                <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportPDF} disabled={!!exporting}
-                        className="px-8 py-3.5 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-red-200 hover:shadow-xl transition-all disabled:opacity-60 flex items-center gap-2.5">
-                        {exporting === 'pdf' ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating PDF...</> : <><FileText className="w-4 h-4" /> Download PDF</>}
-                    </motion.button>
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportDOCX} disabled={!!exporting}
-                        className="px-8 py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-200 hover:shadow-xl transition-all disabled:opacity-60 flex items-center gap-2.5">
-                        {exporting === 'docx' ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating DOCX...</> : <><FileType2 className="w-4 h-4" /> Download DOCX</>}
-                    </motion.button>
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleDownloadJSON}
-                        className="px-8 py-3.5 bg-gray-900 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-gray-800 transition-all flex items-center gap-2.5">
-                        <Download className="w-4 h-4" /> Download JSON
-                    </motion.button>
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSaveToProfile} disabled={saving}
-                        className="px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:shadow-xl transition-all disabled:opacity-60 flex items-center gap-2.5">
-                        {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : saved ? <><CheckCircle2 className="w-4 h-4" /> Saved to Profile</> : <><Save className="w-4 h-4" /> Save to Profile</>}
-                    </motion.button>
-                </div>
-
-                <p className="text-center text-[10px] text-gray-300 font-bold uppercase tracking-widest">
-                    JSON data is your single source of truth • Templates are visual presentation only
-                </p>
+                {/* Mobile backdrop */}
+                <AnimatePresence>
+                    {rightPanelOpen && (
+                        <motion.div
+                            key="mobile-backdrop"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="md:hidden fixed inset-0 bg-black/40 z-40"
+                            onClick={() => setRightPanelOpen(false)}
+                        />
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* ═══════════════════════════════════════════════════ */}
@@ -1014,6 +1215,6 @@ export function StepVisualBuilder({ data, onChange, editMeta }: StepVisualBuilde
                 </AnimatePresence>,
                 document.body
             )}
-        </SectionCard>
+        </div>
     );
 }
