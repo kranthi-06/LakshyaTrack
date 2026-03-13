@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import AuthLoadingScreen from '../components/AuthLoadingScreen';
 
 /**
- * OAuth Callback — Strict Google Sign-In Flow
+ * OAuth Callback — PKCE Flow Handler
+ *
+ * With PKCE, Google OAuth redirects here with ?code=... in the URL.
+ * This page exchanges the code for a session, then redirects to /dashboard.
  *
  * Flow:
- *   Google OAuth → this page (loading screen) → session verified → /begin
+ *   Google OAuth → /auth/callback?code=... → exchange code → session → /dashboard
  *
  * Rules:
- *   • NEVER redirect to /login during the OAuth process.
- *   • Show an error message if OAuth fails, with a retry button.
+ *   • NEVER show the landing page during this process.
+ *   • Exchange the PKCE code immediately on mount.
+ *   • Show the premium loading screen while processing.
  *   • Only redirect after auth state is fully resolved.
+ *   • Show an error with retry if something fails.
  */
 const OAUTH_TIMEOUT_MS = 20000; // 20s max wait for the full OAuth flow
 
@@ -20,37 +26,63 @@ export default function AuthCallback() {
     const { user, loading, authReady } = useAuth();
     const navigate = useNavigate();
     const hasNavigated = useRef(false);
+    const codeExchanged = useRef(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Step 1: Exchange the PKCE authorization code for a session
     useEffect(() => {
-        if (hasNavigated.current) return;
+        if (codeExchanged.current) return;
+
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get('code');
+
+        if (code) {
+            codeExchanged.current = true;
+            // Supabase's exchangeCodeForSession handles the PKCE code exchange.
+            // After this, onAuthStateChange in AuthContext will fire SIGNED_IN.
+            supabase.auth.exchangeCodeForSession(code).then(({ error: exchangeError }) => {
+                if (exchangeError) {
+                    console.error('AuthCallback: Code exchange failed', exchangeError);
+                    setError('Google sign-in could not be completed. Please try again.');
+                }
+                // Clean the URL of the code parameter (cosmetic)
+                window.history.replaceState({}, '', '/auth/callback');
+            });
+        } else if (
+            // Legacy implicit flow fallback: check for hash fragments
+            !window.location.hash.includes('access_token')
+        ) {
+            // No code and no hash token — might be a direct visit or stale callback
+            // Wait briefly for auth state to resolve before showing error
+        }
+    }, []);
+
+    // Step 2: Navigate once auth resolves
+    useEffect(() => {
+        if (hasNavigated.current || error) return;
 
         // Still loading — wait for auth to resolve
         if (loading || !authReady) return;
 
-        // Auth resolved with a user — redirect to /begin
+        // Auth resolved with a user — go to dashboard
         if (user) {
             hasNavigated.current = true;
-            navigate('/begin', { replace: true });
+            navigate('/dashboard', { replace: true });
             return;
         }
 
         // Auth resolved WITHOUT a user, but a token exists.
-        // This can happen if the backend is slow but the Supabase token is valid.
-        // Give it more time — the onAuthStateChange handler may still fire.
+        // The backend might be slow — wait for onAuthStateChange to finish.
         const token = localStorage.getItem('token');
         if (token && token !== 'undefined' && token !== 'null') {
-            // Token exists — wait for onAuthStateChange to process SIGNED_IN
-            return;
+            return; // Token exists — wait for SIGNED_IN event
         }
 
         // No user AND no token — something went wrong. Show an error.
-        // Do NOT redirect to /login automatically.
         setError('Google sign-in could not be completed. Please try again.');
-    }, [user, loading, authReady, navigate]);
+    }, [user, loading, authReady, navigate, error]);
 
-    // Safety timeout — if the entire OAuth process takes too long,
-    // show an error rather than leave the user stuck on the loading screen.
+    // Safety timeout — don't leave user stuck forever
     useEffect(() => {
         const timer = setTimeout(() => {
             if (!hasNavigated.current && !user) {
@@ -61,7 +93,7 @@ export default function AuthCallback() {
         return () => clearTimeout(timer);
     }, [user]);
 
-    // Error state — show a clear message with retry, never auto-redirect to /login
+    // Error state — show a clear message with retry
     if (error) {
         return (
             <div
@@ -149,7 +181,7 @@ export default function AuthCallback() {
                             onClick={() => {
                                 setError(null);
                                 hasNavigated.current = false;
-                                // Retry — reload the callback page to re-trigger auth flow
+                                codeExchanged.current = false;
                                 window.location.reload();
                             }}
                             style={{

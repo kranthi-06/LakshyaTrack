@@ -244,7 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Navigate only when the user is on a public / callback page
                     const currentPath = window.location.pathname;
                     if (PUBLIC_PATHS.includes(currentPath)) {
-                        navigate('/begin', { replace: true });
+                        navigate('/dashboard', { replace: true });
                     }
                 } catch (err: any) {
                     // ── STRICT OAUTH FIX ──────────────────────────────────
