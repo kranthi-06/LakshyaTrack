@@ -1,6 +1,6 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
     FileText,
     Upload,
@@ -33,15 +33,12 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { analyzeResumeText } from '@/services/resume';
 import { extractTextFromFile } from '@/utils/ocr';
-import { usePerformanceMode } from '../hooks/usePerformanceMode';
-
 const AIBuilder = lazy(() => import('./ResumeBuilder/index'));
 
 type Step = 'selection' | 'upload' | 'builder' | 'analysis' | 'templates';
 
 export default function ResumeBuilder() {
     const location = useLocation();
-    const { liteMode, isMobile } = usePerformanceMode();
     const editResume = (location.state as any)?.editResume || null;
     const [step, setStep] = useState<Step>(editResume ? 'builder' : 'selection');
     const [file, setFile] = useState<File | null>(null);
@@ -101,202 +98,8 @@ export default function ResumeBuilder() {
         }
     };
 
-    const resetFlow = () => {
-        setStep('selection');
-        setFile(null);
-        setAnalysis(null);
-        setError('');
-    };
-
-
-    // Create Spline background directly on document.body (outside React tree)
-    // to guarantee it covers the full viewport without any parent CSS interference
-    useEffect(() => {
-        if (step !== 'selection') return;
-
-        const useLightweightSpline = liteMode || isMobile;
-
-        // Hide the network background canvas on this page
-        const networkBg = document.querySelector('.fixed.inset-0.pointer-events-none') as HTMLElement;
-        if (networkBg) networkBg.style.display = 'none';
-
-        // Make all parent backgrounds transparent
-        const layoutRoot = document.querySelector('.flex.h-screen.overflow-hidden') as HTMLElement;
-        if (layoutRoot) layoutRoot.style.background = 'transparent';
-
-        const pageContent = document.querySelector('.min-h-full.relative.z-10') as HTMLElement;
-        if (pageContent) {
-            pageContent.style.background = 'transparent';
-            pageContent.style.zIndex = 'auto';
-            pageContent.style.position = 'static';
-        }
-
-        const mainArea = document.querySelector('main.flex-1.overflow-y-auto') as HTMLElement;
-        if (mainArea) {
-            mainArea.style.background = 'transparent';
-            mainArea.style.overflow = 'visible';
-            mainArea.style.transition = 'none';
-        }
-
-        const updateBgForTheme = () => {
-            const isDark = document.documentElement.classList.contains('dark');
-            const sceneBg = isDark ? '#0a0a1a' : '#ffffff';
-            document.body.style.background = sceneBg;
-            document.documentElement.style.background = sceneBg;
-        };
-        updateBgForTheme();
-
-        const themeObserver = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.attributeName === 'class') updateBgForTheme();
-            }
-        });
-        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-
-        const rootEl = document.getElementById('root');
-        if (rootEl) rootEl.style.background = 'transparent';
-
-        let splineContainer: HTMLDivElement | null = null;
-        let interval: ReturnType<typeof setInterval> | null = null;
-        let timeout: ReturnType<typeof setTimeout> | null = null;
-        let visibilityHandler: (() => void) | null = null;
-
-        if (useLightweightSpline) {
-            const splineFallback = document.createElement('div');
-            splineFallback.id = 'spline-bg-fallback';
-            splineFallback.style.cssText = `
-                position: fixed;
-                inset: 0;
-                z-index: 0;
-                pointer-events: none;
-                background:
-                    radial-gradient(circle at 20% 20%, rgba(92,82,210,0.18), transparent 45%),
-                    radial-gradient(circle at 80% 30%, rgba(124,58,237,0.14), transparent 42%),
-                    radial-gradient(circle at 50% 80%, rgba(59,130,246,0.12), transparent 45%);
-                transform: translateZ(0);
-            `;
-            document.body.insertBefore(splineFallback, document.body.firstChild);
-        } else {
-            const SPLINE_SCRIPT_URL = 'https://unpkg.com/@splinetool/viewer@1.12.68/build/spline-viewer.js';
-            if (!document.querySelector(`script[src="${SPLINE_SCRIPT_URL}"]`)) {
-                const splineScript = document.createElement('script');
-                splineScript.type = 'module';
-                splineScript.src = SPLINE_SCRIPT_URL;
-                document.head.appendChild(splineScript);
-            }
-
-            splineContainer = document.createElement('div');
-            splineContainer.id = 'spline-bg-container';
-            splineContainer.style.cssText = `
-                position: fixed;
-                top: -15vh;
-                left: -15vw;
-                width: 130vw;
-                height: 130vh;
-                z-index: 0;
-                pointer-events: none;
-                cursor: default;
-                overflow: hidden;
-                transform: translateZ(0);
-            `;
-
-            const splineViewer = document.createElement('spline-viewer');
-            splineViewer.setAttribute('url', 'https://prod.spline.design/A2iZA6xU4DxAyFHi/scene.splinecode');
-            splineViewer.style.cssText = `
-                width: 100%;
-                height: 100%;
-                display: block;
-                pointer-events: none;
-                cursor: default;
-            `;
-
-            splineContainer.appendChild(splineViewer);
-            document.body.insertBefore(splineContainer, document.body.firstChild);
-
-            const fixSplineViewer = () => {
-                const viewer = document.querySelector('#spline-bg-container spline-viewer') as any;
-                if (!viewer?.shadowRoot) return;
-
-                const logo = viewer.shadowRoot.getElementById('logo');
-                if (logo) logo.style.display = 'none';
-
-                viewer.shadowRoot.querySelectorAll('a').forEach((a: HTMLAnchorElement) => {
-                    if (a.href?.includes('spline.design')) a.style.display = 'none';
-                });
-
-                viewer.shadowRoot.querySelectorAll('canvas').forEach((canvas: HTMLCanvasElement) => {
-                    canvas.style.cursor = 'default';
-                    canvas.style.pointerEvents = 'none';
-                });
-
-                if (!viewer.shadowRoot.getElementById('cursor-fix-style')) {
-                    const styleEl = document.createElement('style');
-                    styleEl.id = 'cursor-fix-style';
-                    styleEl.textContent = `
-                        * { cursor: default !important; pointer-events: none !important; }
-                        canvas { cursor: default !important; pointer-events: none !important; }
-                        #logo, a[href*="spline"] { display: none !important; }
-                    `;
-                    viewer.shadowRoot.appendChild(styleEl);
-                }
-            };
-
-            visibilityHandler = () => {
-                if (!splineContainer) return;
-                const viewer = document.querySelector('#spline-bg-container spline-viewer') as any;
-                if (document.hidden) {
-                    splineContainer.style.visibility = 'hidden';
-                    if (typeof viewer?.pause === 'function') viewer.pause();
-                } else {
-                    splineContainer.style.visibility = 'visible';
-                    if (typeof viewer?.play === 'function') viewer.play();
-                }
-            };
-            document.addEventListener('visibilitychange', visibilityHandler);
-
-            fixSplineViewer();
-            visibilityHandler();
-            interval = setInterval(fixSplineViewer, 1000);
-            timeout = setTimeout(() => {
-                if (interval) clearInterval(interval);
-            }, 8000);
-        }
-
-        return () => {
-            const splineEl = document.getElementById('spline-bg-container');
-            if (splineEl) splineEl.remove();
-            const fallbackEl = document.getElementById('spline-bg-fallback');
-            if (fallbackEl) fallbackEl.remove();
-
-            themeObserver.disconnect();
-            if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
-
-            if (networkBg) networkBg.style.display = '';
-            if (layoutRoot) layoutRoot.style.background = '';
-            if (pageContent) {
-                pageContent.style.background = '';
-                pageContent.style.zIndex = '';
-                pageContent.style.position = '';
-            }
-            if (mainArea) {
-                mainArea.style.background = '';
-                mainArea.style.overflow = '';
-                mainArea.style.transition = '';
-            }
-
-            document.body.style.background = '';
-            document.documentElement.style.background = '';
-            if (rootEl) rootEl.style.background = '';
-
-            if (interval) clearInterval(interval);
-            if (timeout) clearTimeout(timeout);
-
-            splineContainer = null;
-        };
-    }, [step, liteMode, isMobile]);
-
     return (
-        <div className={`font-sans ${step === 'selection' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+        <div className={`font-sans ${step === 'selection' ? 'h-screen overflow-hidden bg-slate-50 dark:bg-slate-950' : 'min-h-screen'}`}>
                 <main className={step === 'builder' ? 'w-full' : 'max-w-[1200px] mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8'}>
                     <AnimatePresence mode="wait">
                         {step === 'selection' && (
@@ -306,71 +109,62 @@ export default function ResumeBuilder() {
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: 0.4 }}
-                                className="h-[calc(100vh-6rem)] flex items-center justify-center"
+                                className="relative h-[calc(100vh-6rem)] flex items-center justify-center overflow-hidden"
                             >
 
-                                {/* Content — dynamic text interaction with Spline ribbons */}
-                                <div className="max-w-3xl mx-auto text-center space-y-12 py-10">
+                                {/* Selection hero */}
+                                <div className="absolute inset-0 pointer-events-none">
+                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.18),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(236,72,153,0.14),_transparent_28%),linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(248,250,252,0.98)_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.22),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(168,85,247,0.18),_transparent_28%),linear-gradient(180deg,_rgba(2,6,23,0.98)_0%,_rgba(15,23,42,0.96)_100%)]" />
+                                    <div className="absolute top-16 left-[8%] h-48 w-48 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-500/20" />
+                                    <div className="absolute bottom-20 right-[10%] h-56 w-56 rounded-full bg-fuchsia-200/40 blur-3xl dark:bg-fuchsia-500/15" />
+                                </div>
+
+                                <div className="relative z-10 max-w-3xl mx-auto text-center space-y-12 py-10">
                                     <div className="space-y-6">
-                                        <div className="w-20 h-20 bg-white/30 dark:bg-white/10 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg border border-white/20">
-                                            <FileText className="w-10 h-10 text-indigo-600 dark:text-white" />
+                                        <div className="w-20 h-20 bg-white/90 dark:bg-slate-900/80 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-[0_20px_60px_-25px_rgba(79,70,229,0.45)] border border-indigo-100 dark:border-slate-800">
+                                            <FileText className="w-10 h-10 text-indigo-600 dark:text-indigo-300" />
                                         </div>
-                                        <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight spline-blend-heading">
+                                        <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight text-slate-900 dark:text-white">
                                             Let's Start Your Career Journey!
                                         </h1>
-                                        <p className="text-lg font-semibold max-w-xl mx-auto spline-blend-paragraph">
+                                        <p className="text-lg font-semibold max-w-xl mx-auto text-slate-600 dark:text-slate-300">
                                             To provide you with the best career guidance, we need to understand your current profile.
                                         </p>
                                     </div>
 
                                     <div className="space-y-8">
-                                        <h2 className="text-2xl font-black tracking-tight spline-blend-subheading">
+                                        <h2 className="text-2xl font-black tracking-tight text-slate-800 dark:text-slate-100">
                                             Do you have an existing resume?
                                         </h2>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                                             <button
                                                 onClick={() => setStep('upload')}
-                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-6 sm:p-10 rounded-2xl sm:rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-4 sm:space-y-6"
+                                                className="bg-white/90 dark:bg-slate-900/80 backdrop-blur-xl p-6 sm:p-10 rounded-2xl sm:rounded-[3rem] shadow-[0_22px_55px_-28px_rgba(15,23,42,0.35)] hover:shadow-[0_28px_65px_-28px_rgba(79,70,229,0.35)] hover:scale-[1.02] transition-all border border-slate-200/80 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-500/30 group text-center space-y-4 sm:space-y-6"
                                             >
                                                 <div className="w-16 h-16 bg-green-50 dark:bg-green-900/30 rounded-2xl flex items-center justify-center mx-auto text-green-500 group-hover:scale-110 transition-transform">
                                                     <CheckCircle2 className="w-8 h-8" />
                                                 </div>
                                                 <div className="space-y-2">
                                                     <h3 className="text-2xl font-black text-gray-900 dark:text-white">Yes, I have one</h3>
-                                                    <p className="text-gray-500 dark:text-gray-400 font-medium text-sm px-4">Upload your existing resume for analysis</p>
+                                                    <p className="text-slate-600 dark:text-slate-300 font-medium text-sm px-4">Upload your existing resume for analysis</p>
                                                 </div>
                                             </button>
 
                                             <button
                                                 onClick={() => setStep('builder')}
-                                                className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl p-6 sm:p-10 rounded-2xl sm:rounded-[3rem] shadow-xl hover:shadow-2xl hover:scale-[1.02] transition-all border-2 border-white/40 dark:border-white/10 hover:border-white/60 group text-center space-y-4 sm:space-y-6"
+                                                className="bg-white/90 dark:bg-slate-900/80 backdrop-blur-xl p-6 sm:p-10 rounded-2xl sm:rounded-[3rem] shadow-[0_22px_55px_-28px_rgba(15,23,42,0.35)] hover:shadow-[0_28px_65px_-28px_rgba(79,70,229,0.35)] hover:scale-[1.02] transition-all border border-slate-200/80 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-500/30 group text-center space-y-4 sm:space-y-6"
                                             >
                                                 <div className="w-16 h-16 bg-red-50 dark:bg-red-900/30 rounded-2xl flex items-center justify-center mx-auto text-red-400 group-hover:scale-110 transition-transform">
                                                     <XCircle className="w-8 h-8" />
                                                 </div>
                                                 <div className="space-y-2">
                                                     <h3 className="text-2xl font-black text-gray-900 dark:text-white">No, I need help</h3>
-                                                    <p className="text-gray-400 font-medium text-sm px-4">Let our AI help you build a professional resume</p>
+                                                    <p className="text-slate-600 dark:text-slate-300 font-medium text-sm px-4">Let our AI help you build a professional resume</p>
                                                 </div>
                                             </button>
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* CSS animation for the text gradient shift effect */}
-                                <style>{`
-                                    @keyframes textGradientShift {
-                                        0% {
-                                            background-position: 0% 50%;
-                                        }
-                                        50% {
-                                            background-position: 100% 50%;
-                                        }
-                                        100% {
-                                            background-position: 0% 50%;
-                                        }
-                                    }
-                                `}</style>
                             </motion.div>
                         )}
 
@@ -417,18 +211,18 @@ export default function ResumeBuilder() {
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                     />
                                     <div className="flex flex-col items-center justify-center space-y-6">
-                                        <div className="w-20 h-20 bg-gray-50 rounded-[1.5rem] flex items-center justify-center text-gray-300 group-hover:text-[#5c52d2] group-hover:bg-purple-50 transition-all shadow-inner">
+                                        <div className="w-20 h-20 bg-slate-100 dark:bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover:text-[#5c52d2] group-hover:bg-purple-50 dark:group-hover:bg-slate-800 transition-all shadow-inner">
                                             <Upload className="w-10 h-10" />
                                         </div>
                                         <div className="space-y-2">
-                                            <p className="text-xl font-black text-gray-900">
+                                            <p className="text-xl font-black text-slate-900 dark:text-white">
                                                 {file ? file.name : "Drag & drop your resume here"}
                                             </p>
-                                            <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">
+                                            <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-xs">
                                                 or click to browse files
                                             </p>
                                         </div>
-                                        <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">Supported formats: PDF, DOC, DOCX (Max 5MB)</p>
+                                        <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">Supported formats: PDF, DOC, DOCX (Max 5MB)</p>
                                     </div>
                                 </div>
 
@@ -436,7 +230,7 @@ export default function ResumeBuilder() {
                                     <Button
                                         onClick={() => setStep('selection')}
                                         variant="outline"
-                                        className="h-14 px-10 rounded-2xl font-black border-gray-200 text-gray-400 hover:text-gray-600"
+                                        className="h-14 px-10 rounded-2xl font-black border-gray-200 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
                                     >
                                         Back
                                     </Button>

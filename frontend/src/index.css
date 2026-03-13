@@ -892,52 +892,7 @@ main {
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* ══════════════════════════════════════════════════════ */
-/* SPLINE BLEND TEXT — Dynamic color on Spline background */
 /* ══════════════════════════════════════════════════════ */
-
-/* Heading blend classes */
-.spline-blend-heading {
-  color: #ffffff;
-  mix-blend-mode: difference;
-  -webkit-text-stroke: 1px rgba(0,0,0,0.15);
-  text-shadow: 0 0 20px rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.3);
-}
-
-.spline-blend-subheading {
-  color: #ffffff;
-  mix-blend-mode: difference;
-  text-shadow: 0 0 15px rgba(255,255,255,0.15), 0 2px 4px rgba(0,0,0,0.3);
-}
-
-/* Paragraph blend class - "white dynamic" */
-.spline-blend-paragraph {
-  color: #ffffff;
-  mix-blend-mode: difference;
-  text-shadow: 0 0 10px rgba(255,255,255,0.1);
-}
-
-/* Dark mode override for headings: back to "icy cyan" exclusion */
-.dark .spline-blend-heading {
-  color: #00E5FF;
-  mix-blend-mode: exclusion;
-  -webkit-text-stroke: 1.5px rgba(0,0,0,0.35);
-  text-shadow: 0 0 15px rgba(0,0,0,0.6), 0 0 40px rgba(0,229,255,0.4), 0 2px 4px rgba(0,0,0,0.4);
-}
-
-.dark .spline-blend-subheading {
-  color: #00E5FF;
-  mix-blend-mode: exclusion;
-  -webkit-text-stroke: 1px rgba(0,0,0,0.35);
-  text-shadow: 0 0 15px rgba(0,0,0,0.6), 0 0 30px rgba(0,229,255,0.3), 0 2px 4px rgba(0,0,0,0.4);
-}
-
-/* Dark mode override for paragraph: keep simple white or also dynamic? 
-   User asked for "small middle text to white dynamic" specifically for light theme, 
-   but we'll keep it dynamic for both unless specified. */
-.dark .spline-blend-paragraph {
-  color: #ffffff;
-  mix-blend-mode: difference;
-}
 
 /* Performance utilities */
 .cv-auto {
