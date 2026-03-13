@@ -24,6 +24,32 @@ const TABS: { id: PanelTab; label: string; icon: any }[] = [
     { id: 'skills', label: 'Skills', icon: Wrench },
 ];
 
+function SkillTextarea({ value, onChange, placeholder }: { value: string[], onChange: (val: string) => void, placeholder: string }) {
+    const [localVal, setLocalVal] = useState(value.join(', '));
+
+    // Sync from props if the external value fundamentally changes (e.g., from AI improve)
+    // We compare the arrays to avoid overriding mid-typing commas
+    if (JSON.stringify(localVal.split(',').map(s => s.trim()).filter(Boolean)) !== JSON.stringify(value)) {
+        setLocalVal(value.join(', '));
+    }
+
+    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const newVal = e.target.value;
+        setLocalVal(newVal);
+        onChange(newVal);
+    };
+
+    return (
+        <textarea
+            className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-[#5c52d2] transition-all resize-none placeholder-gray-300"
+            rows={3}
+            value={localVal}
+            onChange={handleChange}
+            placeholder={placeholder}
+        />
+    );
+}
+
 export function SidePanelEditor({ data, onChange, selectedTemplate }: SidePanelEditorProps) {
     const [activeTab, setActiveTab] = useState<PanelTab>('personal');
     const [aiLoading, setAiLoading] = useState<string | null>(null);
@@ -457,32 +483,26 @@ export function SidePanelEditor({ data, onChange, selectedTemplate }: SidePanelE
                             <>
                                 <div>
                                     <label className={labelCls}>Technical Skills</label>
-                                    <textarea
-                                        className={textareaCls}
-                                        rows={3}
-                                        value={data.skills.technical_skills.join(', ')}
-                                        onChange={e => updateSkillCategory('technical_skills', e.target.value)}
+                                    <SkillTextarea
+                                        value={data.skills.technical_skills}
+                                        onChange={v => updateSkillCategory('technical_skills', v)}
                                         placeholder="JavaScript, Python, React..."
                                     />
                                     <p className="text-[9px] text-gray-300 mt-0.5">Separate with commas</p>
                                 </div>
                                 <div>
                                     <label className={labelCls}>Tools & Frameworks</label>
-                                    <textarea
-                                        className={textareaCls}
-                                        rows={3}
-                                        value={data.skills.tools.join(', ')}
-                                        onChange={e => updateSkillCategory('tools', e.target.value)}
+                                    <SkillTextarea
+                                        value={data.skills.tools}
+                                        onChange={v => updateSkillCategory('tools', v)}
                                         placeholder="VS Code, Docker, Git..."
                                     />
                                 </div>
                                 <div>
                                     <label className={labelCls}>Soft Skills</label>
-                                    <textarea
-                                        className={textareaCls}
-                                        rows={3}
-                                        value={data.skills.soft_skills.join(', ')}
-                                        onChange={e => updateSkillCategory('soft_skills', e.target.value)}
+                                    <SkillTextarea
+                                        value={data.skills.soft_skills}
+                                        onChange={v => updateSkillCategory('soft_skills', v)}
                                         placeholder="Leadership, Communication..."
                                     />
                                 </div>
