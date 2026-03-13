@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -6,6 +6,7 @@ import { AdminRoute } from './components/AdminRoute';
 import { AppLayout } from './components/AppLayout';
 import { Suspense, lazy, memo, useEffect } from 'react';
 import RouteSkeleton from './components/RouteSkeleton';
+import AuthLoadingScreen from './components/AuthLoadingScreen';
 import {
   getPageImporter,
   injectRoutePrefetchHints,
@@ -40,6 +41,29 @@ const Profile = lazyPage('/profile');
 const AdminDashboard = lazyPage('/admin/users');
 const AdminInactivity = lazyPage('/admin/inactivity');
 const AdminCommandCentre = lazyPage('/admin/command-centre');
+
+/**
+ * OAuth Code Interceptor
+ * 
+ * Catches the ?code= parameter on ANY route and redirects to /auth/callback.
+ * This handles the case where Supabase redirects the PKCE code to the root URL
+ * instead of /auth/callback (when the redirect URL isn't whitelisted in Supabase dashboard).
+ * 
+ * Shows the auth loading screen immediately to prevent the landing page from flashing.
+ */
+function OAuthCodeInterceptor({ children }: { children: React.ReactNode }) {
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const code = searchParams.get('code');
+
+  // If there's a ?code= parameter and we're NOT already on /auth/callback,
+  // redirect to /auth/callback with the code
+  if (code && location.pathname !== '/auth/callback') {
+    return <Navigate to={`/auth/callback?code=${code}`} replace />;
+  }
+
+  return <>{children}</>;
+}
 
 /** Wrap a page with AppLayout + ProtectedRoute */
 const ProtectedPage = memo(function ProtectedPage({ children }: { children: React.ReactNode }) {
@@ -87,7 +111,8 @@ function App() {
     <ThemeProvider>
     <Router>
       <AuthProvider>
-        <Suspense fallback={<RouteSkeleton />}>
+        <Suspense fallback={<AuthLoadingScreen />}>
+          <OAuthCodeInterceptor>
           <Routes>
             {/* Public routes — no layout */}
             <Route path="/" element={<Landing />} />
@@ -125,6 +150,7 @@ function App() {
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
+          </OAuthCodeInterceptor>
         </Suspense>
       </AuthProvider>
     </Router>
