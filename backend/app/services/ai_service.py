@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from openai import AsyncOpenAI
 import google.generativeai as genai
 from app.core.config import settings
+from app.services import document_store_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +49,25 @@ class AIService:
             except Exception as e:
                 logger.error(f"Failed to configure Gemini: {str(e)}")
 
+    def _record_ai_output(
+        self,
+        provider: str,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str],
+        response: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        document_store_service.record_ai_output(
+            output_type="chat_completion",
+            provider=provider,
+            input_payload={
+                "system_prompt": system_prompt,
+                "messages": messages,
+            },
+            response=response,
+            metadata=metadata or {},
+        )
+
     async def chat_completion(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
         """
         Attempts to get a completion from Groq (Primary), 
@@ -77,7 +97,15 @@ class AIService:
                     timeout=30.0  # 30 second timeout to prevent hangs
                 )
                 logger.info("Groq Success!")
-                return response.choices[0].message.content
+                response_text = response.choices[0].message.content
+                self._record_ai_output(
+                    provider="groq",
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    response=response_text,
+                    metadata={"model": "llama-3.3-70b-versatile"},
+                )
+                return response_text
 
             except Exception as e:
                 # Capture Error for UI Debugging
@@ -115,7 +143,15 @@ class AIService:
                 
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(None, lambda: self.gemini_model.generate_content(gemini_prompt))
-                return response.text
+                response_text = response.text
+                self._record_ai_output(
+                    provider="gemini",
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    response=response_text,
+                    metadata={"model": "gemini-1.5-flash"},
+                )
+                return response_text
             except Exception as ge:
                 logger.error(f"Gemini error: {str(ge)}")
                 logger.info("Failing over to OpenAI...")
@@ -134,13 +170,29 @@ class AIService:
                     temperature=0.7,
                     timeout=15.0
                 )
-                return response.choices[0].message.content
+                response_text = response.choices[0].message.content
+                self._record_ai_output(
+                    provider="openai",
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    response=response_text,
+                    metadata={"model": "gpt-4o-mini"},
+                )
+                return response_text
             except Exception as e:
                 logger.error(f"OpenAI error: {str(e)}")
 
         # 4. Final Failover: Premium Mock Intelligence
         logger.warning("All AI providers (Groq/Gemini/OpenAI) failed or no keys found. Using Mock Intelligence fallback.")
-        return await self._generate_mock_response(messages, system_prompt)
+        mock_response = await self._generate_mock_response(messages, system_prompt)
+        self._record_ai_output(
+            provider="mock",
+            messages=messages,
+            system_prompt=system_prompt,
+            response=mock_response,
+            metadata={"fallback": True},
+        )
+        return mock_response
 
     async def generate_quiz_questions(self, topic: str, difficulty: str, count: int) -> str:
         """

@@ -99,16 +99,28 @@ The FastAPI backend provides:
 - **Interview Simulator**: Endpoint architecture for mock interview logic.
 - **SQL Persistence**: Reliable storage for your professional evolution.
 
-## 💻 Deployment Ready
+## 🛠️ Infrastructure Verification
 
-### Vercel (Frontend)
+To ensure all external services (Databases, AI Providers, Storage) are correctly configured and reachable from your environment, run the diagnostics tool:
+
 ```bash
-cd frontend
-vercel --prod
+# From the project root
+python verify_all_connections.py
 ```
 
-### Render/Railway (Backend)
-Connect your GitHub repository and point to the `backend` directory with `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+This will check:
+- **Supabase PostgreSQL** (Primary DB)
+- **MongoDB Atlas** (Document Store)
+- **Supabase Auth & Storage API**
+- **Groq AI** (Primary Provider)
+- **OpenAI API** (Failover)
+- **Cloudinary** (Media Assets)
+
+### 💡 Troubleshooting
+If a service fails:
+1. Verify your credentials in `backend/.env`.
+2. Check your internet connection and DNS resolution.
+3. Ensure your local IP is whitelisted in MongoDB Atlas or Supabase if restricted.
 
 ---
 
