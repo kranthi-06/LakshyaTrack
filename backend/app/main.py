@@ -401,7 +401,7 @@ async def validation_exception_handler(request: Request, exc: Exception):
     print(error_msg, file=sys.stderr)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal Server Error. Check logs."},
+        content={"detail": "Internal Server Error. Check logs.", "error": error_msg},
     )
 
 

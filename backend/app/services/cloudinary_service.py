@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
@@ -88,7 +88,7 @@ def _strip_secret_wrappers(value: str) -> str:
     return value.strip().strip("<>").strip()
 
 
-def _resolve_cloudinary_credentials() -> tuple[str, str, str]:
+def _resolve_cloudinary_credentials() -> Tuple[str, str, str]:
     cloud_name = _strip_secret_wrappers(settings.CLOUDINARY_CLOUD_NAME or "")
     api_key = _strip_secret_wrappers(settings.CLOUDINARY_API_KEY or "")
     api_secret = _strip_secret_wrappers(settings.CLOUDINARY_API_SECRET or "")
