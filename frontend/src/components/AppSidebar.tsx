@@ -48,7 +48,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
 
     const isAdmin = user?.role === 'admin' || user?.role === 'black_admin';
     const displayName = user?.profile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'User';
-    const profilePhoto = (user as any)?.profile?.profile_photo_url || null;
+    const profilePhoto = (user as any)?.profile?.profile_image_url || (user as any)?.profile?.profile_photo_url || null;
     const prefetchPath = useCallback((path: string) => {
         prefetchRoute(path);
     }, []);

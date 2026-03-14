@@ -31,8 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-import { analyzeResumeText } from '@/services/resume';
-import { extractTextFromFile } from '@/utils/ocr';
+import { analyzeResume } from '@/services/resume';
 const AIBuilder = lazy(() => import('./ResumeBuilder/index'));
 
 type Step = 'selection' | 'upload' | 'builder' | 'analysis' | 'templates';
@@ -67,17 +66,9 @@ export default function ResumeBuilder() {
         if (!file) return;
         setLoading(true);
         setError('');
-        setOcrProgress('Initializing extraction...');
+        setOcrProgress('Uploading to secure storage and analyzing...');
         try {
-            // Extract text with OCR fallback
-            const text = await extractTextFromFile(file, (msg) => setOcrProgress(msg));
-
-            if (!text.trim()) {
-                throw new Error('Could not extract any text from the document. Please try a different file.');
-            }
-
-            setOcrProgress('Performing AI Analysis...');
-            const result = await analyzeResumeText(text, file.name);
+            const result = await analyzeResume(file);
             const parsedAnalysis = typeof result.analysis === 'string' ? JSON.parse(result.analysis) : result.analysis;
             setAnalysis(parsedAnalysis);
             setStep('analysis');
@@ -222,7 +213,7 @@ export default function ResumeBuilder() {
                                                 or click to browse files
                                             </p>
                                         </div>
-                                        <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">Supported formats: PDF, DOC, DOCX (Max 5MB)</p>
+                                        <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">Supported format: PDF (Max 10MB)</p>
                                     </div>
                                 </div>
 

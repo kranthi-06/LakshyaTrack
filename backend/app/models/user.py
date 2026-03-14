@@ -31,6 +31,10 @@ class Profile(Base):
     id = Column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
     full_name = Column(String, nullable=True)
     profile_photo_url = Column(String, nullable=True)  # URL or base64 for profile photo
+    profile_image_url = Column(String, nullable=True)
+    resume_url = Column(String, nullable=True)
+    certificate_url = Column(String, nullable=True)
+    project_image_url = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
     links = Column(JSONB, default={})

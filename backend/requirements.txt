@@ -17,3 +17,4 @@ email-validator
 google-generativeai
 groq
 apscheduler
+cloudinary

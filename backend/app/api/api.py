@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.api.endpoints import (
-    auth, users, resume, career, learning, interview, quiz, resume_builder,
+    auth, users, resume, career, learning, interview, quiz, resume_builder, media,
     # New advanced modules
     roadmap, quiz_gating, learning_content, interview_advanced,
     opportunities, progress,
@@ -18,6 +18,7 @@ api_router = APIRouter()
 # ── Existing routes (UNCHANGED) ──────────────────────────
 api_router.include_router(auth.router, tags=["login"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(media.router, prefix="/media", tags=["media"])
 api_router.include_router(resume.router, prefix="/resume", tags=["resume"])
 api_router.include_router(resume_builder.router, prefix="/resume-builder", tags=["resume-builder"])
 api_router.include_router(career.router, prefix="/career", tags=["career"])

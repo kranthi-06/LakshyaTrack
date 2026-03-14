@@ -55,7 +55,11 @@ export const updateProfile = async (profileData: {
     bio?: string;
     links?: Record<string, any>;
     skills?: string[];
+    profile_image_url?: string;
     profile_photo_url?: string;
+    resume_url?: string;
+    certificate_url?: string;
+    project_image_url?: string;
 }): Promise<any> => {
     const response = await api.put('/users/me/profile', profileData);
     invalidateCache(ME_CACHE_KEY);

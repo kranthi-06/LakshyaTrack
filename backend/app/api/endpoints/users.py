@@ -17,6 +17,10 @@ class ProfileUpdateRequest(BaseModel):
     links: Optional[Dict[str, Any]] = None
     skills: Optional[List[str]] = None
     profile_photo_url: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    resume_url: Optional[str] = None
+    certificate_url: Optional[str] = None
+    project_image_url: Optional[str] = None
 
 
 @router.post("/", response_model=schemas.user.User)
@@ -72,8 +76,19 @@ def update_my_profile(
 
     # Patch only fields that were explicitly sent
     update_data = profile_in.dict(exclude_unset=True)
+    profile_image_url = update_data.pop("profile_image_url", None)
+    legacy_profile_photo_url = update_data.pop("profile_photo_url", None)
+
     for field, value in update_data.items():
         setattr(profile, field, value)
+
+    resolved_profile_image = profile_image_url
+    if resolved_profile_image is None and legacy_profile_photo_url is not None:
+        resolved_profile_image = legacy_profile_photo_url
+
+    if resolved_profile_image is not None:
+        profile.profile_image_url = resolved_profile_image
+        profile.profile_photo_url = resolved_profile_image
 
     db.add(profile)
     db.commit()

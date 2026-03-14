@@ -2,7 +2,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
 from app.api import deps
-from app.services import resume_service
+from app.services import cloudinary_service, media_service, resume_service
 
 router = APIRouter()
 
@@ -22,15 +22,34 @@ async def analyze_resume(
     logger = logging.getLogger(__name__)
     
     try:
-        if not file.filename.lower().endswith(".pdf"):
+        filename = file.filename or "resume.pdf"
+
+        if not filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Invalid file type. Only PDF allowed.")
         
         content = await file.read()
         if not content:
             raise HTTPException(status_code=400, detail="The uploaded file is empty.")
             
-        logger.info(f"Processing resume: {file.filename} ({len(content)} bytes)")
-        
+        logger.info(f"Processing resume: {filename} ({len(content)} bytes)")
+
+        upload_result = await cloudinary_service.upload_media(
+            filename=filename,
+            content=content,
+            content_type=file.content_type,
+            media_type=cloudinary_service.MediaType.RESUME,
+            user_id=str(current_user.id) if current_user else None,
+        )
+
+        if current_user:
+            media_service.persist_profile_media_url(
+                db,
+                current_user.id,
+                cloudinary_service.MediaType.RESUME,
+                upload_result.secure_url,
+            )
+            db.commit()
+
         try:
             text = await resume_service.extract_text_from_pdf(content)
         except Exception as e:
@@ -38,12 +57,12 @@ async def analyze_resume(
             raise HTTPException(status_code=400, detail=f"Failed to parse PDF content: {str(e)}")
         
         if not text.strip():
-            logger.warning(f"No text extracted from PDF: {file.filename}")
+            logger.warning(f"No text extracted from PDF: {filename}")
             raise HTTPException(status_code=400, detail="Could not extract text from PDF. It might be a scanned image or empty.")
             
-        logger.info(f"Analysis started for {file.filename}")
+        logger.info(f"Analysis started for {filename}")
         analysis = await resume_service.analyze_resume_with_ai(text, job_description)
-        logger.info(f"Analysis completed for {file.filename}")
+        logger.info(f"Analysis completed for {filename}")
         
         
         # --- NEW: Extract and auto-sync skills to profile ---
@@ -64,11 +83,17 @@ async def analyze_resume(
                 db.commit()
 
         return {
-            "filename": file.filename,
-            "analysis": analysis
+            "filename": filename,
+            "analysis": analysis,
+            "resume_url": upload_result.secure_url,
         }
     except HTTPException:
         raise
+    except cloudinary_service.CloudinaryConfigurationError as e:
+        logger.error(f"Cloudinary configuration error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error during resume analysis: {str(e)}", exc_info=True)
         # Exposing error for user debugging

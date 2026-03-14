@@ -26,10 +26,37 @@ Base.metadata.create_all(bind=engine)
 from sqlalchemy import inspect, text
 with engine.connect() as conn:
     inspector = inspect(engine)
-    existing_cols = [c['name'] for c in inspector.get_columns('profiles')]
-    if 'profile_photo_url' not in existing_cols:
-        conn.execute(text("ALTER TABLE profiles ADD COLUMN profile_photo_url VARCHAR"))
+    table_names = set(inspector.get_table_names())
+
+    if 'profiles' in table_names:
+        existing_cols = [c['name'] for c in inspector.get_columns('profiles')]
+        if 'profile_photo_url' not in existing_cols:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN profile_photo_url VARCHAR"))
+            conn.commit()
+        if 'profile_image_url' not in existing_cols:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN profile_image_url VARCHAR"))
+            conn.commit()
+        if 'resume_url' not in existing_cols:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN resume_url VARCHAR"))
+            conn.commit()
+        if 'certificate_url' not in existing_cols:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN certificate_url VARCHAR"))
+            conn.commit()
+        if 'project_image_url' not in existing_cols:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN project_image_url VARCHAR"))
+            conn.commit()
+        conn.execute(text(
+            "UPDATE profiles "
+            "SET profile_image_url = COALESCE(profile_image_url, profile_photo_url), "
+            "    profile_photo_url = COALESCE(profile_photo_url, profile_image_url)"
+        ))
         conn.commit()
+
+    if 'saved_resumes' in table_names:
+        saved_resume_cols = [c['name'] for c in inspector.get_columns('saved_resumes')]
+        if 'resume_url' not in saved_resume_cols:
+            conn.execute(text("ALTER TABLE saved_resumes ADD COLUMN resume_url VARCHAR"))
+            conn.commit()
 
     # Multi-roadmap support: add new columns to roadmaps table
     roadmap_cols = [c['name'] for c in inspector.get_columns('roadmaps')]

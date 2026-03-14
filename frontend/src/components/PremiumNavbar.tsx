@@ -24,6 +24,19 @@ export const PremiumNavbar = () => {
     const { user, logout } = useAuth();
     const location = useLocation();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    let localProfileImage = '';
+
+    try {
+        const rawProfile = user?.email ? localStorage.getItem(`user_profile_${user.email}`) : null;
+        localProfileImage = rawProfile ? JSON.parse(rawProfile).image || '' : '';
+    } catch {
+        localProfileImage = '';
+    }
+
+    const profileImage =
+        (user as any)?.profile?.profile_image_url ||
+        (user as any)?.profile?.profile_photo_url ||
+        localProfileImage;
 
     const navItems = [
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -93,9 +106,9 @@ export const PremiumNavbar = () => {
                             <Link to="/profile" className="bg-white/10 hover:bg-white/20 transition-all rounded-full p-0.5 border border-white/10 pr-4 flex items-center gap-3 group cursor-pointer">
                                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-300 to-orange-400 p-0.5 group-hover:scale-105 transition-transform duration-300">
                                     <div className="w-full h-full rounded-full bg-slate-200 flex items-center justify-center overflow-hidden">
-                                        {(user as any)?.profile?.profile_photo_url || localStorage.getItem(`user_profile_${user?.email}`) ? (
+                                        {profileImage ? (
                                             <img
-                                                src={(user as any)?.profile?.profile_photo_url || (localStorage.getItem(`user_profile_${user?.email}`) ? JSON.parse(localStorage.getItem(`user_profile_${user?.email}`)!).image : '')}
+                                                src={profileImage}
                                                 alt="Profile"
                                                 className="w-full h-full object-cover"
                                                 loading="lazy"

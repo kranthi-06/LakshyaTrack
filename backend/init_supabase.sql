@@ -17,6 +17,11 @@ CREATE TABLE public.users (
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
   full_name TEXT,
+  profile_photo_url TEXT,
+  profile_image_url TEXT,
+  resume_url TEXT,
+  certificate_url TEXT,
+  project_image_url TEXT,
   phone_number TEXT,
   bio TEXT,
   links JSONB DEFAULT '{}'::jsonb,

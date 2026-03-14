@@ -11,6 +11,7 @@ class SavedResume(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     resume_name = Column(String, default="Untitled Resume")
+    resume_url = Column(String, nullable=True)
     resume_data = Column(JSONB, nullable=False)
     template_id = Column(String, default="modern")
     theme = Column(String, default="default")

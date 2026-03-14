@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.saved_resumes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     resume_name TEXT DEFAULT 'Untitled Resume',
+    resume_url TEXT,
     resume_data JSONB NOT NULL,
     template_id TEXT DEFAULT 'modern',
     theme TEXT DEFAULT 'default',

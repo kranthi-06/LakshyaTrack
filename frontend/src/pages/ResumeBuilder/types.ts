@@ -27,6 +27,7 @@ export interface ProjectItem {
     name: string;
     technologies: string;
     description: string;
+    project_image_url?: string;
 }
 
 export interface SkillsData {

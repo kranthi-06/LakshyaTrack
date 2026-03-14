@@ -12,6 +12,10 @@ class TokenData(BaseModel):
 class ProfileBase(BaseModel):
     full_name: Optional[str] = None
     profile_photo_url: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    resume_url: Optional[str] = None
+    certificate_url: Optional[str] = None
+    project_image_url: Optional[str] = None
     phone_number: Optional[str] = None
     bio: Optional[str] = None
     links: Optional[Dict[str, Any]] = {}

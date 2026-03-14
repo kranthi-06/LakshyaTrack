@@ -12,6 +12,7 @@ router = APIRouter()
 
 class ResumeSaveRequest(BaseModel):
     resume_name: str = "Untitled Resume"
+    resume_url: Optional[str] = None
     resume_data: Dict[str, Any]
     template_id: str = "modern"
     theme: str = "default"
@@ -64,6 +65,7 @@ async def save_resume(
     new_resume = SavedResume(
         user_id=current_user.id,
         resume_name=request.resume_name,
+        resume_url=request.resume_url,
         resume_data=request.resume_data,
         template_id=request.template_id,
         theme=request.theme,
@@ -112,6 +114,7 @@ async def get_saved_resumes(
             "id": str(r.id),
             "user_id": str(r.user_id),
             "resume_name": r.resume_name,
+            "resume_url": r.resume_url,
             "resume_data": r.resume_data,
             "template_id": r.template_id,
             "theme": r.theme,
@@ -126,6 +129,7 @@ async def get_saved_resumes(
 
 class ResumeUpdateRequest(BaseModel):
     resume_name: Optional[str] = None
+    resume_url: Optional[str] = None
     resume_data: Optional[Dict[str, Any]] = None
     template_id: Optional[str] = None
     theme: Optional[str] = None
@@ -152,6 +156,8 @@ async def update_saved_resume(
     # Update fields that were provided
     if request.resume_name is not None:
         resume.resume_name = request.resume_name
+    if request.resume_url is not None:
+        resume.resume_url = request.resume_url
     if request.resume_data is not None:
         resume.resume_data = request.resume_data
         from sqlalchemy.orm.attributes import flag_modified

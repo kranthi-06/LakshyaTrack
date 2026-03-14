@@ -10,7 +10,11 @@ interface User {
     full_name?: string;
     profile?: {
         full_name?: string;
+        profile_image_url?: string;
         profile_photo_url?: string;
+        resume_url?: string;
+        certificate_url?: string;
+        project_image_url?: string;
         phone_number?: string;
         bio?: string;
         links?: Record<string, any>;

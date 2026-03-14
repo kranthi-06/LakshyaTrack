@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '../context/AuthContext';
 import { updateProfile as updateProfileApi } from '../services/auth';
+import { uploadUserMedia } from '../services/media';
 import {
     User, Mail, Phone, MapPin, Briefcase, Calendar,
     Linkedin, Github, Globe, FileText, Award, Star,
@@ -179,9 +180,11 @@ export default function Profile() {
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const pendingImageUrlRef = useRef<string | null>(null);
 
     // Editable name — initialised from backend and updated locally
     const [editName, setEditName] = useState('');
+    const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
 
     // Profile state — populated from backend user data
     const [profile, setProfile] = useState({
@@ -206,6 +209,13 @@ export default function Profile() {
     useEffect(() => {
         refreshUser();
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => () => {
+        if (pendingImageUrlRef.current) {
+            URL.revokeObjectURL(pendingImageUrlRef.current);
+            pendingImageUrlRef.current = null;
+        }
+    }, []);
 
     // Hydrate profile from backend user data + localStorage overrides
     useEffect(() => {
@@ -239,9 +249,18 @@ export default function Profile() {
                 github: backendLinks.github || localProfile?.socials?.github || "",
                 portfolio: backendLinks.portfolio || localProfile?.socials?.portfolio || ""
             },
-            image: backendProfile?.profile_photo_url || localProfile?.image || null
+            image: backendProfile?.profile_image_url || backendProfile?.profile_photo_url || localProfile?.image || null
         });
-    }, [user?.email, user?.profile?.skills, user?.profile?.full_name, user?.profile?.bio, user?.profile?.phone_number, user?.profile?.profile_photo_url, user?.created_at]);
+    }, [
+        user?.email,
+        user?.profile?.skills,
+        user?.profile?.full_name,
+        user?.profile?.bio,
+        user?.profile?.phone_number,
+        user?.profile?.profile_image_url,
+        user?.profile?.profile_photo_url,
+        user?.created_at,
+    ]);
 
     useEffect(() => {
         const fetchSavedResumes = async () => {
@@ -283,6 +302,12 @@ export default function Profile() {
         if (!user?.email) return;
         setIsSaving(true);
         try {
+            let profileImageUrl = profile.image;
+            if (pendingImageFile) {
+                const uploadResult = await uploadUserMedia(pendingImageFile, 'profile_image');
+                profileImageUrl = uploadResult.secure_url;
+            }
+
             // 1. Save to backend (name, phone, bio, skills, links)
             await updateProfileApi({
                 full_name: editName.trim() || undefined,
@@ -294,10 +319,23 @@ export default function Profile() {
                     github: profile.socials.github,
                     portfolio: profile.socials.portfolio,
                 },
+                profile_image_url: profileImageUrl || undefined,
             });
 
-            // 2. Save local-only fields (role, location, image) to localStorage
-            localStorage.setItem(`user_profile_${user.email}`, JSON.stringify(profile));
+            const nextProfile = {
+                ...profile,
+                image: profileImageUrl || null,
+            };
+
+            if (pendingImageUrlRef.current) {
+                URL.revokeObjectURL(pendingImageUrlRef.current);
+                pendingImageUrlRef.current = null;
+            }
+            setPendingImageFile(null);
+            setProfile(nextProfile);
+
+            // 2. Save local-only fields (role, location, Cloudinary image URL) to localStorage
+            localStorage.setItem(`user_profile_${user.email}`, JSON.stringify(nextProfile));
 
             // 3. Refresh user from backend so every component sees the new name
             await refreshUser();
@@ -316,11 +354,14 @@ export default function Profile() {
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setProfile(prev => ({ ...prev, image: reader.result as string }));
-            };
-            reader.readAsDataURL(file);
+            if (pendingImageUrlRef.current) {
+                URL.revokeObjectURL(pendingImageUrlRef.current);
+            }
+
+            const objectUrl = URL.createObjectURL(file);
+            pendingImageUrlRef.current = objectUrl;
+            setPendingImageFile(file);
+            setProfile(prev => ({ ...prev, image: objectUrl }));
         }
     };
 
