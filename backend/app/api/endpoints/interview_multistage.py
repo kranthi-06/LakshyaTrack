@@ -229,8 +229,8 @@ async def final_analysis(
 
     # Save progress snapshot
     try:
-        from app.services.progress_service import save_progress
-        save_progress(str(current_user.id), 0, db)
+        from app.services.progress_service import save_progress_snapshot
+        save_progress_snapshot(str(current_user.id), db)
     except Exception:
         pass
 

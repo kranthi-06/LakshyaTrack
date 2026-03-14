@@ -10,7 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
+
 
 from app.api.api import api_router
 from app.core.config import settings
@@ -326,8 +326,14 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 @app.on_event("startup")
 async def startup_event():
-    initialize_relational_database()
-    init_mongodb()
+    try:
+        initialize_relational_database()
+    except Exception:
+        logger.exception("Relational DB startup failed (non-fatal).")
+    try:
+        init_mongodb()
+    except Exception:
+        logger.exception("MongoDB startup failed (non-fatal).")
 
     if _is_vercel_runtime():
         logger.info("Skipping background scheduler in Vercel serverless runtime.")
@@ -346,20 +352,43 @@ async def shutdown_event():
     close_mongodb()
 
 
-class RequestTimingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+# ── Pure ASGI timing middleware (replaces BaseHTTPMiddleware to avoid
+#    Vercel serverless streaming / response corruption issues) ──────────
+
+class RequestTimingMiddleware:
+    """Lightweight ASGI middleware that adds X-Response-Time without
+    buffering or interfering with the response stream."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-        response.headers["X-Response-Time"] = f"{duration_ms:.1f}ms"
-        if duration_ms > 1000:
-            logger.warning(
-                "SLOW REQUEST: %s %s took %.0fms",
-                request.method,
-                request.url.path,
-                duration_ms,
-            )
-        return response
+
+        async def timed_send(message):
+            if message["type"] == "http.response.start":
+                duration_ms = (time.perf_counter() - start) * 1000
+                headers = list(message.get("headers", []))
+                headers.append(
+                    (b"x-response-time", f"{duration_ms:.1f}ms".encode())
+                )
+                message = {**message, "headers": headers}
+
+                # Extract path for slow-request logging
+                path = scope.get("path", "")
+                method = scope.get("method", "")
+                if duration_ms > 1000:
+                    logger.warning(
+                        "SLOW REQUEST: %s %s took %.0fms",
+                        method, path, duration_ms,
+                    )
+            await send(message)
+
+        await self.app(scope, receive, timed_send)
 
 
 app.add_middleware(RequestTimingMiddleware)

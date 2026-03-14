@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -27,7 +27,7 @@ def _serialize_for_mongo(value: Any) -> Any:
     return value
 
 
-def _insert_document(collection_name: str, payload: dict[str, Any]) -> Optional[str]:
+def _insert_document(collection_name: str, payload: Dict[str, Any]) -> Optional[str]:
     collection = get_collection(collection_name)
     if collection is None:
         return None
@@ -43,7 +43,7 @@ def _insert_document(collection_name: str, payload: dict[str, Any]) -> Optional[
 
 def record_user_progress(
     user_id: str,
-    progress_data: dict[str, Any],
+    progress_data: Dict[str, Any],
     snapshot_id: Optional[str] = None,
     source: str = "progress_snapshot",
 ) -> Optional[str]:
@@ -61,7 +61,7 @@ def record_user_progress(
 
 def record_resume_analysis(
     filename: str,
-    analysis: dict[str, Any],
+    analysis: Dict[str, Any],
     user_id: Optional[str] = None,
     resume_url: Optional[str] = None,
     job_description: str = "",
@@ -86,7 +86,7 @@ def record_task_log(
     task_name: str,
     status: str,
     source: str,
-    details: Optional[dict[str, Any]] = None,
+    details: Optional[Dict[str, Any]] = None,
     user_id: Optional[str] = None,
 ) -> Optional[str]:
     return _insert_document(
@@ -107,7 +107,7 @@ def record_ai_output(
     response: Any,
     provider: str,
     input_payload: Optional[Any] = None,
-    metadata: Optional[dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     return _insert_document(
         "ai_outputs",
