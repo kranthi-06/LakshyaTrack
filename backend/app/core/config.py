@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -10,6 +12,8 @@ class Settings(BaseSettings):
     # Get this from Supabase Dashboard > Settings > Database > Connection String
     DATABASE_URL: str = "postgresql://postgres.prrbjfnmuzxbtesrtvmc:Ashok%40yeddula011003@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
     # DATABASE_URL: str = "sqlite:///./local.db"
+    MONGODB_URI: str = ""
+    MONGODB_DB_NAME: str = "ai_career_platform"
     
     # API Access (for Auth/Storage if needed)
     SUPABASE_URL: str = ""
@@ -41,6 +45,6 @@ class Settings(BaseSettings):
     BLACK_ADMIN_EMAILS: str = ""  # Comma-separated emails for permanent super-admin access
     
     class Config:
-        env_file = ".env"
+        env_file = Path(__file__).resolve().parents[2] / ".env"
 
 settings = Settings()

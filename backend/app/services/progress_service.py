@@ -9,6 +9,7 @@ from sqlalchemy import func as sql_func
 from app.models.career import (
     Roadmap, QuizAttempt, InterviewSession, ProgressSnapshot
 )
+from app.services import document_store_service
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,36 @@ def save_progress_snapshot(
     db.add(snapshot)
     db.commit()
     db.refresh(snapshot)
+
+    progress_payload = {
+        "career_readiness_score": metrics["career_readiness_score"],
+        "resume_ats_score": metrics["resume_ats_score"],
+        "skill_completion_pct": metrics["skill_completion_pct"],
+        "quiz_avg_score": metrics["quiz_avg_score"],
+        "interview_avg_score": metrics["interview_avg_score"],
+        "total_skills": metrics["total_skills"],
+        "completed_skills": metrics["completed_skills"],
+        "total_quizzes": metrics["total_quizzes"],
+        "quizzes_passed": metrics["quizzes_passed"],
+        "total_interviews": metrics["total_interviews"],
+        "target_role": metrics["target_role"],
+        "snapshot_date": snapshot.snapshot_date,
+    }
+    document_store_service.record_user_progress(
+        user_id=user_id,
+        snapshot_id=str(snapshot.id),
+        progress_data=progress_payload,
+    )
+    document_store_service.record_task_log(
+        task_name="progress_snapshot",
+        status="success",
+        source="api",
+        user_id=user_id,
+        details={
+            "snapshot_id": str(snapshot.id),
+            "career_readiness_score": metrics["career_readiness_score"],
+        },
+    )
 
     return {
         "snapshot_id": str(snapshot.id),

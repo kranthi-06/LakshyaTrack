@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.api import deps
-from app.services import progress_service
+from app.services import document_store_service, progress_service
 
 router = APIRouter()
 
@@ -55,6 +55,13 @@ async def save_snapshot(
         )
         return snapshot
     except Exception as e:
+        document_store_service.record_task_log(
+            task_name="progress_snapshot",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id),
+            details={"error": str(e)},
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 

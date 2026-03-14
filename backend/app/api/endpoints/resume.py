@@ -2,7 +2,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
 from app.api import deps
-from app.services import cloudinary_service, media_service, resume_service
+from app.services import cloudinary_service, document_store_service, media_service, resume_service
 
 router = APIRouter()
 
@@ -63,6 +63,27 @@ async def analyze_resume(
         logger.info(f"Analysis started for {filename}")
         analysis = await resume_service.analyze_resume_with_ai(text, job_description)
         logger.info(f"Analysis completed for {filename}")
+
+        user_id = str(current_user.id) if current_user else None
+        document_store_service.record_resume_analysis(
+            filename=filename,
+            analysis=analysis,
+            user_id=user_id,
+            resume_url=upload_result.secure_url,
+            job_description=job_description,
+            source="resume_upload",
+        )
+        document_store_service.record_task_log(
+            task_name="resume_analysis",
+            status="success",
+            source="api",
+            user_id=user_id,
+            details={
+                "filename": filename,
+                "cloudinary_url": upload_result.secure_url,
+                "job_description_provided": bool(job_description.strip()),
+            },
+        )
         
         
         # --- NEW: Extract and auto-sync skills to profile ---
@@ -88,14 +109,42 @@ async def analyze_resume(
             "resume_url": upload_result.secure_url,
         }
     except HTTPException:
+        document_store_service.record_task_log(
+            task_name="resume_analysis",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id) if current_user else None,
+            details={"filename": file.filename or "resume.pdf"},
+        )
         raise
     except cloudinary_service.CloudinaryConfigurationError as e:
         logger.error(f"Cloudinary configuration error: {str(e)}")
+        document_store_service.record_task_log(
+            task_name="resume_analysis",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id) if current_user else None,
+            details={"filename": file.filename or "resume.pdf", "error": str(e)},
+        )
         raise HTTPException(status_code=500, detail=str(e))
     except ValueError as e:
+        document_store_service.record_task_log(
+            task_name="resume_analysis",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id) if current_user else None,
+            details={"filename": file.filename or "resume.pdf", "error": str(e)},
+        )
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error during resume analysis: {str(e)}", exc_info=True)
+        document_store_service.record_task_log(
+            task_name="resume_analysis",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id) if current_user else None,
+            details={"filename": file.filename or "resume.pdf", "error": str(e)},
+        )
         # Exposing error for user debugging
         raise HTTPException(status_code=500, detail=f"AI Engine Error: {str(e)}")
 
@@ -138,12 +187,45 @@ async def analyze_resume_text(
                 flag_modified(profile, "skills")
                 db.commit()
 
+        user_id = str(current_user.id) if current_user else None
+        document_store_service.record_resume_analysis(
+            filename=filename,
+            analysis=analysis,
+            user_id=user_id,
+            job_description=job_description,
+            source="resume_text",
+        )
+        document_store_service.record_task_log(
+            task_name="resume_analysis_text",
+            status="success",
+            source="api",
+            user_id=user_id,
+            details={
+                "filename": filename,
+                "job_description_provided": bool(job_description.strip()),
+            },
+        )
+
         return {
             "filename": filename,
             "analysis": analysis
         }
     except HTTPException:
+        document_store_service.record_task_log(
+            task_name="resume_analysis_text",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id) if current_user else None,
+            details={"filename": filename},
+        )
         raise
     except Exception as e:
         logger.error(f"Unexpected error during resume text analysis: {str(e)}", exc_info=True)
+        document_store_service.record_task_log(
+            task_name="resume_analysis_text",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id) if current_user else None,
+            details={"filename": filename, "error": str(e)},
+        )
         raise HTTPException(status_code=500, detail=f"AI Engine Error (Text): {str(e)}")

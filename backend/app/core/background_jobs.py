@@ -7,26 +7,48 @@ Handles:
 - AI enrichment of opportunities
 """
 import logging
+from typing import Any, Optional
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
-from app.services import opportunity_service
+from app.services import document_store_service, opportunity_service
 
 logger = logging.getLogger(__name__)
+
+
+def _log_job_event(job_name: str, status: str, details: Optional[dict[str, Any]] = None) -> None:
+    document_store_service.record_task_log(
+        task_name=job_name,
+        status=status,
+        source="scheduler",
+        details=details or {},
+    )
 
 
 async def check_expired_opportunities_job():
     """Check and mark opportunities as expired, remove duplicates."""
     logger.info("Running job: check_expired_opportunities_job")
+    _log_job_event("check_expired_opportunities_job", "started")
     db: Session = SessionLocal()
     try:
         expired = opportunity_service.cleanup_expired_opportunities(db)
         dupes = opportunity_service.remove_duplicates(db)
         logger.info(f"Marked {expired} expired, removed {dupes} duplicates.")
+        _log_job_event(
+            "check_expired_opportunities_job",
+            "success",
+            {"expired_count": expired, "duplicate_count": dupes},
+        )
     except Exception as e:
         logger.error(f"Error in check_expired_opportunities_job: {e}")
+        _log_job_event(
+            "check_expired_opportunities_job",
+            "failed",
+            {"error": str(e)},
+        )
     finally:
         db.close()
 
@@ -34,13 +56,24 @@ async def check_expired_opportunities_job():
 async def fetch_external_opportunities_job():
     """Fetch new opportunities from RSS feeds and public APIs."""
     logger.info("Running job: fetch_external_opportunities_job")
+    _log_job_event("fetch_external_opportunities_job", "started")
     db: Session = SessionLocal()
     try:
         rss_count = await opportunity_service.fetch_rss_opportunities(db)
         api_count = await opportunity_service.fetch_public_api_opportunities(db)
         logger.info(f"Fetched {rss_count} from RSS, {api_count} from APIs.")
+        _log_job_event(
+            "fetch_external_opportunities_job",
+            "success",
+            {"rss_count": rss_count, "api_count": api_count},
+        )
     except Exception as e:
         logger.error(f"Error in fetch_external_opportunities_job: {e}")
+        _log_job_event(
+            "fetch_external_opportunities_job",
+            "failed",
+            {"error": str(e)},
+        )
     finally:
         db.close()
 
@@ -48,6 +81,7 @@ async def fetch_external_opportunities_job():
 async def refresh_trending_opportunities_job():
     """Periodic AI-powered discovery for trending roles."""
     logger.info("Running job: refresh_trending_opportunities_job")
+    _log_job_event("refresh_trending_opportunities_job", "started")
     db: Session = SessionLocal()
 
     trending_roles = [
@@ -70,8 +104,18 @@ async def refresh_trending_opportunities_job():
                 db=db
             )
         logger.info("Trending opportunities refresh completed.")
+        _log_job_event(
+            "refresh_trending_opportunities_job",
+            "success",
+            {"roles_processed": trending_roles},
+        )
     except Exception as e:
         logger.error(f"Error in refresh_trending_opportunities_job: {e}")
+        _log_job_event(
+            "refresh_trending_opportunities_job",
+            "failed",
+            {"error": str(e)},
+        )
     finally:
         db.close()
 
@@ -79,12 +123,23 @@ async def refresh_trending_opportunities_job():
 async def enrich_opportunities_job():
     """Run AI enrichment on opportunities missing skill tags."""
     logger.info("Running job: enrich_opportunities_job")
+    _log_job_event("enrich_opportunities_job", "started")
     db: Session = SessionLocal()
     try:
         count = await opportunity_service.enrich_opportunities_with_ai(db)
         logger.info(f"Enriched {count} opportunities with AI skill tags.")
+        _log_job_event(
+            "enrich_opportunities_job",
+            "success",
+            {"enriched_count": count},
+        )
     except Exception as e:
         logger.error(f"Error in enrich_opportunities_job: {e}")
+        _log_job_event(
+            "enrich_opportunities_job",
+            "failed",
+            {"error": str(e)},
+        )
     finally:
         db.close()
 

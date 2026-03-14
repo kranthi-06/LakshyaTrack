@@ -15,4 +15,7 @@ psycopg2-binary
 email-validator
 google-generativeai
 groq
+apscheduler
 cloudinary
+pymongo
+dnspython
