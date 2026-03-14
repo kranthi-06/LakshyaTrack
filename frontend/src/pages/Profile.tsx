@@ -235,7 +235,7 @@ export default function Profile() {
         }
 
         // Initialise the editable name
-        setEditName(backendProfile?.full_name || user?.full_name || '');
+        setEditName(backendProfile?.full_name || user?.full_name || user.email.split('@')[0] || '');
 
         setProfile({
             role: localProfile?.role || "",
@@ -383,7 +383,9 @@ export default function Profile() {
     };
 
     // Derived display values
-    const displayName = isEditing ? editName : (user?.profile?.full_name || user?.full_name || 'Your Profile');
+    const displayName = isEditing
+        ? (editName || user?.email?.split('@')[0] || 'Your Profile')
+        : (user?.profile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'Your Profile');
     const displayEmail = user?.email || '';
     const displayInitial = (displayName && displayName !== 'Your Profile' ? displayName[0] : displayEmail[0] || 'U').toUpperCase();
 

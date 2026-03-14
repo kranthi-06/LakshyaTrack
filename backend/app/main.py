@@ -26,7 +26,8 @@ from app.models.career import (
     QuizAttempt,
     Roadmap,
 )
-from app.models.user import User
+from app.models.resume import SavedResume
+from app.models.user import Blacklist, Profile, User
 
 # Configure logging early so startup failures appear in Vercel logs.
 logging.basicConfig(
@@ -64,6 +65,52 @@ def initialize_relational_database() -> None:
             inspector = inspect(conn)
             table_names = set(inspector.get_table_names())
 
+            if "users" in table_names:
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "users",
+                    "hashed_password",
+                    "ALTER TABLE users ADD COLUMN hashed_password VARCHAR",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "users",
+                    "is_verified",
+                    "ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT TRUE NOT NULL",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "users",
+                    "role",
+                    "ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user' NOT NULL",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "users",
+                    "is_blacklisted",
+                    "ALTER TABLE users ADD COLUMN is_blacklisted BOOLEAN DEFAULT FALSE NOT NULL",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "users",
+                    "last_active_at",
+                    "ALTER TABLE users ADD COLUMN last_active_at TIMESTAMPTZ",
+                )
+                conn.execute(
+                    text(
+                        "UPDATE users "
+                        "SET role = COALESCE(role, 'user'), "
+                        "    is_blacklisted = COALESCE(is_blacklisted, FALSE), "
+                        "    is_verified = COALESCE(is_verified, TRUE)"
+                    )
+                )
+                conn.commit()
+
             if "profiles" in table_names:
                 _ensure_column(
                     conn,
@@ -100,6 +147,76 @@ def initialize_relational_database() -> None:
                     "project_image_url",
                     "ALTER TABLE profiles ADD COLUMN project_image_url VARCHAR",
                 )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "profiles",
+                    "links",
+                    "ALTER TABLE profiles ADD COLUMN links JSONB DEFAULT '{}'::jsonb",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "profiles",
+                    "skills",
+                    "ALTER TABLE profiles ADD COLUMN skills JSONB DEFAULT '[]'::jsonb",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "profiles",
+                    "activity_log",
+                    "ALTER TABLE profiles ADD COLUMN activity_log JSONB DEFAULT '[]'::jsonb",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "profiles",
+                    "role",
+                    "ALTER TABLE profiles ADD COLUMN role VARCHAR DEFAULT 'user'",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "profiles",
+                    "is_blacklisted",
+                    "ALTER TABLE profiles ADD COLUMN is_blacklisted BOOLEAN DEFAULT FALSE",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "profiles",
+                    "last_active_at",
+                    "ALTER TABLE profiles ADD COLUMN last_active_at TIMESTAMPTZ",
+                )
+                if "users" in table_names:
+                    conn.execute(
+                        text(
+                            "INSERT INTO profiles (id, full_name) "
+                            "SELECT u.id, split_part(u.email, '@', 1) "
+                            "FROM users u "
+                            "LEFT JOIN profiles p ON p.id = u.id "
+                            "WHERE p.id IS NULL"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "UPDATE profiles p "
+                            "SET full_name = split_part(u.email, '@', 1) "
+                            "FROM users u "
+                            "WHERE p.id = u.id AND (p.full_name IS NULL OR BTRIM(p.full_name) = '')"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "UPDATE profiles p "
+                            "SET role = COALESCE(p.role, u.role, 'user'), "
+                            "    is_blacklisted = COALESCE(p.is_blacklisted, u.is_blacklisted, FALSE), "
+                            "    last_active_at = COALESCE(p.last_active_at, u.last_active_at) "
+                            "FROM users u "
+                            "WHERE p.id = u.id"
+                        )
+                    )
                 conn.execute(
                     text(
                         "UPDATE profiles "
@@ -116,6 +233,27 @@ def initialize_relational_database() -> None:
                     "saved_resumes",
                     "resume_url",
                     "ALTER TABLE saved_resumes ADD COLUMN resume_url VARCHAR",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "saved_resumes",
+                    "target_role",
+                    "ALTER TABLE saved_resumes ADD COLUMN target_role VARCHAR",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "saved_resumes",
+                    "ats_score",
+                    "ALTER TABLE saved_resumes ADD COLUMN ats_score DOUBLE PRECISION",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "saved_resumes",
+                    "is_primary",
+                    "ALTER TABLE saved_resumes ADD COLUMN is_primary BOOLEAN DEFAULT FALSE",
                 )
 
             if "roadmaps" in table_names:
@@ -148,6 +286,22 @@ def initialize_relational_database() -> None:
                     "opportunities",
                     "provider",
                     "ALTER TABLE opportunities ADD COLUMN provider VARCHAR",
+                )
+
+            if "quiz_attempts" in table_names:
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "quiz_attempts",
+                    "violation_flag",
+                    "ALTER TABLE quiz_attempts ADD COLUMN violation_flag BOOLEAN DEFAULT FALSE",
+                )
+                _ensure_column(
+                    conn,
+                    inspector,
+                    "quiz_attempts",
+                    "terminated",
+                    "ALTER TABLE quiz_attempts ADD COLUMN terminated BOOLEAN DEFAULT FALSE",
                 )
 
         logger.info("Relational database startup checks completed.")
