@@ -40,6 +40,9 @@ import {
     fetchExternalSources,
     liveSearchOpportunities,
 } from '../services/careerPlatform';
+import { useFeatureGate } from '../hooks/useFeatureGate';
+import PremiumGate from '../components/PremiumGate';
+import BlurOverlay from '../components/BlurOverlay';
 
 // ════════════════════════════════════════════════════════════
 // TYPES
@@ -107,6 +110,14 @@ const getCategoryBg = (cat: string) => {
 // ════════════════════════════════════════════════════════════
 
 export default function Jobs() {
+    // ── Subscription gate for job portal ──
+    const { isLocked, gateProps } = useFeatureGate(
+        'job_portal',
+        'Opportunity Portal',
+        2,
+        'Access curated jobs, internships, courses, and certifications. Upgrade to Stage 2 to unlock.',
+    );
+
     // ── State ────────────────────────────────────────────
     const [activeCategory, setActiveCategory] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
@@ -477,6 +488,14 @@ export default function Jobs() {
                         })}
                     </div>
 
+                    {/* BlurOverlay for locked content */}
+                    <BlurOverlay
+                        isLocked={isLocked}
+                        featureName="Opportunity Portal"
+                        message="Upgrade to Stage 2 to access curated jobs, internships, courses, and certifications."
+                        blurAmount={6}
+                    >
+
                     {/* ── AI Recommendations Section ──────────────── */}
                     <AnimatePresence>
                         {recommendations.length > 0 && (
@@ -745,6 +764,10 @@ export default function Jobs() {
                     )}
                         </>
                     )}
+                    </BlurOverlay>
+
+                    {/* Premium Gate Modal */}
+                    <PremiumGate {...gateProps} />
                 </main>        </div>
     );
 }

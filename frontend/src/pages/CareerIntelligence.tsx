@@ -39,6 +39,8 @@ import {
     setActiveRoadmap,
     deleteRoadmap as deleteRoadmapApi,
 } from '../services/careerPlatform';
+import { useFeatureGate } from '../hooks/useFeatureGate';
+import PremiumGate from '../components/PremiumGate';
 
 type Step = 'domains' | 'roles' | 'analysis' | 'roadmap';
 
@@ -144,6 +146,14 @@ interface RoadmapSummary {
 }
 
 export default function CareerIntelligence() {
+    // ── Subscription gate for roadmap generation ──
+    const { isLocked, guardAction, gateProps } = useFeatureGate(
+        'roadmap_generate',
+        'AI Learning Roadmaps',
+        1,
+        'Generate personalized AI learning roadmaps to achieve your career goals. Upgrade to unlock.',
+    );
+
     const [step, setStep] = useState<Step>('domains');
     const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
@@ -202,58 +212,61 @@ export default function CareerIntelligence() {
 
     // Generate roadmap when role is selected
     const handleRoleSelect = async (roleTitle: string) => {
-        setSelectedRole(roleTitle);
-        setIsGenerating(true);
-        setStep('roadmap');
+        guardAction(async () => {
+            setSelectedRole(roleTitle);
+            setIsGenerating(true);
+            setStep('roadmap');
 
-        try {
-            const role = jobRoles.find(r => r.title === roleTitle);
-            const res = await generateRoadmap(
-                roleTitle,
-                role?.skills || [],
-                []
-            );
-            setRoadmapData(res.roadmap_data);
-            setRoadmapId(res.id);
-            setActiveTopicName(res.topic_name || roleTitle);
-            await fetchAllRoadmaps();
-        } catch (error) {
-            console.error('Failed to generate roadmap:', error);
-            window.location.href = '/dashboard';
-        } finally {
-            setIsGenerating(false);
-        }
+            try {
+                const role = jobRoles.find(r => r.title === roleTitle);
+                const res = await generateRoadmap(
+                    roleTitle,
+                    role?.skills || [],
+                    []
+                );
+                setRoadmapData(res.roadmap_data);
+                setRoadmapId(res.id);
+                setActiveTopicName(res.topic_name || roleTitle);
+                await fetchAllRoadmaps();
+            } catch (error) {
+                console.error('Failed to generate roadmap:', error);
+                window.location.href = '/dashboard';
+            } finally {
+                setIsGenerating(false);
+            }
+        });
     };
 
     // ── Create a new custom roadmap from the modal ─────
     const handleCreateNewRoadmap = async () => {
         if (!newTopic.trim()) return;
+        guardAction(async () => {
+            setShowNewRoadmapModal(false);
+            setIsGenerating(true);
+            setStep('roadmap');
+            setSelectedRole(newTopic.trim());
 
-        setShowNewRoadmapModal(false);
-        setIsGenerating(true);
-        setStep('roadmap');
-        setSelectedRole(newTopic.trim());
-
-        try {
-            const res = await generateRoadmap(
-                newTopic.trim(),
-                [],
-                [],
-                newTopic.trim(),
-                newDifficulty || undefined
-            );
-            setRoadmapData(res.roadmap_data);
-            setRoadmapId(res.id);
-            setActiveTopicName(res.topic_name || newTopic.trim());
-            setSelectedRole(res.target_role);
-            await fetchAllRoadmaps();
-        } catch (error) {
-            console.error('Failed to generate custom roadmap:', error);
-        } finally {
-            setIsGenerating(false);
-            setNewTopic('');
-            setNewDifficulty('');
-        }
+            try {
+                const res = await generateRoadmap(
+                    newTopic.trim(),
+                    [],
+                    [],
+                    newTopic.trim(),
+                    newDifficulty || undefined
+                );
+                setRoadmapData(res.roadmap_data);
+                setRoadmapId(res.id);
+                setActiveTopicName(res.topic_name || newTopic.trim());
+                setSelectedRole(res.target_role);
+                await fetchAllRoadmaps();
+            } catch (error) {
+                console.error('Failed to generate custom roadmap:', error);
+            } finally {
+                setIsGenerating(false);
+                setNewTopic('');
+                setNewDifficulty('');
+            }
+        });
     };
 
     // ── Switch active roadmap ────────────────
@@ -881,6 +894,8 @@ export default function CareerIntelligence() {
                     </motion.div>
                 )}
             </AnimatePresence>
+            {/* Premium Gate Modal */}
+            <PremiumGate {...gateProps} />
         </div>
     );
 }

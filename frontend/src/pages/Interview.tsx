@@ -22,6 +22,8 @@ import {
     Volume2, VolumeX, Pause, RotateCcw, Gauge
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useFeatureGate } from '../hooks/useFeatureGate';
+import PremiumGate from '../components/PremiumGate';
 type InterviewStep = 'landing' | 'setup' | 'screening' | 'technical' | 'coding' | 'hr' | 'stage_result' | 'final_results';
 type InterviewMode = 'text' | 'voice';
 type InterviewPath = 'resume_screening' | 'direct_skill';
@@ -42,6 +44,14 @@ const STAGES = [
 ];
 
 export default function Interview() {
+    // ── Subscription gate for interview feature ──
+    const { isLocked, guardAction, gateProps } = useFeatureGate(
+        'interview_start',
+        'AI Interview Simulator',
+        2,
+        'Practice with our AI-powered 4-stage interview simulator. Upgrade to Stage 2 or purchase a micro-plan to unlock.',
+    );
+
     const [step, setStep] = useState<InterviewStep>('landing');
     const [mode, setMode] = useState<InterviewMode>('text');
     const [position, setPosition] = useState('Software Engineer');
@@ -176,20 +186,22 @@ export default function Interview() {
     };
 
     const handleStartInterview = async () => {
-        setIsLoading(true);
-        try {
-            const session = await createMultistageSession(position, interviewPath, 'intermediate');
-            setSessionId(session.id);
-            setCurrentStageIdx(0);
-            setQuestionIndex(0);
-            setHistory([]);
-            setStageEvals({});
-            setFinalAnalysis(null);
-            setCurrentStageEval(null);
-            await fetchQuestion('screening', []);
-            setStep('screening');
-        } catch (e) { console.error('Start error:', e); }
-        setIsLoading(false);
+        guardAction(async () => {
+            setIsLoading(true);
+            try {
+                const session = await createMultistageSession(position, interviewPath, 'intermediate');
+                setSessionId(session.id);
+                setCurrentStageIdx(0);
+                setQuestionIndex(0);
+                setHistory([]);
+                setStageEvals({});
+                setFinalAnalysis(null);
+                setCurrentStageEval(null);
+                await fetchQuestion('screening', []);
+                setStep('screening');
+            } catch (e) { console.error('Start error:', e); }
+            setIsLoading(false);
+        });
     };
 
     const fetchQuestion = async (stage: string, hist: any[]) => {
@@ -474,11 +486,14 @@ export default function Interview() {
                                     )}
 
                                     <Button onClick={handleStartInterview} disabled={isLoading}
-                                        className="w-full h-20 rounded-[2rem] bg-[#b195ff] hover:bg-[#a284ff] text-white font-black text-xl shadow-xl shadow-purple-100 transition-all group"
+                                        className={`w-full h-20 rounded-[2rem] bg-[#b195ff] hover:bg-[#a284ff] text-white font-black text-xl shadow-xl shadow-purple-100 transition-all group ${isLocked ? 'opacity-80' : ''}`}
                                     >
-                                        {isLoading ? <><Loader2 className="w-6 h-6 animate-spin mr-3" /> Preparing...</> : <>Begin Interview <ArrowRight className="ml-3 w-6 h-6 group-hover:translate-x-1 transition-transform" /></>}
+                                        {isLoading ? <><Loader2 className="w-6 h-6 animate-spin mr-3" /> Preparing...</> : isLocked ? <><Lock className="w-6 h-6 mr-3" /> Unlock Interview <ArrowRight className="ml-3 w-6 h-6" /></> : <>Begin Interview <ArrowRight className="ml-3 w-6 h-6 group-hover:translate-x-1 transition-transform" /></>}
                                     </Button>
                                 </Card>
+
+                                {/* Premium Gate Modal */}
+                                <PremiumGate {...gateProps} />
                             </motion.div>
                         )}
 

@@ -5,7 +5,7 @@ import {
     Palette, Download, FileText, FileType2, Eye, Sparkles,
     CheckCircle2, Loader2, Wand2, PanelRightOpen, PanelRightClose,
     ChevronDown, ChevronRight, Search, Filter, GripVertical, Save,
-    Maximize2, X, AlertTriangle, FileStack, ArrowLeft, Layers
+    Maximize2, X, AlertTriangle, FileStack, ArrowLeft, Layers, Lock
 } from 'lucide-react';
 import { SectionCard } from './components';
 import {
@@ -21,6 +21,8 @@ import { exportToPDF, exportToDOCX } from './exportUtils';
 import { optimizeResumeContent } from '../../services/resumeBuilder';
 import { saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
 import { SidePanelEditor } from './SidePanelEditor';
+import { useFeatureGate } from '../../hooks/useFeatureGate';
+import PremiumGate from '../../components/PremiumGate';
 
 interface EditMeta {
     id: string;
@@ -103,6 +105,20 @@ function MiniThumb({ base, color }: { base: BaseTemplate; color: string }) {
 const A4_PAGE_HEIGHT = 1122;
 
 export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisualBuilderProps) {
+    // ── Subscription gate for download/export features ──
+    const { isLocked: isDownloadLocked, guardAction: guardDownload, gateProps: downloadGateProps } = useFeatureGate(
+        'resume_download',
+        'Resume Download',
+        1,
+        'Download your resume as PDF, DOCX, or JSON. Upgrade to unlock this feature.',
+    );
+    const { isLocked: isSaveLocked, guardAction: guardSave, gateProps: saveGateProps } = useFeatureGate(
+        'resume_builder',
+        'Resume Save',
+        1,
+        'Save your resume to your profile for future editing. Upgrade to unlock this feature.',
+    );
+
     const [selectedId, setSelectedId] = useState('ats-modern');
     const [customColor, setCustomColor] = useState<string | null>(null);
     const [exporting, setExporting] = useState<string | null>(null);
@@ -269,21 +285,25 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
     };
 
     const handleExportPDF = async () => {
-        setExporting('pdf');
-        try {
-            const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
-            await exportToPDF('resume-preview-container', `${name}_Resume.pdf`);
-        } catch (e) { console.error('PDF export error:', e); }
-        setExporting(null);
+        guardDownload(async () => {
+            setExporting('pdf');
+            try {
+                const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
+                await exportToPDF('resume-preview-container', `${name}_Resume.pdf`);
+            } catch (e) { console.error('PDF export error:', e); }
+            setExporting(null);
+        });
     };
 
     const handleExportDOCX = async () => {
-        setExporting('docx');
-        try {
-            const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
-            await exportToDOCX('resume-preview-container', `${name}_Resume.doc`);
-        } catch (e) { console.error('DOCX export error:', e); }
-        setExporting(null);
+        guardDownload(async () => {
+            setExporting('docx');
+            try {
+                const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
+                await exportToDOCX('resume-preview-container', `${name}_Resume.doc`);
+            } catch (e) { console.error('DOCX export error:', e); }
+            setExporting(null);
+        });
     };
 
     // Build common payload
@@ -305,16 +325,18 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
 
     // Entry point: user clicks "Save to Profile"
     const handleSaveToProfile = () => {
-        if (editMeta) {
-            // Editing mode → ask replace or copy
-            setSaveModeStep('choose');
-            setCopyNameInput('');
-            setShowSaveModeModal(true);
-        } else {
-            // Fresh resume → ask for a name
-            setResumeNameInput(`${data.target_role || 'Untitled'} Resume`);
-            setShowNameModal(true);
-        }
+        guardSave(() => {
+            if (editMeta) {
+                // Editing mode → ask replace or copy
+                setSaveModeStep('choose');
+                setCopyNameInput('');
+                setShowSaveModeModal(true);
+            } else {
+                // Fresh resume → ask for a name
+                setResumeNameInput(`${data.target_role || 'Untitled'} Resume`);
+                setShowNameModal(true);
+            }
+        });
     };
 
     // Save fresh resume with a name
@@ -363,19 +385,21 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
     };
 
     const handleDownloadJSON = () => {
-        const output = {
-            meta: { generated_at: new Date().toISOString(), target_role: data.target_role, template: selectedId, ats_score: data.ats?.score },
-            personal_info: data.personal,
-            education: data.education,
-            experience: data.experience,
-            projects: data.projects,
-            skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
-        };
-        const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
-        URL.revokeObjectURL(url);
+        guardDownload(() => {
+            const output = {
+                meta: { generated_at: new Date().toISOString(), target_role: data.target_role, template: selectedId, ats_score: data.ats?.score },
+                personal_info: data.personal,
+                education: data.education,
+                experience: data.experience,
+                projects: data.projects,
+                skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
+            };
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
+            URL.revokeObjectURL(url);
+        });
     };
 
     return (
@@ -564,22 +588,30 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
                     {/* ── EXPORT ACTIONS BAR ── */}
                     <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-4 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-gray-200/60 dark:border-slate-700/60 flex-shrink-0">
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportPDF} disabled={!!exporting}
-                            className="px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold text-xs shadow-md shadow-red-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5">
+                            className={`relative px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold text-xs shadow-md shadow-red-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${isDownloadLocked ? 'opacity-75' : ''}`}>
                             {exporting === 'pdf' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...</> : <><FileText className="w-3.5 h-3.5" /> PDF</>}
+                            {isDownloadLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportDOCX} disabled={!!exporting}
-                            className="px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5">
+                            className={`relative px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${isDownloadLocked ? 'opacity-75' : ''}`}>
                             {exporting === 'docx' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...</> : <><FileType2 className="w-3.5 h-3.5" /> DOCX</>}
+                            {isDownloadLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleDownloadJSON}
-                            className="px-5 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl font-bold text-xs shadow-md hover:bg-gray-800 transition-all flex items-center gap-1.5">
+                            className={`relative px-5 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl font-bold text-xs shadow-md hover:bg-gray-800 transition-all flex items-center gap-1.5 ${isDownloadLocked ? 'opacity-75' : ''}`}>
                             <Download className="w-3.5 h-3.5" /> JSON
+                            {isDownloadLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSaveToProfile} disabled={saving}
-                            className="px-5 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-bold text-xs shadow-md shadow-green-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5">
+                            className={`relative px-5 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-bold text-xs shadow-md shadow-green-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${isSaveLocked ? 'opacity-75' : ''}`}>
                             {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</> : saved ? <><CheckCircle2 className="w-3.5 h-3.5" /> Saved!</> : <><Save className="w-3.5 h-3.5" /> Save</>}
+                            {isSaveLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                     </div>
+
+                    {/* Premium Gate Modals */}
+                    <PremiumGate {...downloadGateProps} />
+                    <PremiumGate {...saveGateProps} />
                 </div>
 
                 {/* ═══════════════════════════════════════════════ */}
