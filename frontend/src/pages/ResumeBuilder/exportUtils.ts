@@ -162,7 +162,10 @@ export async function exportToPDF(elementId: string, _filename: string = 'resume
 
     // ── 6. Wait for stylesheets to load, then print ────────────────
     await new Promise<void>((resolve) => {
+        let isDone = false;
         const onReady = () => {
+            if (isDone) return;
+            isDone = true;
             setTimeout(() => {
                 try {
                     iframe.contentWindow?.print();
@@ -173,7 +176,9 @@ export async function exportToPDF(elementId: string, _filename: string = 'resume
                 }
                 // Cleanup after a delay to let print dialog finish
                 setTimeout(() => {
-                    document.body.removeChild(iframe);
+                    if (document.body.contains(iframe)) {
+                        document.body.removeChild(iframe);
+                    }
                     resolve();
                 }, 1000);
             }, 500); // Let CSS settle
