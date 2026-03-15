@@ -205,7 +205,7 @@ export default function Landing() {
                             </Button>
                         </Link>
                         <Link to="/register">
-                            <Button className={`font-black rounded-lg sm:rounded-xl transition-all h-9 sm:h-11 px-4 sm:px-8 text-xs sm:text-sm shadow-xl hover:shadow-2xl hover:-translate-y-1 ${scrolled ? 'bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white' : 'bg-white text-purple-900 hover:bg-yellow-300'
+                            <Button className={`font-black rounded-lg sm:rounded-xl transition-all h-9 sm:h-11 px-4 sm:px-8 text-xs sm:text-sm shadow-xl hover:shadow-2xl hover:-translate-y-1 ${scrolled ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white' : 'bg-white text-slate-800 hover:bg-yellow-300'
                                 }`}>
                                 Get Started
                             </Button>
@@ -284,7 +284,7 @@ export default function Landing() {
                                 className="flex flex-wrap gap-4"
                             >
                                 <Link to="/register">
-                                    <Button size="lg" className="h-14 sm:h-16 px-8 sm:px-10 rounded-2xl bg-white text-purple-900 hover:bg-yellow-300 font-black text-base sm:text-lg shadow-[0_20px_40px_-10px_rgba(255,255,255,0.3)] hover:-translate-y-1 transition-all flex items-center gap-2 group w-full sm:w-auto justify-center">
+                                    <Button size="lg" className="h-14 sm:h-16 px-8 sm:px-10 rounded-2xl bg-white text-slate-800 hover:bg-yellow-300 font-black text-base sm:text-lg shadow-[0_20px_40px_-10px_rgba(255,255,255,0.3)] hover:-translate-y-1 transition-all flex items-center gap-2 group w-full sm:w-auto justify-center">
                                         Launch Career
                                         <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                     </Button>
@@ -404,7 +404,7 @@ export default function Landing() {
                             whileInView={{ opacity: 1, y: 0 }}
                             className="text-3xl sm:text-5xl md:text-7xl font-black tracking-tighter text-gray-900"
                         >
-                            Built for <span className="bg-gradient-to-r from-[#667eea] to-[#764ba2] bg-clip-text text-transparent italic px-2">Greatness</span>
+                            Built for <span className="bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent italic px-2">Greatness</span>
                         </motion.h2>
                     </div>
 
