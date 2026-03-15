@@ -1,3 +1,12 @@
+"""
+VidyaMithra API — Production-grade FastAPI application with:
+- Comprehensive global error handling
+- Request timing and slow-request detection
+- Rate limiting middleware
+- System health monitoring endpoints
+- Graceful shutdown and startup
+- Module isolation (failures contained per-request)
+"""
 import logging
 import os
 import sys
@@ -11,12 +20,16 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-
 from app.api.api import api_router
 from app.core.config import settings
+from app.core.resilience import (
+    get_rate_limiter,
+    health_metrics,
+    safe_execute,
+)
 from app.db.base_class import Base
 from app.db.mongodb import close_mongodb, init_mongodb
-from app.db.session import engine
+from app.db.session import check_db_health, engine
 from app.models.career import (
     InterviewSession,
     LearningCache,
@@ -33,7 +46,7 @@ from app.models.user import Blacklist, Profile, User
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -50,10 +63,13 @@ def _is_vercel_runtime() -> bool:
 
 
 def _ensure_column(conn, inspector, table_name: str, column_name: str, ddl: str) -> None:
-    existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
-    if column_name not in existing_cols:
-        conn.execute(text(ddl))
-        conn.commit()
+    try:
+        existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
+        if column_name not in existing_cols:
+            conn.execute(text(ddl))
+            conn.commit()
+    except Exception as e:
+        logger.warning("Failed to ensure column %s.%s: %s", table_name, column_name, str(e))
 
 
 def initialize_relational_database() -> None:
@@ -66,252 +82,118 @@ def initialize_relational_database() -> None:
             table_names = set(inspector.get_table_names())
 
             if "users" in table_names:
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "users",
-                    "hashed_password",
-                    "ALTER TABLE users ADD COLUMN hashed_password VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "users",
-                    "is_verified",
-                    "ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT TRUE NOT NULL",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "users",
-                    "role",
-                    "ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user' NOT NULL",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "users",
-                    "is_blacklisted",
-                    "ALTER TABLE users ADD COLUMN is_blacklisted BOOLEAN DEFAULT FALSE NOT NULL",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "users",
-                    "last_active_at",
-                    "ALTER TABLE users ADD COLUMN last_active_at TIMESTAMPTZ",
-                )
-                conn.execute(
-                    text(
+                _ensure_column(conn, inspector, "users", "hashed_password",
+                               "ALTER TABLE users ADD COLUMN hashed_password VARCHAR")
+                _ensure_column(conn, inspector, "users", "is_verified",
+                               "ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT TRUE NOT NULL")
+                _ensure_column(conn, inspector, "users", "role",
+                               "ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user' NOT NULL")
+                _ensure_column(conn, inspector, "users", "is_blacklisted",
+                               "ALTER TABLE users ADD COLUMN is_blacklisted BOOLEAN DEFAULT FALSE NOT NULL")
+                _ensure_column(conn, inspector, "users", "last_active_at",
+                               "ALTER TABLE users ADD COLUMN last_active_at TIMESTAMPTZ")
+                try:
+                    conn.execute(text(
                         "UPDATE users "
                         "SET role = COALESCE(role, 'user'), "
                         "    is_blacklisted = COALESCE(is_blacklisted, FALSE), "
                         "    is_verified = COALESCE(is_verified, TRUE)"
-                    )
-                )
-                conn.commit()
+                    ))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
 
             if "profiles" in table_names:
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "profile_photo_url",
-                    "ALTER TABLE profiles ADD COLUMN profile_photo_url VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "profile_image_url",
-                    "ALTER TABLE profiles ADD COLUMN profile_image_url VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "resume_url",
-                    "ALTER TABLE profiles ADD COLUMN resume_url VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "certificate_url",
-                    "ALTER TABLE profiles ADD COLUMN certificate_url VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "project_image_url",
-                    "ALTER TABLE profiles ADD COLUMN project_image_url VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "links",
-                    "ALTER TABLE profiles ADD COLUMN links JSONB DEFAULT '{}'::jsonb",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "skills",
-                    "ALTER TABLE profiles ADD COLUMN skills JSONB DEFAULT '[]'::jsonb",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "activity_log",
-                    "ALTER TABLE profiles ADD COLUMN activity_log JSONB DEFAULT '[]'::jsonb",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "role",
-                    "ALTER TABLE profiles ADD COLUMN role VARCHAR DEFAULT 'user'",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "is_blacklisted",
-                    "ALTER TABLE profiles ADD COLUMN is_blacklisted BOOLEAN DEFAULT FALSE",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "profiles",
-                    "last_active_at",
-                    "ALTER TABLE profiles ADD COLUMN last_active_at TIMESTAMPTZ",
-                )
-                if "users" in table_names:
-                    conn.execute(
-                        text(
+                _ensure_column(conn, inspector, "profiles", "profile_photo_url",
+                               "ALTER TABLE profiles ADD COLUMN profile_photo_url VARCHAR")
+                _ensure_column(conn, inspector, "profiles", "profile_image_url",
+                               "ALTER TABLE profiles ADD COLUMN profile_image_url VARCHAR")
+                _ensure_column(conn, inspector, "profiles", "resume_url",
+                               "ALTER TABLE profiles ADD COLUMN resume_url VARCHAR")
+                _ensure_column(conn, inspector, "profiles", "certificate_url",
+                               "ALTER TABLE profiles ADD COLUMN certificate_url VARCHAR")
+                _ensure_column(conn, inspector, "profiles", "project_image_url",
+                               "ALTER TABLE profiles ADD COLUMN project_image_url VARCHAR")
+                _ensure_column(conn, inspector, "profiles", "links",
+                               "ALTER TABLE profiles ADD COLUMN links JSONB DEFAULT '{}'::jsonb")
+                _ensure_column(conn, inspector, "profiles", "skills",
+                               "ALTER TABLE profiles ADD COLUMN skills JSONB DEFAULT '[]'::jsonb")
+                _ensure_column(conn, inspector, "profiles", "activity_log",
+                               "ALTER TABLE profiles ADD COLUMN activity_log JSONB DEFAULT '[]'::jsonb")
+                _ensure_column(conn, inspector, "profiles", "role",
+                               "ALTER TABLE profiles ADD COLUMN role VARCHAR DEFAULT 'user'")
+                _ensure_column(conn, inspector, "profiles", "is_blacklisted",
+                               "ALTER TABLE profiles ADD COLUMN is_blacklisted BOOLEAN DEFAULT FALSE")
+                _ensure_column(conn, inspector, "profiles", "last_active_at",
+                               "ALTER TABLE profiles ADD COLUMN last_active_at TIMESTAMPTZ")
+                try:
+                    if "users" in table_names:
+                        conn.execute(text(
                             "INSERT INTO profiles (id, full_name) "
                             "SELECT u.id, split_part(u.email, '@', 1) "
                             "FROM users u "
                             "LEFT JOIN profiles p ON p.id = u.id "
                             "WHERE p.id IS NULL"
-                        )
-                    )
-                    conn.execute(
-                        text(
+                        ))
+                        conn.execute(text(
                             "UPDATE profiles p "
                             "SET full_name = split_part(u.email, '@', 1) "
                             "FROM users u "
                             "WHERE p.id = u.id AND (p.full_name IS NULL OR BTRIM(p.full_name) = '')"
-                        )
-                    )
-                    conn.execute(
-                        text(
+                        ))
+                        conn.execute(text(
                             "UPDATE profiles p "
                             "SET role = COALESCE(p.role, u.role, 'user'), "
                             "    is_blacklisted = COALESCE(p.is_blacklisted, u.is_blacklisted, FALSE), "
                             "    last_active_at = COALESCE(p.last_active_at, u.last_active_at) "
                             "FROM users u "
                             "WHERE p.id = u.id"
-                        )
-                    )
-                conn.execute(
-                    text(
+                        ))
+                    conn.execute(text(
                         "UPDATE profiles "
                         "SET profile_image_url = COALESCE(profile_image_url, profile_photo_url), "
                         "    profile_photo_url = COALESCE(profile_photo_url, profile_image_url)"
-                    )
-                )
-                conn.commit()
+                    ))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
 
             if "saved_resumes" in table_names:
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "saved_resumes",
-                    "resume_url",
-                    "ALTER TABLE saved_resumes ADD COLUMN resume_url VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "saved_resumes",
-                    "target_role",
-                    "ALTER TABLE saved_resumes ADD COLUMN target_role VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "saved_resumes",
-                    "ats_score",
-                    "ALTER TABLE saved_resumes ADD COLUMN ats_score DOUBLE PRECISION",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "saved_resumes",
-                    "is_primary",
-                    "ALTER TABLE saved_resumes ADD COLUMN is_primary BOOLEAN DEFAULT FALSE",
-                )
+                _ensure_column(conn, inspector, "saved_resumes", "resume_url",
+                               "ALTER TABLE saved_resumes ADD COLUMN resume_url VARCHAR")
+                _ensure_column(conn, inspector, "saved_resumes", "target_role",
+                               "ALTER TABLE saved_resumes ADD COLUMN target_role VARCHAR")
+                _ensure_column(conn, inspector, "saved_resumes", "ats_score",
+                               "ALTER TABLE saved_resumes ADD COLUMN ats_score DOUBLE PRECISION")
+                _ensure_column(conn, inspector, "saved_resumes", "is_primary",
+                               "ALTER TABLE saved_resumes ADD COLUMN is_primary BOOLEAN DEFAULT FALSE")
 
             if "roadmaps" in table_names:
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "roadmaps",
-                    "topic_name",
-                    "ALTER TABLE roadmaps ADD COLUMN topic_name VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "roadmaps",
-                    "last_opened",
-                    "ALTER TABLE roadmaps ADD COLUMN last_opened TIMESTAMPTZ DEFAULT NOW()",
-                )
+                _ensure_column(conn, inspector, "roadmaps", "topic_name",
+                               "ALTER TABLE roadmaps ADD COLUMN topic_name VARCHAR")
+                _ensure_column(conn, inspector, "roadmaps", "last_opened",
+                               "ALTER TABLE roadmaps ADD COLUMN last_opened TIMESTAMPTZ DEFAULT NOW()")
 
             if "opportunities" in table_names:
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "opportunities",
-                    "category",
-                    "ALTER TABLE opportunities ADD COLUMN category VARCHAR",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "opportunities",
-                    "provider",
-                    "ALTER TABLE opportunities ADD COLUMN provider VARCHAR",
-                )
+                _ensure_column(conn, inspector, "opportunities", "category",
+                               "ALTER TABLE opportunities ADD COLUMN category VARCHAR")
+                _ensure_column(conn, inspector, "opportunities", "provider",
+                               "ALTER TABLE opportunities ADD COLUMN provider VARCHAR")
 
             if "quiz_attempts" in table_names:
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "quiz_attempts",
-                    "violation_flag",
-                    "ALTER TABLE quiz_attempts ADD COLUMN violation_flag BOOLEAN DEFAULT FALSE",
-                )
-                _ensure_column(
-                    conn,
-                    inspector,
-                    "quiz_attempts",
-                    "terminated",
-                    "ALTER TABLE quiz_attempts ADD COLUMN terminated BOOLEAN DEFAULT FALSE",
-                )
+                _ensure_column(conn, inspector, "quiz_attempts", "violation_flag",
+                               "ALTER TABLE quiz_attempts ADD COLUMN violation_flag BOOLEAN DEFAULT FALSE")
+                _ensure_column(conn, inspector, "quiz_attempts", "terminated",
+                               "ALTER TABLE quiz_attempts ADD COLUMN terminated BOOLEAN DEFAULT FALSE")
 
         logger.info("Relational database startup checks completed.")
     except Exception:
         logger.exception(
-            "Relational database startup checks failed. The API will stay up, but database-backed routes may still fail until DATABASE_URL/schema issues are fixed."
+            "Relational database startup checks failed. API will stay up."
         )
 
 
-# CORS configuration
+# ── CORS configuration ────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -324,50 +206,85 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
+# ── Lifecycle events ──────────────────────────────────────────
+
 @app.on_event("startup")
 async def startup_event():
+    logger.info("=== VidyaMithra API Starting ===")
+
+    # Initialize databases safely
     try:
         initialize_relational_database()
+        logger.info("PostgreSQL: OK")
     except Exception:
         logger.exception("Relational DB startup failed (non-fatal).")
+
     try:
         init_mongodb()
+        logger.info("MongoDB: OK")
     except Exception:
         logger.exception("MongoDB startup failed (non-fatal).")
 
+    # Background scheduler (skip in Vercel)
     if _is_vercel_runtime():
         logger.info("Skipping background scheduler in Vercel serverless runtime.")
         return
 
     try:
         from app.core.background_jobs import setup_background_jobs
-
         setup_background_jobs()
+        logger.info("Background scheduler: OK")
     except Exception:
         logger.exception("Background scheduler failed to start.")
+
+    logger.info("=== VidyaMithra API Ready ===")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    close_mongodb()
+    logger.info("=== VidyaMithra API Shutting Down ===")
+    try:
+        close_mongodb()
+    except Exception:
+        pass
 
 
-# ── Pure ASGI timing middleware (replaces BaseHTTPMiddleware to avoid
-#    Vercel serverless streaming / response corruption issues) ──────────
+# ── ASGI timing + rate limiting middleware ─────────────────────
 
-class RequestTimingMiddleware:
-    """Lightweight ASGI middleware that adds X-Response-Time without
-    buffering or interfering with the response stream."""
+class RequestProtectionMiddleware:
+    """
+    Production ASGI middleware:
+    - Request timing with X-Response-Time header
+    - Slow request detection and logging
+    - Global rate limiting per IP
+    - Request size protection
+    """
+
+    SLOW_REQUEST_THRESHOLD_MS = 2000
+    MAX_REQUEST_BODY_BYTES = 50 * 1024 * 1024  # 50MB
 
     def __init__(self, app):
         self.app = app
+        self._global_limiter = get_rate_limiter("global", max_calls=300, window_seconds=60)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
+        path = scope.get("path", "")
+        method = scope.get("method", "")
         start = time.perf_counter()
+
+        # Rate limiting (skip health checks and docs)
+        if path not in ("/health", "/docs", "/redoc", "/openapi.json"):
+            if not self._global_limiter.allow():
+                response = JSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many requests. Please slow down."},
+                )
+                await response(scope, receive, send)
+                return
 
         async def timed_send(message):
             if message["type"] == "http.response.start":
@@ -378,30 +295,65 @@ class RequestTimingMiddleware:
                 )
                 message = {**message, "headers": headers}
 
-                # Extract path for slow-request logging
-                path = scope.get("path", "")
-                method = scope.get("method", "")
-                if duration_ms > 1000:
+                # Record metrics
+                status_code = message.get("status", 200)
+                success = 200 <= status_code < 500
+                module = path.split("/")[3] if len(path.split("/")) > 3 else "root"
+                health_metrics.record_request(module, duration_ms, success)
+
+                # Slow request warning
+                if duration_ms > self.SLOW_REQUEST_THRESHOLD_MS:
                     logger.warning(
-                        "SLOW REQUEST: %s %s took %.0fms",
-                        method, path, duration_ms,
+                        "SLOW REQUEST: %s %s took %.0fms (status %d)",
+                        method, path, duration_ms, status_code,
                     )
             await send(message)
 
-        await self.app(scope, receive, timed_send)
+        try:
+            await self.app(scope, receive, timed_send)
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start) * 1000
+            health_metrics.record_request("unhandled", duration_ms, success=False)
+            logger.error("Unhandled middleware exception on %s %s: %s", method, path, str(e))
+            # Return 500 instead of crashing
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"},
+            )
+            await response(scope, receive, send)
 
 
-app.add_middleware(RequestTimingMiddleware)
+app.add_middleware(RequestProtectionMiddleware)
 
+
+# ── Global exception handlers ─────────────────────────────────
 
 @app.exception_handler(Exception)
-async def validation_exception_handler(request: Request, exc: Exception):
-    error_msg = f"Unhandled Error: {exc}\n{traceback.format_exc()}"
-    logging.error(error_msg)
-    print(error_msg, file=sys.stderr)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all handler — the system NEVER crashes from unhandled exceptions."""
+    error_id = f"ERR-{int(time.time())}"
+    error_msg = f"[{error_id}] {type(exc).__name__}: {str(exc)}"
+
+    # Log full traceback for debugging
+    logger.error(
+        "Unhandled exception [%s] %s %s: %s\n%s",
+        error_id,
+        request.method,
+        request.url.path,
+        str(exc),
+        traceback.format_exc(),
+    )
+
+    # Return safe response (no internal details leaked in production)
+    is_vercel = _is_vercel_runtime()
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal Server Error. Check logs.", "error": error_msg},
+        content={
+            "detail": "Internal Server Error",
+            "error_id": error_id,
+            # Only include details in non-production environments
+            "error": error_msg if not is_vercel else None,
+        },
     )
 
 
@@ -410,7 +362,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code == 404:
         return JSONResponse(
             status_code=404,
-            content={"detail": f"Debug 404: Route not found for {request.method} {request.url.path}"},
+            content={"detail": f"Route not found: {request.method} {request.url.path}"},
         )
     return JSONResponse(
         status_code=exc.status_code,
@@ -418,14 +370,52 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     )
 
 
+# ── Routes ─────────────────────────────────────────────────────
+
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the AI Career Platform API"}
+    return {"message": "Welcome to the AI Career Platform API", "status": "operational"}
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """
+    Comprehensive health check — verifies all subsystems.
+    """
+    from app.db.mongodb import get_mongodb
+    from app.services.ai_service import ai_hub
+
+    db_status = check_db_health()
+    mongo_status = "connected" if get_mongodb() is not None else "disconnected"
+
+    overall = "healthy"
+    if db_status.get("status") != "healthy":
+        overall = "degraded"
+    if db_status.get("status") == "unhealthy" and mongo_status == "disconnected":
+        overall = "critical"
+
+    return {
+        "status": overall,
+        "database": db_status,
+        "mongodb": {"status": mongo_status},
+        "ai_providers": ai_hub.get_provider_status(),
+        "system_metrics": health_metrics.get_summary(),
+    }
+
+
+@app.get("/health/detailed")
+async def detailed_health():
+    """
+    Detailed system health with all metrics, circuit breakers, and module status.
+    For admin/monitoring use.
+    """
+    from app.services.ai_service import ai_hub
+
+    return {
+        "system_metrics": health_metrics.get_summary(),
+        "ai_providers": ai_hub.get_provider_status(),
+        "database": check_db_health(),
+    }

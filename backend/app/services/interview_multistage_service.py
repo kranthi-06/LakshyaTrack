@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.services.ai_service import ai_hub
 from app.models.career import MultiStageInterview
+from app.core.resilience import safe_json_parse, sanitize_for_logging
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +104,12 @@ async def evaluate_screening(
             [{"role": "user", "content": prompt}],
             system_prompt
         )
-        clean = _clean_json(response)
-        return json.loads(clean)
+        result = safe_json_parse(response)
+        if result is None:
+            raise ValueError("Failed to parse screening evaluation JSON")
+        return result
     except Exception as e:
-        logger.error(f"Screening evaluation error: {e}")
+        logger.error("Screening evaluation error: %s", sanitize_for_logging(str(e)))
         return {"score": 50, "clarity": 50, "technical_depth": 50, "correctness": 50,
                 "feedback": "Evaluation completed.", "strengths": [], "weaknesses": []}
 
@@ -188,10 +191,12 @@ async def evaluate_technical(
             [{"role": "user", "content": prompt}],
             system_prompt
         )
-        clean = _clean_json(response)
-        return json.loads(clean)
+        result = safe_json_parse(response)
+        if result is None:
+            raise ValueError("Failed to parse technical evaluation JSON")
+        return result
     except Exception as e:
-        logger.error(f"Technical evaluation error: {e}")
+        logger.error("Technical evaluation error: %s", sanitize_for_logging(str(e)))
         return {"score": 50, "knowledge_depth": 50, "explanation_quality": 50,
                 "problem_solving": 50, "confidence": 50,
                 "feedback": "Evaluation completed.", "strengths": [], "weaknesses": []}
@@ -249,10 +254,12 @@ async def generate_coding_problem(
             [{"role": "user", "content": prompt}],
             system_prompt
         )
-        clean = _clean_json(response)
-        return json.loads(clean)
+        result = safe_json_parse(response)
+        if result is None:
+            raise ValueError("Failed to parse coding problem JSON")
+        return result
     except Exception as e:
-        logger.error(f"Coding problem generation error: {e}")
+        logger.error("Coding problem generation error: %s", sanitize_for_logging(str(e)))
         return {
             "title": "Array Sum Problem",
             "description": "Given an array of integers, find the two numbers that add up to a target sum. Return their indices.",
@@ -325,10 +332,12 @@ async def evaluate_coding(
             [{"role": "user", "content": prompt}],
             system_prompt
         )
-        clean = _clean_json(response)
-        return json.loads(clean)
+        result = safe_json_parse(response)
+        if result is None:
+            raise ValueError("Failed to parse coding evaluation JSON")
+        return result
     except Exception as e:
-        logger.error(f"Coding evaluation error: {e}")
+        logger.error("Coding evaluation error: %s", sanitize_for_logging(str(e)))
         # Score based on test results
         base_score = int((passed_tests / max(total_tests, 1)) * 100)
         return {"score": base_score, "correctness": base_score, "code_quality": 50,
@@ -415,10 +424,12 @@ async def evaluate_hr(
             [{"role": "user", "content": prompt}],
             system_prompt
         )
-        clean = _clean_json(response)
-        return json.loads(clean)
+        result = safe_json_parse(response)
+        if result is None:
+            raise ValueError("Failed to parse HR evaluation JSON")
+        return result
     except Exception as e:
-        logger.error(f"HR evaluation error: {e}")
+        logger.error("HR evaluation error: %s", sanitize_for_logging(str(e)))
         return {"score": 50, "communication": 50, "clarity": 50,
                 "confidence": 50, "emotional_intelligence": 50,
                 "feedback": "Evaluation completed.", "strengths": [], "weaknesses": []}
@@ -473,10 +484,12 @@ async def generate_final_analysis(
             [{"role": "user", "content": prompt}],
             system_prompt
         )
-        clean = _clean_json(response)
-        return json.loads(clean)
+        result = safe_json_parse(response)
+        if result is None:
+            raise ValueError("Failed to parse final analysis JSON")
+        return result
     except Exception as e:
-        logger.error(f"Final analysis error: {e}")
+        logger.error("Final analysis error: %s", sanitize_for_logging(str(e)))
         avg = (
             screening_eval.get('score', 0) +
             technical_eval.get('score', 0) +
@@ -505,18 +518,23 @@ def create_interview_session(
     difficulty: str,
     db: Session,
 ) -> dict:
-    """Create a new multi-stage interview session."""
-    session = MultiStageInterview(
-        user_id=user_id,
-        position=position,
-        interview_mode=interview_mode,
-        difficulty=difficulty,
-        current_stage="screening",
-    )
-    db.add(session)
-    db.commit()
-    db.refresh(session)
-    return {"id": str(session.id), "position": position, "current_stage": "screening"}
+    """Create a new multi-stage interview session with safe DB handling."""
+    try:
+        session = MultiStageInterview(
+            user_id=user_id,
+            position=position,
+            interview_mode=interview_mode,
+            difficulty=difficulty,
+            current_stage="screening",
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        return {"id": str(session.id), "position": position, "current_stage": "screening"}
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to create interview session: %s", str(e))
+        raise
 
 
 def update_stage_result(
@@ -635,10 +653,16 @@ def get_multistage_history(user_id: str, db: Session) -> List[dict]:
 
 
 def _clean_json(text: str) -> str:
-    """Clean AI response to extract valid JSON."""
-    clean = text.strip()
+    """Clean AI response to extract valid JSON. Kept for backward compat."""
+    clean = (text or "").strip()
     if "```json" in clean:
-        clean = clean.split("```json")[1].split("```")[0].strip()
+        try:
+            clean = clean.split("```json")[1].split("```")[0].strip()
+        except (IndexError, ValueError):
+            pass
     elif "```" in clean:
-        clean = clean.split("```")[1].split("```")[0].strip()
+        try:
+            clean = clean.split("```")[1].split("```")[0].strip()
+        except (IndexError, ValueError):
+            pass
     return clean

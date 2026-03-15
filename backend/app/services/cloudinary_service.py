@@ -191,6 +191,9 @@ def _sync_upload(
     media_type: MediaType,
     user_id: Optional[str] = None,
 ) -> UploadResult:
+    import logging
+    logger = logging.getLogger(__name__)
+
     ensure_cloudinary_configured()
     _validate_upload(filename=filename, content=content, content_type=content_type, media_type=media_type)
 
@@ -200,20 +203,33 @@ def _sync_upload(
     upload_source = BytesIO(content)
     upload_source.name = filename
 
-    upload_result = cloudinary.uploader.upload(
-        upload_source,
-        folder=folder,
-        public_id=public_id,
-        resource_type=rule["resource_type"],
-        overwrite=rule["overwrite"],
-        invalidate=rule["overwrite"],
-        use_filename=False,
-        unique_filename=not rule["overwrite"],
-    )
+    try:
+        upload_result = cloudinary.uploader.upload(
+            upload_source,
+            folder=folder,
+            public_id=public_id,
+            resource_type=rule["resource_type"],
+            overwrite=rule["overwrite"],
+            invalidate=rule["overwrite"],
+            use_filename=False,
+            unique_filename=not rule["overwrite"],
+            timeout=30,  # 30 second timeout for Cloudinary API
+        )
+    except Exception as e:
+        logger.error(
+            "Cloudinary upload failed for %s (type=%s, user=%s): %s",
+            filename, media_type.value, user_id, str(e),
+        )
+        raise ValueError(f"File upload failed: {str(e)}")
 
     secure_url = upload_result["secure_url"]
     if upload_result.get("resource_type") == "image":
         secure_url = _optimized_image_url(upload_result["public_id"])
+
+    logger.info(
+        "Cloudinary upload OK: %s → %s (user=%s)",
+        filename, upload_result["public_id"], user_id,
+    )
 
     return UploadResult(
         secure_url=secure_url,
@@ -231,11 +247,21 @@ async def upload_media(
     media_type: MediaType,
     user_id: Optional[str] = None,
 ) -> UploadResult:
-    return await run_in_threadpool(
-        _sync_upload,
-        filename=filename,
-        content=content,
-        content_type=content_type,
-        media_type=media_type,
-        user_id=user_id,
-    )
+    """Upload media to Cloudinary with error isolation."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        return await run_in_threadpool(
+            _sync_upload,
+            filename=filename,
+            content=content,
+            content_type=content_type,
+            media_type=media_type,
+            user_id=user_id,
+        )
+    except ValueError:
+        raise  # Re-raise validation/upload errors
+    except Exception as e:
+        logger.error("Unexpected upload error: %s", str(e))
+        raise ValueError(f"Upload failed unexpectedly: {str(e)}")

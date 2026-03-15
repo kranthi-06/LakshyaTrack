@@ -5,20 +5,13 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
-from app.db.session import SessionLocal
+from app.db.session import get_db  # Use production-grade session factory
 from app.core.config import settings
 from app.models.user import User
 from app.crud import crud_user
 from app.schemas.user import TokenData
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/access-token")
-
-def get_db() -> Generator:
-    try:
-        db = SessionLocal()
-        yield db
-    finally:
-        db.close()
 
 def _get_black_admin_emails() -> list:
     """Parse BLACK_ADMIN_EMAILS from env config."""

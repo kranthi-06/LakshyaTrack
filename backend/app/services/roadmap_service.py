@@ -11,6 +11,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.services.ai_service import ai_hub
 from app.models.career import Roadmap
+from app.core.resilience import safe_json_parse, sanitize_for_logging
 
 logger = logging.getLogger(__name__)
 
@@ -111,14 +112,10 @@ async def generate_roadmap(
             system_prompt
         )
 
-        # Clean the response
-        clean = response.strip()
-        if "```json" in clean:
-            clean = clean.split("```json")[1].split("```")[0].strip()
-        elif "```" in clean:
-            clean = clean.split("```")[1].split("```")[0].strip()
-
-        roadmap_data = json.loads(clean)
+        # Use safe_json_parse for robust JSON extraction
+        roadmap_data = safe_json_parse(response)
+        if roadmap_data is None:
+            raise ValueError("AI returned invalid JSON for roadmap")
 
         # Add status to each skill: first skill of Beginner is "unlocked", rest are "locked"
         for level_idx, level in enumerate(roadmap_data.get("levels", [])):
@@ -160,10 +157,12 @@ async def generate_roadmap(
         }
 
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse roadmap JSON: {e}")
+        logger.error("Failed to parse roadmap JSON: %s", sanitize_for_logging(str(e)))
+        db.rollback()
         raise ValueError(f"AI returned invalid JSON: {str(e)}")
     except Exception as e:
-        logger.error(f"Roadmap generation error: {e}")
+        logger.error("Roadmap generation error: %s", sanitize_for_logging(str(e)))
+        db.rollback()
         raise
 
 

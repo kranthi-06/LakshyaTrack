@@ -5,8 +5,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { AppLayout } from './components/AppLayout';
 import { Suspense, lazy, memo, useEffect } from 'react';
-import RouteSkeleton from './components/RouteSkeleton';
 import AuthLoadingScreen from './components/AuthLoadingScreen';
+import ErrorBoundary from './components/ErrorBoundary';
 import {
   getPageImporter,
   injectRoutePrefetchHints,
@@ -103,11 +103,23 @@ function usePrefetchRoutes() {
   }, []);
 }
 
+// ── Global error handlers — prevent silent crashes ──────────
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('[Global] Unhandled Promise Rejection:', event.reason);
+    event.preventDefault(); // Prevent console noise
+  });
+  window.addEventListener('error', (event) => {
+    console.error('[Global] Unhandled Error:', event.error || event.message);
+  });
+}
+
 function App() {
   // Prefetch commonly visited routes during idle time
   usePrefetchRoutes();
 
   return (
+    <ErrorBoundary moduleName="Application">
     <ThemeProvider>
     <Router>
       <AuthProvider>
@@ -155,6 +167,7 @@ function App() {
       </AuthProvider>
     </Router>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

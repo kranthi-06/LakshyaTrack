@@ -13,7 +13,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, get_db_session
 from app.services import document_store_service, opportunity_service
 
 logger = logging.getLogger(__name__)

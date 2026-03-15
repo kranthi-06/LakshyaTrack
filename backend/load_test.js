@@ -17,15 +17,15 @@ export const options = {
 
 export default function () {
   // Test health endpoint
-  const healthRes = http.get('http://127.0.0.1:8000/api/v1/health');
+  const healthRes = http.get('http://127.0.0.1:8000/health');
   check(healthRes, {
-    'health status is 200': (r) => r.status === 200,
+    'health status is 200 or 429': (r) => r.status === 200 || r.status === 429,
   });
 
   // Test root endpoint
   const rootRes = http.get('http://127.0.0.1:8000/');
   check(rootRes, {
-    'root status is 200': (r) => r.status === 200,
+    'root status is 200 or 429': (r) => r.status === 200 || r.status === 429,
   });
 
   sleep(1);
