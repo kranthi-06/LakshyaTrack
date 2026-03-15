@@ -23,6 +23,7 @@ import { saveResumeToProfile, updateSavedResume } from '../../services/resumeSto
 import { SidePanelEditor } from './SidePanelEditor';
 import { useFeatureGate } from '../../hooks/useFeatureGate';
 import PremiumGate from '../../components/PremiumGate';
+import { useResumeProtection } from '../../hooks/useResumeProtection';
 
 interface EditMeta {
     id: string;
@@ -137,6 +138,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
     const [recentTemplates, setRecentTemplates] = useState<string[]>([]);
     const previewRef = useRef<HTMLDivElement>(null);
     const fsScrollRef = useRef<HTMLDivElement>(null);
+    const inlinePaperRef = useRef<HTMLDivElement>(null);
+    const fsPaperRef = useRef<HTMLDivElement>(null);
 
     // ── Resume naming & save-mode modals ──
     const [showNameModal, setShowNameModal] = useState(false);
@@ -144,6 +147,31 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
     const [showSaveModeModal, setShowSaveModeModal] = useState(false);
     const [copyNameInput, setCopyNameInput] = useState('');
     const [saveModeStep, setSaveModeStep] = useState<'choose' | 'copy-name'>('choose');
+
+    // ── Screenshot protection (applies to ALL users, including admin) ──
+    const {
+        isCapturing,
+        paperProtectionStyle,
+        paperProtectionHandlers,
+        setupVideoOverlay,
+    } = useResumeProtection();
+
+    // Setup DRM video overlay on inline and fullscreen paper when they mount
+    useEffect(() => {
+        if (inlinePaperRef.current) {
+            setupVideoOverlay(inlinePaperRef.current);
+        }
+    }, [setupVideoOverlay, selectedId]);
+
+    useEffect(() => {
+        if (showFullPreview && fsPaperRef.current) {
+            // Small delay to let the portal render
+            const timer = setTimeout(() => {
+                if (fsPaperRef.current) setupVideoOverlay(fsPaperRef.current);
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [showFullPreview, setupVideoOverlay, selectedId]);
 
     const selected = useMemo(() => {
         // In edit mode, try to match the original template first
@@ -555,8 +583,10 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
                     <div className="flex-1 overflow-auto bg-gray-100 dark:bg-slate-900/60" style={{ backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
                         <div className="flex justify-center py-6 px-4" style={{ minHeight: '100%' }}>
                             <div
-                                className="shadow-2xl border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden relative bg-white flex-shrink-0"
-                                style={{ width: `${794 * previewScale}px`, transformOrigin: 'top center' }}
+                                className={`shadow-2xl border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden relative bg-white flex-shrink-0 resume-protected-paper ${isCapturing ? 'resume-capturing' : ''}`}
+                                style={{ width: `${794 * previewScale}px`, transformOrigin: 'top center', ...paperProtectionStyle }}
+                                ref={inlinePaperRef}
+                                {...paperProtectionHandlers}
                             >
                                 <div
                                     id="resume-preview-container"
@@ -1025,11 +1055,14 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
                                     }}
                                 >
                                     <div
-                                        className="bg-white shadow-2xl relative"
+                                        className={`bg-white shadow-2xl relative resume-protected-paper ${isCapturing ? 'resume-capturing' : ''}`}
                                         style={{
                                             width: '794px',
                                             minHeight: `${A4_PAGE_HEIGHT}px`,
+                                            ...paperProtectionStyle,
                                         }}
+                                        ref={fsPaperRef}
+                                        {...paperProtectionHandlers}
                                     >
                                         <RenderTemplate base={selected.base} data={data} color={accentColor} />
 

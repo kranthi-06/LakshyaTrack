@@ -635,6 +635,47 @@ html.dark {
     print-color-adjust: exact !important;
     color-adjust: exact !important;
   }
+
+  /* ── RESUME SCREENSHOT PROTECTION: hide paper in print ── */
+  .resume-protected-paper {
+    filter: blur(20px) !important;
+    opacity: 0.3 !important;
+  }
+  .resume-drm-video {
+    display: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* RESUME PAPER PROTECTION — prevent copy/select/drag        */
+/* ═══════════════════════════════════════════════════════════ */
+.resume-protected-paper {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-drag: none;
+  position: relative;
+}
+
+/* Smooth blur transition for capture detection */
+.resume-protected-paper.resume-capturing {
+  filter: blur(30px) brightness(0.3) !important;
+  transition: filter 0.05s ease-out !important;
+}
+
+/* DRM video overlay — stays transparent on screen */
+.resume-drm-video {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  z-index: 15 !important;
+  opacity: 0.01 !important;
+  object-fit: cover !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
