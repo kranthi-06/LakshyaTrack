@@ -445,7 +445,7 @@ export default function Jobs() {
                     </Card>
 
                     {/* ── Category Tabs ────────────────────────────── */}
-                    <div className="flex items-center gap-2 mb-6 sm:mb-8 overflow-x-auto pb-2 scrollbar-hide no-scrollbar">
+                    <div className="flex items-center gap-2 mb-6 sm:mb-8 overflow-x-auto pb-2 scrollbar-hide no-scrollbar w-full flex-nowrap shrink-0 snap-x">
                         {CATEGORIES.map(cat => {
                             const isActive = activeCategory === cat.key;
                             const count = cat.key === 'all'
@@ -456,7 +456,7 @@ export default function Jobs() {
                                     key={cat.key}
                                     onClick={() => setActiveCategory(cat.key)}
                                     className={`
-                                        flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm whitespace-nowrap transition-all border
+                                        flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm whitespace-nowrap transition-all border shrink-0 snap-center
                                         ${isActive
                                             ? 'bg-white text-slate-800 border-slate-200 shadow-lg shadow-slate-200/50'
                                             : 'bg-transparent text-slate-500 border-transparent hover:bg-white/60 hover:border-slate-100'

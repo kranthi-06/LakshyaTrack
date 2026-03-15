@@ -106,7 +106,7 @@ const AdminDashboard: React.FC = () => {
     return (
         <div className="min-h-screen bg-black text-white selection:bg-purple-500/30">
 <main className="relative pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto z-10">
-                <div className="flex justify-between items-center mb-10">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10 w-full overflow-hidden">
                     <div>
                         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-3">
                             <span className="bg-clip-text text-transparent bg-gradient-to-r from-red-400 via-purple-500 to-indigo-500">
@@ -118,7 +118,7 @@ const AdminDashboard: React.FC = () => {
                         </p>
                     </div>
 
-                    <div className="flex gap-4">
+                    <div className="flex flex-wrap gap-4 w-full md:w-auto">
                         <Link
                             to="/admin/inactivity"
                             className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-800/50 border border-slate-700 hover:bg-slate-700/50 transition-colors"

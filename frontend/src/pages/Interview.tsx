@@ -13,6 +13,7 @@ import {
     getMultistageFinalAnalysis,
     saveProgressSnapshot
 } from '../services/careerPlatform';
+import CodingEnvironment from '../components/CodingEnvironment';
 import {
     Mic2, MessageSquare, Monitor, BarChart3, Users, Send, StopCircle,
     CheckCircle2, Target, Zap, ArrowRight, BrainCircuit, Award,
@@ -271,12 +272,12 @@ export default function Interview() {
         setIsLoading(false);
     };
 
-    const handleSubmitCode = async () => {
-        setCodingAttempts(prev => prev + 1);
-        const tc = codingProblem?.test_cases || [];
-        const passed = Math.min(Math.floor(Math.random() * tc.length) + 1, tc.length);
+    const handleSubmitCode = async (code: string, language: string, passed: number, total: number, attempts: number) => {
+        setCodingCode(code);
+        setCodingLang(language);
+        setCodingAttempts(attempts);
         setCodingTestsPassed(passed);
-        setCodingOutput(`✓ ${passed}/${tc.length} test cases passed`);
+        setCodingOutput(`✓ ${passed}/${total} test cases passed`);
     };
 
     const handleFinishCoding = async () => {
@@ -391,7 +392,7 @@ export default function Interview() {
     // ═══════════════════════════════════════
     return (
         <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
-<main className="max-w-5xl mx-auto px-3 sm:px-6 pt-8 sm:pt-16">
+<main className={`mx-auto px-3 sm:px-6 pt-8 sm:pt-16 ${step === 'coding' ? 'max-w-[1400px]' : 'max-w-5xl'}`}>
                     <AnimatePresence mode="wait">
                         {/* ═══ LANDING ═══ */}
                         {step === 'landing' && (
@@ -676,13 +677,13 @@ export default function Interview() {
                             </motion.div>
                         )}
 
-                        {/* ═══ CODING ROUND ═══ */}
+                        {/* ═══ CODING ROUND — LeetCode-Style Environment ═══ */}
                         {step === 'coding' && (
                             <motion.div key="coding" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-                                {/* Same stage bar */}
-                                <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6">
+                                {/* Stage Progress Bar */}
+                                <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 -mx-3 sm:-mx-6 px-3 sm:px-6">
                                     {STAGES.map((s, i) => (
-                                        <div key={s.id} className={`flex-1 min-w-[140px] p-5 rounded-[2rem] border-2 transition-all backdrop-blur-sm ${i === currentStageIdx ? 'border-[#5c52d2] bg-blue-50/80 shadow-lg' : i < currentStageIdx ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-100 bg-white/40'}`}>
+                                        <div key={s.id} className={`flex-1 min-w-[100px] sm:min-w-[140px] p-3 sm:p-5 rounded-xl sm:rounded-[2rem] border-2 transition-all backdrop-blur-sm ${i === currentStageIdx ? 'border-[#5c52d2] bg-blue-50/80 shadow-lg' : i < currentStageIdx ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-100 bg-white/40'}`}>
                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${i === currentStageIdx ? 'bg-white shadow-sm' : i < currentStageIdx ? 'bg-emerald-100' : ''}`}>
                                                 {i < currentStageIdx ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <s.icon className={`w-5 h-5 ${i === currentStageIdx ? 'text-[#5c52d2]' : 'text-slate-300'}`} />}
                                             </div>
@@ -693,84 +694,25 @@ export default function Interview() {
                                     ))}
                                 </div>
 
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-emerald-50 shadow-sm rounded-2xl flex items-center justify-center">
-                                        <Code2 className="w-6 h-6 text-emerald-500" />
-                                    </div>
-                                    <h2 className="text-2xl font-black text-slate-900 tracking-tight">Coding Round</h2>
-                                    <div className="ml-auto flex gap-2">
-                                        {['python', 'javascript'].map(l => (
-                                            <button key={l} onClick={() => { setCodingLang(l); setCodingCode(codingProblem?.starter_code?.[l] || ''); }}
-                                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${codingLang === l ? 'bg-[#5c52d2] text-white shadow-md' : 'bg-white border-2 border-slate-100 text-slate-500'}`}>
-                                                {l}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
                                 {isLoading ? (
                                     <div className="text-center py-20 space-y-6">
                                         <Loader2 className="w-12 h-12 text-[#5c52d2] animate-spin mx-auto" />
                                         <p className="text-lg font-black text-slate-400 animate-pulse">Generating coding challenge...</p>
                                     </div>
-                                ) : (
-                                    <div className="grid lg:grid-cols-2 gap-6">
-                                        {/* Problem Panel */}
-                                        <Card className="p-8 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[2.5rem] space-y-6 border border-white/20 overflow-y-auto max-h-[600px]">
-                                            <div className="flex items-center gap-3">
-                                                <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[9px] font-black uppercase rounded-full tracking-widest">{codingProblem?.difficulty || 'intermediate'}</span>
-                                            </div>
-                                            <h3 className="text-xl font-[900] text-slate-900">{codingProblem?.title || 'Problem'}</h3>
-                                            <p className="text-sm text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">{codingProblem?.description || ''}</p>
-                                            {codingProblem?.examples?.map((ex: any, i: number) => (
-                                                <div key={i} className="p-4 bg-slate-50 rounded-2xl space-y-2">
-                                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Example {i + 1}</p>
-                                                    <p className="text-sm font-mono text-slate-700">Input: {ex.input}</p>
-                                                    <p className="text-sm font-mono text-emerald-600">Output: {ex.output}</p>
-                                                </div>
-                                            ))}
-                                            {codingProblem?.hints && (
-                                                <div className="space-y-2">
-                                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Hints</p>
-                                                    {codingProblem.hints.map((h: string, i: number) => (
-                                                        <p key={i} className="text-sm text-slate-500 flex items-start gap-2"><Lightbulb className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />{h}</p>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </Card>
+                                ) : codingProblem ? (
+                                    <CodingEnvironment
+                                        problem={codingProblem}
+                                        onSubmitSolution={handleSubmitCode}
+                                        onFinish={handleFinishCoding}
+                                        isLoading={isLoading}
+                                    />
+                                ) : null}
 
-                                        {/* Code Editor Panel */}
-                                        <div className="space-y-4">
-                                            <Card className="border-none shadow-xl bg-slate-900 rounded-[2.5rem] overflow-hidden border border-white/20">
-                                                <div className="flex items-center gap-2 px-6 py-3 bg-slate-800/50 border-b border-slate-700">
-                                                    <Terminal className="w-4 h-4 text-slate-400" />
-                                                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{codingLang}</span>
-                                                </div>
-                                                <textarea value={codingCode} onChange={(e) => setCodingCode(e.target.value)}
-                                                    className="w-full min-h-[300px] bg-transparent text-emerald-300 font-mono text-sm p-6 resize-none focus:outline-none"
-                                                    spellCheck={false} placeholder="// Write your code here..." />
-                                            </Card>
-
-                                            <div className="flex gap-3">
-                                                <Button onClick={handleSubmitCode}
-                                                    className="flex-1 h-14 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-black shadow-xl shadow-emerald-200">
-                                                    <Play className="w-5 h-5 mr-2" /> Run Code
-                                                </Button>
-                                                <Button onClick={handleFinishCoding}
-                                                    className="flex-1 h-14 rounded-2xl bg-[#b195ff] hover:bg-[#a284ff] text-white font-black shadow-xl shadow-purple-100">
-                                                    Submit Solution <ArrowRight className="w-5 h-5 ml-2" />
-                                                </Button>
-                                            </div>
-
-                                            {codingOutput && (
-                                                <Card className="p-6 border-none shadow-lg bg-white/90 rounded-2xl border border-white/20">
-                                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Output</p>
-                                                    <p className="text-sm font-mono text-slate-700">{codingOutput}</p>
-                                                </Card>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
+                                <div className="flex justify-center">
+                                    <button onClick={restartInterview} className="text-slate-400 font-black uppercase text-xs tracking-widest hover:text-rose-500 transition-all flex items-center gap-2">
+                                        <StopCircle className="w-4 h-4" /> End Interview
+                                    </button>
+                                </div>
                             </motion.div>
                         )}
 
@@ -925,13 +867,13 @@ export default function Interview() {
                                             <div className="relative z-10 space-y-6">
                                                 <h3 className="text-3xl font-black tracking-tight">Ready to Level Up?</h3>
                                                 <p className="text-slate-400 text-lg font-medium max-w-2xl mx-auto">Use your interview insights to improve and practice again.</p>
-                                                <div className="flex gap-4 justify-center pt-4">
+                                                <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4 w-full">
                                                     <Button onClick={() => window.location.href = '/career'}
-                                                        className="h-16 px-12 bg-[#b195ff] text-white rounded-2xl font-black text-lg hover:bg-[#a284ff] shadow-2xl">
+                                                        className="h-16 w-full sm:w-auto px-12 bg-[#b195ff] text-white rounded-2xl font-black text-lg hover:bg-[#a284ff] shadow-2xl">
                                                         View Roadmap
                                                     </Button>
                                                     <Button onClick={restartInterview} variant="ghost"
-                                                        className="h-16 px-12 border-2 border-white/10 text-white rounded-2xl font-black hover:bg-white/5">
+                                                        className="h-16 w-full sm:w-auto px-12 border-2 border-white/10 text-white rounded-2xl font-black hover:bg-white/5">
                                                         Practice Again
                                                     </Button>
                                                 </div>

@@ -161,21 +161,24 @@
 }
 
 /* Custom Scrollbar — subtle and modern */
-::-webkit-scrollbar {
-  width: 6px;
-}
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
 }
 
 @keyframes gradientShift {
@@ -221,14 +224,16 @@ html.dark {
 }
 
 /* ── Dark scrollbar — sleek purple ── */
-.dark ::-webkit-scrollbar-track {
-  background: #0f0f23;
-}
-.dark ::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #6366f1;
+@media (hover: hover) and (pointer: fine) {
+  .dark ::-webkit-scrollbar-track {
+    background: #0f0f23;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #6366f1;
+  }
 }
 
 /* ══════════════════════════════════════ */

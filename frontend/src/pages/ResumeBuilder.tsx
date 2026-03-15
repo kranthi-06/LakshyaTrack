@@ -206,7 +206,7 @@ export default function ResumeBuilder() {
                                             <Upload className="w-10 h-10" />
                                         </div>
                                         <div className="space-y-2">
-                                            <p className="text-xl font-black text-slate-900 dark:text-white">
+                                            <p className="text-lg sm:text-xl font-black text-slate-900 dark:text-white break-words max-w-full px-2">
                                                 {file ? file.name : "Drag & drop your resume here"}
                                             </p>
                                             <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-xs">
@@ -217,18 +217,18 @@ export default function ResumeBuilder() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center justify-center gap-6">
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 w-full">
                                     <Button
                                         onClick={() => setStep('selection')}
                                         variant="outline"
-                                        className="h-14 px-10 rounded-2xl font-black border-gray-200 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                                        className="h-14 w-full sm:w-auto px-10 rounded-2xl font-black border-gray-200 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
                                     >
                                         Back
                                     </Button>
                                     <Button
                                         onClick={handleUpload}
                                         disabled={!file || loading}
-                                        className="h-14 px-10 rounded-2xl font-black bg-[#5c52d2] hover:bg-[#4b43b0] text-white shadow-xl shadow-purple-100 disabled:opacity-50 relative overflow-hidden"
+                                        className="h-14 w-full sm:w-auto px-10 rounded-2xl font-black bg-[#5c52d2] hover:bg-[#4b43b0] text-white shadow-xl shadow-purple-100 disabled:opacity-50 relative overflow-hidden"
                                     >
                                         {loading ? (
                                             <div className="flex flex-col items-center">
@@ -508,7 +508,7 @@ export default function ResumeBuilder() {
                                                     <XCircle className="w-6 h-6 text-gray-400" />
                                                 </button>
 
-                                                <div className="p-12 overflow-y-auto">
+                                                <div className="p-6 md:p-12 overflow-y-auto w-full">
                                                     <div className="space-y-4 mb-10">
                                                         <h2 className="text-3xl font-black text-gray-900 tracking-tight">Template Preview</h2>
                                                         <div className="flex items-center gap-3">
@@ -517,10 +517,10 @@ export default function ResumeBuilder() {
                                                         </div>
                                                     </div>
 
-                                                    <div className="aspect-[1/1.4] bg-gray-50 rounded-3xl border-2 border-gray-100 shadow-inner p-10 overflow-hidden relative">
+                                                    <div className="aspect-[1/1.4] bg-gray-50 rounded-2xl md:rounded-3xl border-2 border-gray-100 shadow-inner p-4 md:p-10 overflow-hidden relative">
                                                         {/* Full Scale Preview Mockup */}
-                                                        <div className="space-y-10 scale-150 origin-top transform">
-                                                            <div className="flex justify-between items-start border-b pb-8">
+                                                        <div className="space-y-4 md:space-y-10 scale-90 sm:scale-100 md:scale-150 origin-top transform">
+                                                            <div className="flex flex-col sm:flex-row justify-between items-start border-b pb-4 md:pb-8 gap-2 sm:gap-0">
                                                                 <div>
                                                                     <h1 className="text-2xl font-black text-gray-900">{formData.personal.first} {formData.personal.last}</h1>
                                                                     <p className="text-blue-500 font-bold text-sm">Software Engineer</p>
@@ -533,8 +533,8 @@ export default function ResumeBuilder() {
                                                             </div>
 
                                                             <div className="space-y-6">
-                                                                <div className="flex gap-10">
-                                                                    <div className="w-1/3 space-y-4">
+                                                                <div className="flex flex-col sm:flex-row gap-4 sm:gap-10">
+                                                                    <div className="w-full sm:w-1/3 space-y-4">
                                                                         <div className="space-y-2">
                                                                             <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Skills</h3>
                                                                             <div className="flex flex-wrap gap-1">
@@ -544,7 +544,7 @@ export default function ResumeBuilder() {
                                                                             </div>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="w-2/3 space-y-6">
+                                                                    <div className="w-full sm:w-2/3 space-y-6">
                                                                         <div className="space-y-2">
                                                                             <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Experience</h3>
                                                                             {formData.experience.map((exp: any, i: number) => (

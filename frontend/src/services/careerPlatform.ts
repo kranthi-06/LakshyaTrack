@@ -490,3 +490,37 @@ export const getMultistageHistory = async () => {
         { ttlMs: 60_000, persist: true },
     );
 };
+
+// ════════════════════════════════════════════
+// 9. CODE EXECUTION ENGINE
+// ════════════════════════════════════════════
+
+export const runCode = async (
+    code: string,
+    language: string,
+    testCases: any[]
+) => {
+    const res = await api.post('/code-execution/run-code', {
+        code,
+        language,
+        test_cases: testCases,
+    });
+    return res.data;
+};
+
+export const submitCode = async (
+    code: string,
+    language: string,
+    testCases: any[],
+    sessionId?: string,
+    problemTitle?: string
+) => {
+    const res = await api.post('/code-execution/submit-code', {
+        code,
+        language,
+        test_cases: testCases,
+        session_id: sessionId,
+        problem_title: problemTitle,
+    });
+    return res.data;
+};

@@ -10,7 +10,9 @@ from app.api.endpoints import (
     # Exam proctoring
     exam,
     # Multi-stage interview system
-    interview_multistage
+    interview_multistage,
+    # Code execution engine
+    code_execution,
 )
 
 api_router = APIRouter()
@@ -39,3 +41,6 @@ api_router.include_router(interview_multistage.router, prefix="/interview-multis
 
 # ── Admin system ─────────────────────────────────────────
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+
+# ── Code Execution Engine ────────────────────────────────
+api_router.include_router(code_execution.router, prefix="/code-execution", tags=["code-execution"])
