@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import { motion } from 'framer-motion';
 import {
     FileText,
@@ -22,12 +23,15 @@ import {
     Sparkles,
     BarChart3,
     Rocket,
+    Lock,
+    Crown,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getActiveRoadmap } from '../services/careerPlatform';
 
 export default function Dashboard() {
     const { user } = useAuth();
+    const { stage, hasFeature, isAdmin } = useSubscription();
     const navigate = useNavigate();
     const [roadmapProgress, setRoadmapProgress] = useState(0);
     const [roadmapRole, setRoadmapRole] = useState('Career Plan');
@@ -95,12 +99,12 @@ export default function Dashboard() {
     ];
 
     const quickActions = [
-        { title: 'Resume Studio', desc: 'Build & optimize your resume with AI', icon: FileText, path: '/resume-builder', accent: '#6C63FF' },
-        { title: 'Skill Check', desc: 'Assess your skills vs job requirements', icon: Target, path: '/evaluate', accent: '#10B981' },
-        { title: 'Learning Path', desc: 'Get AI-powered training roadmap', icon: BookOpen, path: '/career', accent: '#F59E0B' },
-        { title: 'Practice Quiz', desc: 'Test knowledge with adaptive quizzes', icon: BrainCircuit, path: '/quiz', accent: '#8B5CF6' },
-        { title: 'Mock Interview', desc: 'AI-powered interview simulator', icon: Mic2, path: '/interview', accent: '#EF4444' },
-        { title: 'Opportunities', desc: 'Jobs, internships & certifications', icon: Briefcase, path: '/jobs', accent: '#0EA5E9' },
+        { title: 'Resume Studio', desc: 'Build & optimize your resume with AI', icon: FileText, path: '/resume-builder', accent: '#6C63FF', featureKey: 'resume_builder' },
+        { title: 'Skill Check', desc: 'Assess your skills vs job requirements', icon: Target, path: '/evaluate', accent: '#10B981', featureKey: null },
+        { title: 'Learning Path', desc: 'Get AI-powered training roadmap', icon: BookOpen, path: '/career', accent: '#F59E0B', featureKey: 'roadmap_generate' },
+        { title: 'Practice Quiz', desc: 'Test knowledge with adaptive quizzes', icon: BrainCircuit, path: '/quiz', accent: '#8B5CF6', featureKey: null },
+        { title: 'Mock Interview', desc: 'AI-powered interview simulator', icon: Mic2, path: '/interview', accent: '#EF4444', featureKey: 'interview_start' },
+        { title: 'Opportunities', desc: 'Jobs, internships & certifications', icon: Briefcase, path: '/jobs', accent: '#0EA5E9', featureKey: 'job_portal' },
     ];
 
     const fadeIn = (i: number) => ({
@@ -135,6 +139,34 @@ export default function Dashboard() {
                         </button>
                     </div>
                 </motion.div>
+
+                {/* ═══════════════════════════════════════ */}
+                {/* Subscription Banner (Free users)         */}
+                {/* ═══════════════════════════════════════ */}
+                {!isAdmin && stage === 0 && (
+                    <motion.div
+                        {...fadeIn(0.5)}
+                        onClick={() => navigate('/plans')}
+                        className="bg-gradient-to-r from-[#6C63FF]/5 via-[#8B83FF]/5 to-[#4F46E5]/5 rounded-2xl border border-[#6C63FF]/20 p-5 cursor-pointer hover:border-[#6C63FF]/40 transition-all group"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-500/20">
+                                <Crown className="w-6 h-6 text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#6C63FF] transition-colors">
+                                    Unlock Premium Features
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                                    Upgrade to access resume downloads, roadmaps, interviews, and more
+                                </p>
+                            </div>
+                            <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#6C63FF] to-[#4F46E5] text-white text-xs font-bold shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
+                                View Plans
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
 
                 {/* ═══════════════════════════════════════ */}
                 {/* Stats Row                               */}
@@ -231,7 +263,12 @@ export default function Dashboard() {
                                             <h4 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#6C63FF] transition-colors">
                                                 {action.title}
                                             </h4>
-                                            <ArrowUpRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-[#6C63FF] transition-colors flex-shrink-0" />
+                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                {action.featureKey && !hasFeature(action.featureKey) && (
+                                                    <Lock className="w-3.5 h-3.5 text-amber-500/70" />
+                                                )}
+                                                <ArrowUpRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-[#6C63FF] transition-colors" />
+                                            </div>
                                         </div>
                                         <p className="text-[13px] text-slate-500 dark:text-slate-400 font-medium mt-1 leading-relaxed">{action.desc}</p>
                                     </div>

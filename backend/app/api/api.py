@@ -13,6 +13,8 @@ from app.api.endpoints import (
     interview_multistage,
     # Code execution engine
     code_execution,
+    # Subscription system
+    subscription,
 )
 
 api_router = APIRouter()
@@ -44,3 +46,6 @@ api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 # ── Code Execution Engine ────────────────────────────────
 api_router.include_router(code_execution.router, prefix="/code-execution", tags=["code-execution"])
+
+# ── Subscription & Feature Access ────────────────────────
+api_router.include_router(subscription.router, prefix="/subscription", tags=["subscription"])

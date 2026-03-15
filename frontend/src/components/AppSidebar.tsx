@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../context/ThemeContext';
@@ -23,26 +24,31 @@ import {
     Sparkles,
     PanelLeftClose,
     PanelLeft,
+    Crown,
+    Lock,
 } from 'lucide-react';
+import SubscriptionBadge from './SubscriptionBadge';
 
 interface SidebarProps {
     collapsed: boolean;
     onToggle: () => void;
 }
 
+// Feature keys mapped to each nav item (null = always free)
 const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { label: 'Resume Studio', path: '/resume-builder', icon: FileText },
-    { label: 'Evaluate', path: '/evaluate', icon: Target },
-    { label: 'Learning Roadmaps', path: '/career', icon: BookOpen },
-    { label: 'Quizzes', path: '/quiz', icon: BrainCircuit },
-    { label: 'Interview Simulator', path: '/interview', icon: Mic2 },
-    { label: 'Opportunity Portal', path: '/jobs', icon: Briefcase },
-    { label: 'Progress Tracker', path: '/progress', icon: LineChart },
+    { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, featureKey: null },
+    { label: 'Resume Studio', path: '/resume-builder', icon: FileText, featureKey: 'resume_builder' },
+    { label: 'Evaluate', path: '/evaluate', icon: Target, featureKey: null },
+    { label: 'Learning Roadmaps', path: '/career', icon: BookOpen, featureKey: 'roadmap_generate' },
+    { label: 'Quizzes', path: '/quiz', icon: BrainCircuit, featureKey: null },
+    { label: 'Interview Simulator', path: '/interview', icon: Mic2, featureKey: 'interview_start' },
+    { label: 'Opportunity Portal', path: '/jobs', icon: Briefcase, featureKey: 'job_portal' },
+    { label: 'Progress Tracker', path: '/progress', icon: LineChart, featureKey: null },
 ];
 
 export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
     const { user, logout } = useAuth();
+    const { hasFeature, stage } = useSubscription();
     const location = useLocation();
     const { isDark, toggleTheme } = useTheme();
 
@@ -112,6 +118,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
 
                 {navItems.map((item) => {
                     const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+                    const isLocked = item.featureKey ? !hasFeature(item.featureKey) : false;
                     return (
                         <Link
                             key={item.label}
@@ -125,7 +132,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                                     ? 'bg-[#6C63FF]/10 text-[#6C63FF] dark:bg-[#6C63FF]/15 dark:text-[#8B83FF] font-semibold'
                                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60'
                                 }`}
-                            title={collapsed ? item.label : undefined}
+                            title={collapsed ? `${item.label}${isLocked ? ' 🔒' : ''}` : undefined}
                         >
                             {isActive && (
                                 <motion.div
@@ -136,13 +143,18 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                             )}
                             <item.icon className={`flex-shrink-0 ${collapsed ? 'w-5 h-5' : 'w-[18px] h-[18px]'}`} />
                             {!collapsed && (
-                                <motion.span
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    className="text-[13px] font-medium truncate"
-                                >
-                                    {item.label}
-                                </motion.span>
+                                <>
+                                    <motion.span
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        className="text-[13px] font-medium truncate flex-1"
+                                    >
+                                        {item.label}
+                                    </motion.span>
+                                    {isLocked && (
+                                        <Lock className="w-3.5 h-3.5 text-amber-500/70 flex-shrink-0" />
+                                    )}
+                                </>
                             )}
                         </Link>
                     );
@@ -173,6 +185,19 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
 
             {/* ── Bottom Section ── */}
             <div className="border-t border-slate-200/80 dark:border-slate-800/60 p-3 space-y-1.5">
+                {/* Upgrade button (for free users only) */}
+                {!isAdmin && stage < 3 && (
+                    <Link
+                        to="/plans"
+                        className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/15 hover:to-orange-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 transition-all
+                            ${collapsed ? 'justify-center px-0' : ''}`}
+                        title={collapsed ? 'Upgrade Plan' : undefined}
+                    >
+                        <Crown className={`flex-shrink-0 ${collapsed ? 'w-5 h-5' : 'w-[18px] h-[18px]'}`} />
+                        {!collapsed && <span className="text-[13px] font-bold">Upgrade Plan</span>}
+                    </Link>
+                )}
+
                 {/* Theme toggle */}
                 <button
                     onClick={toggleTheme}
@@ -204,7 +229,10 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                     </div>
                     {!collapsed && (
                         <div className="min-w-0 flex-1">
-                            <p className="text-[13px] font-semibold text-slate-900 dark:text-white truncate leading-tight">{displayName}</p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-[13px] font-semibold text-slate-900 dark:text-white truncate leading-tight">{displayName}</p>
+                                <SubscriptionBadge />
+                            </div>
                             <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate leading-tight">{user?.email}</p>
                         </div>
                     )}

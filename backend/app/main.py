@@ -41,6 +41,10 @@ from app.models.career import (
 )
 from app.models.resume import SavedResume
 from app.models.user import Blacklist, Profile, User
+from app.models.subscription import (
+    SubscriptionPlan, MicroPlan, UserSubscription,
+    UserMicroPurchase, Coupon, CouponUsage, PaymentTransaction,
+)
 
 # Configure logging early so startup failures appear in Vercel logs.
 logging.basicConfig(
@@ -216,6 +220,19 @@ async def startup_event():
     try:
         initialize_relational_database()
         logger.info("PostgreSQL: OK")
+
+        # Seed default subscription plans
+        try:
+            from app.services.subscription_service import seed_default_plans
+            from app.db.session import SessionLocal
+            seed_db = SessionLocal()
+            try:
+                seed_default_plans(seed_db)
+            finally:
+                seed_db.close()
+            logger.info("Subscription plans: seeded")
+        except Exception:
+            logger.exception("Subscription plan seeding failed (non-fatal).")
     except Exception:
         logger.exception("Relational DB startup failed (non-fatal).")
 

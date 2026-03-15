@@ -126,6 +126,13 @@ const AdminDashboard: React.FC = () => {
                             <AlertTriangle className="w-4 h-4 text-yellow-400" />
                             <span>Inactivity</span>
                         </Link>
+                        <Link
+                            to="/admin/subscriptions"
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-800/50 border border-slate-700 hover:bg-slate-700/50 transition-colors"
+                        >
+                            <Crown className="w-4 h-4 text-amber-400" />
+                            <span>Subscriptions</span>
+                        </Link>
                         {isBlackAdmin && (
                             <Link
                                 to="/admin/command-centre"

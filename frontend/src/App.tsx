@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { SubscriptionProvider } from './context/SubscriptionContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
@@ -41,6 +42,8 @@ const Profile = lazyPage('/profile');
 const AdminDashboard = lazyPage('/admin/users');
 const AdminInactivity = lazyPage('/admin/inactivity');
 const AdminCommandCentre = lazyPage('/admin/command-centre');
+const Plans = lazyPage('/plans');
+const AdminSubscriptionPanel = lazyPage('/admin/subscriptions');
 
 /**
  * OAuth Code Interceptor
@@ -123,6 +126,7 @@ function App() {
     <ThemeProvider>
     <Router>
       <AuthProvider>
+        <SubscriptionProvider>
         <Suspense fallback={<AuthLoadingScreen />}>
           <OAuthCodeInterceptor>
           <Routes>
@@ -154,16 +158,19 @@ function App() {
             <Route path="/jobs" element={<ProtectedPage><Jobs /></ProtectedPage>} />
             <Route path="/progress" element={<ProtectedPage><Progress /></ProtectedPage>} />
             <Route path="/profile" element={<ProtectedPage><Profile /></ProtectedPage>} />
+            <Route path="/plans" element={<ProtectedPage><Plans /></ProtectedPage>} />
 
             {/* ── Admin Routes ── */}
             <Route path="/admin/users" element={<AdminPage><AdminDashboard /></AdminPage>} />
             <Route path="/admin/inactivity" element={<AdminPage><AdminInactivity /></AdminPage>} />
             <Route path="/admin/command-centre" element={<AdminPage requireBlackAdmin><AdminCommandCentre /></AdminPage>} />
+            <Route path="/admin/subscriptions" element={<AdminPage><AdminSubscriptionPanel /></AdminPage>} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
           </OAuthCodeInterceptor>
         </Suspense>
+        </SubscriptionProvider>
       </AuthProvider>
     </Router>
     </ThemeProvider>

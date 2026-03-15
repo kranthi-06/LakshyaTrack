@@ -19,6 +19,8 @@ const pageImporters: Record<string, Importer> = {
     '/admin/command-centre': () => import('../pages/AdminCommandCentre'),
     '/verify-email': () => import('../pages/VerifyEmail'),
     '/auth/callback': () => import('../pages/AuthCallback'),
+    '/plans': () => import('../pages/Plans'),
+    '/admin/subscriptions': () => import('../pages/AdminSubscriptionPanel'),
 };
 
 const preloadedRoutes = new Set<string>();
