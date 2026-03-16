@@ -59,7 +59,7 @@ export default function Evaluate() {
     };
 
     const renderFileUploader = () => (
-        <Card className="p-12 rounded-[3.5rem] border-dashed border-2 border-slate-200 bg-white/50 backdrop-blur-xl shadow-2xl shadow-slate-200/50 max-w-3xl mx-auto mb-16 overflow-hidden relative group">
+        <Card className="p-12 rounded-[3.5rem] border-dashed border-2 border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl shadow-2xl shadow-slate-200/50 dark:shadow-slate-900/50 max-w-3xl mx-auto mb-16 overflow-hidden relative group">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
 
             <div className="relative z-10 text-center space-y-8">

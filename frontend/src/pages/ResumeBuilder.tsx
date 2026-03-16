@@ -246,7 +246,7 @@ export default function ResumeBuilder() {
                                     </Button>
                                 </div>
 
-                                <div className="bg-[#eff6ff]/60 border border-blue-100 rounded-[2rem] p-8 space-y-4">
+                                <div className="bg-[#eff6ff]/60 dark:bg-slate-900/50 border border-blue-100 dark:border-slate-800 rounded-[2rem] p-8 space-y-4">
                                     <div className="flex items-center gap-3">
                                         <ShieldCheck className="w-5 h-5 text-blue-500" />
                                         <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest">Your Privacy Matters</h4>
