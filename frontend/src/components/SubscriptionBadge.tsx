@@ -13,10 +13,26 @@ const STAGE_CONFIG: Record<number, { label: string; color: string; bg: string; b
 
 /**
  * Small badge showing the user's current subscription tier.
+ * Shows a shimmer skeleton while subscription data is loading
+ * to prevent the "Free" -> "Ultimate" flicker.
  */
 export default function SubscriptionBadge({ className = '' }: SubscriptionBadgeProps) {
-    const { stage, isAdmin } = useSubscription();
+    const { stage, isAdmin, loading, resolved } = useSubscription();
 
+    // ── Loading state: show shimmer skeleton ──────────────────
+    // This prevents the flicker where "Free" shows briefly before
+    // the actual subscription status loads.
+    if (loading || !resolved) {
+        return (
+            <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 ${className}`}
+            >
+                <span className="w-8 h-2.5 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+            </span>
+        );
+    }
+
+    // ── Admin badge ───────────────────────────────────────────
     if (isAdmin) {
         return (
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-500/15 dark:to-yellow-500/15 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 ${className}`}>
@@ -28,6 +44,7 @@ export default function SubscriptionBadge({ className = '' }: SubscriptionBadgeP
         );
     }
 
+    // ── Normal subscription badge ─────────────────────────────
     const config = STAGE_CONFIG[stage] || STAGE_CONFIG[0];
 
     return (

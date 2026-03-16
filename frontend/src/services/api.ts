@@ -90,6 +90,8 @@ const SILENT_ENDPOINTS = [
     '/quiz/history',
     '/exam/violation-history',
     '/saved-resumes',
+    '/subscription/status',
+    '/subscription/feature-access',
 ];
 
 function isSilentEndpoint(url: string | undefined): boolean {

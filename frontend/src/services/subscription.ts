@@ -65,6 +65,22 @@ export interface FeatureAccess {
     feature_expires: Record<string, string | null>;
 }
 
+/**
+ * Normalized subscription status — the SINGLE SOURCE OF TRUTH response.
+ * This is the primary type the SubscriptionContext consumes.
+ */
+export interface SubscriptionStatus {
+    plan: 'free' | 'starter' | 'professional' | 'ultimate';
+    status: 'active' | 'expired' | 'cancelled' | 'none';
+    stage: number;
+    expires_at: string | null;
+    is_admin: boolean;
+    features: Record<string, boolean>;
+    feature_expires: Record<string, string | null>;
+    subscription_id: string | null;
+    plan_name: string | null;
+}
+
 export interface CheckoutResponse {
     transaction_id: string;
     order_type: string;
@@ -121,6 +137,20 @@ export interface PaymentTransaction {
     status: string;
     created_at: string | null;
 }
+
+// ══════════════════════════════════════════════════════════════
+// API CALLS — PRIMARY (Subscription Status)
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * GET /subscription/status — THE single source of truth.
+ * This is the first and only call the SubscriptionContext makes on login.
+ * The frontend MUST wait for this response before rendering any subscription UI.
+ */
+export const getSubscriptionStatus = async (): Promise<SubscriptionStatus> => {
+    const response = await api.get('/subscription/status');
+    return response.data;
+};
 
 // ══════════════════════════════════════════════════════════════
 // API CALLS — PUBLIC

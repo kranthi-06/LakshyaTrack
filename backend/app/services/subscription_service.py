@@ -6,11 +6,14 @@ Subscription Service — centralized business logic for:
 - Coupon validation
 - Payment processing (demo mode)
 - Plan seeding
+- In-memory subscription status cache
 """
 import logging
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +23,141 @@ from app.models.subscription import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ══════════════════════════════════════════════════════════════
+# IN-MEMORY SUBSCRIPTION STATUS CACHE
+# Thread-safe TTL cache for subscription lookups.
+# Avoids hitting the database on every /subscription/status call.
+# ══════════════════════════════════════════════════════════════
+
+_CACHE_TTL_SECONDS = 300  # 5 minutes
+_subscription_cache: Dict[str, Dict[str, Any]] = {}
+_cache_lock = threading.Lock()
+
+
+def _cache_key(user_id: uuid.UUID) -> str:
+    return f"sub:{str(user_id)}"
+
+
+def _cache_get(user_id: uuid.UUID) -> Optional[Dict[str, Any]]:
+    """Get cached subscription status. Returns None on miss or expiry."""
+    key = _cache_key(user_id)
+    with _cache_lock:
+        entry = _subscription_cache.get(key)
+        if entry and entry["_expires_at"] > time.time():
+            return entry["data"]
+        # Expired or missing — clean up
+        _subscription_cache.pop(key, None)
+    return None
+
+
+def _cache_set(user_id: uuid.UUID, data: Dict[str, Any]) -> None:
+    """Store subscription status in cache with TTL."""
+    key = _cache_key(user_id)
+    with _cache_lock:
+        _subscription_cache[key] = {
+            "data": data,
+            "_expires_at": time.time() + _CACHE_TTL_SECONDS,
+        }
+
+
+def invalidate_subscription_cache(user_id: uuid.UUID) -> None:
+    """Invalidate cached subscription status for a user.
+    Call this whenever a subscription changes (payment, upgrade, cancel, expire).
+    """
+    key = _cache_key(user_id)
+    with _cache_lock:
+        _subscription_cache.pop(key, None)
+    logger.info("Subscription cache invalidated for user %s", user_id)
+
+
+def invalidate_all_subscription_cache() -> None:
+    """Flush the entire subscription cache (e.g., after bulk expiry job)."""
+    with _cache_lock:
+        _subscription_cache.clear()
+    logger.info("Entire subscription cache flushed.")
+
+
+# ══════════════════════════════════════════════════════════════
+# NORMALIZED SUBSCRIPTION STATUS
+# Single source of truth response for the frontend.
+# ══════════════════════════════════════════════════════════════
+
+STAGE_TO_PLAN_NAME = {
+    0: "free",
+    1: "starter",
+    2: "professional",
+    3: "ultimate",
+}
+
+
+def get_subscription_status(
+    db: Session,
+    user_id: uuid.UUID,
+    user_role: str = "user",
+) -> Dict[str, Any]:
+    """
+    Return the normalized subscription status for a user.
+    This is the SINGLE SOURCE OF TRUTH used by the frontend.
+
+    Returns:
+        {
+            "plan": "free" | "starter" | "professional" | "ultimate",
+            "status": "active" | "expired" | "cancelled" | "none",
+            "stage": 0-3,
+            "expires_at": ISO timestamp or None,
+            "is_admin": bool,
+            "features": { feature_key: bool, ... },
+            "feature_expires": { feature_key: ISO timestamp, ... },
+            "subscription_id": UUID or None,
+            "plan_name": str or None,
+        }
+    """
+    is_admin = user_role in ("admin", "black_admin")
+
+    # Check cache first
+    cached = _cache_get(user_id)
+    if cached is not None:
+        # Admin status might change between requests, so override
+        cached["is_admin"] = is_admin
+        return cached
+
+    # Cache miss — compute from database
+    access = resolve_feature_access(db, user_id, user_role)
+    stage = access["stage"]
+    sub = access.get("subscription")
+
+    status_val = "none"
+    expires_at = None
+    subscription_id = None
+    plan_name = None
+
+    if sub:
+        status_val = sub.status
+        expires_at = sub.expires_at.isoformat() if sub.expires_at else None
+        subscription_id = str(sub.id)
+        plan_name = sub.plan.name if sub.plan else None
+
+    if is_admin and status_val == "none":
+        status_val = "active"
+
+    result = {
+        "plan": STAGE_TO_PLAN_NAME.get(stage, "free"),
+        "status": status_val,
+        "stage": stage,
+        "expires_at": expires_at,
+        "is_admin": is_admin,
+        "features": access["features"],
+        "feature_expires": access.get("feature_expires", {}),
+        "subscription_id": subscription_id,
+        "plan_name": plan_name,
+    }
+
+    # Cache the result
+    _cache_set(user_id, result)
+
+    return result
 
 
 # ══════════════════════════════════════════════════════════════
@@ -606,6 +744,10 @@ def verify_payment_and_activate(
         result["micro_purchase"] = purchase
 
     db.commit()
+
+    # Invalidate subscription cache so frontend gets fresh data
+    invalidate_subscription_cache(user_id)
+
     return result
 
 
@@ -646,6 +788,8 @@ def expire_subscriptions(db: Session) -> int:
     if count > 0:
         db.commit()
         logger.info(f"Expired {count} subscriptions/micro-purchases.")
+        # Flush entire cache after bulk expiry
+        invalidate_all_subscription_cache()
 
     return count
 
@@ -677,6 +821,7 @@ def admin_manage_subscription(
             s.status = "cancelled"
             s.cancelled_at = now
         db.commit()
+        invalidate_subscription_cache(target_user_id)
         return {"success": True, "message": "Subscription cancelled"}
 
     if action == "extend":
@@ -685,6 +830,7 @@ def admin_manage_subscription(
             return {"success": False, "message": "No active subscription to extend"}
         sub.expires_at = sub.expires_at + timedelta(days=days or 30)
         db.commit()
+        invalidate_subscription_cache(target_user_id)
         return {"success": True, "message": f"Subscription extended by {days or 30} days"}
 
     if action in ("upgrade", "downgrade"):
@@ -723,6 +869,7 @@ def admin_manage_subscription(
         )
         db.add(sub)
         db.commit()
+        invalidate_subscription_cache(target_user_id)
         return {"success": True, "message": f"User {'upgraded' if action == 'upgrade' else 'downgraded'} to Stage {stage}"}
 
     return {"success": False, "message": f"Unknown action: {action}"}

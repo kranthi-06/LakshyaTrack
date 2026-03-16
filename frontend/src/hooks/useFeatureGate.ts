@@ -16,10 +16,11 @@ export function useFeatureGate(
     requiredStage: number = 1,
     featureDescription?: string,
 ) {
-    const { hasFeature, isAdmin, stage, getFeatureExpiry, refreshAccess } = useSubscription();
+    const { hasFeature, isAdmin, stage, getFeatureExpiry, refreshAccess, resolved } = useSubscription();
     const [showGate, setShowGate] = useState(false);
 
-    const isLocked = !hasFeature(featureKey) && !isAdmin;
+    // Only consider locked after subscription data has resolved
+    const isLocked = resolved ? (!hasFeature(featureKey) && !isAdmin) : false;
 
     /**
      * Guard an action: if the user has access, call the action immediately.

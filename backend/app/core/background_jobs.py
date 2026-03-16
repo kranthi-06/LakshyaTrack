@@ -144,6 +144,31 @@ async def enrich_opportunities_job():
         db.close()
 
 
+async def expire_subscriptions_job():
+    """Check and expire active subscriptions past their end date."""
+    logger.info("Running job: expire_subscriptions_job")
+    _log_job_event("expire_subscriptions_job", "started")
+    db: Session = SessionLocal()
+    try:
+        from app.services.subscription_service import expire_subscriptions
+        count = expire_subscriptions(db)
+        logger.info(f"Expired {count} subscriptions/micro-purchases.")
+        _log_job_event(
+            "expire_subscriptions_job",
+            "success",
+            {"expired_count": count},
+        )
+    except Exception as e:
+        logger.error(f"Error in expire_subscriptions_job: {e}")
+        _log_job_event(
+            "expire_subscriptions_job",
+            "failed",
+            {"error": str(e)},
+        )
+    finally:
+        db.close()
+
+
 def setup_background_jobs():
     """Initialize and start the background scheduler."""
     scheduler = AsyncIOScheduler()
@@ -184,6 +209,15 @@ def setup_background_jobs():
         replace_existing=True
     )
 
+    # 5. Every 30 minutes: Expire outdated subscriptions
+    scheduler.add_job(
+        expire_subscriptions_job,
+        IntervalTrigger(minutes=30),
+        id="expire_subscriptions",
+        name="Expire outdated subscriptions every 30 minutes",
+        replace_existing=True
+    )
+
     scheduler.start()
-    logger.info("Background scheduler started with 6-hour cycles.")
+    logger.info("Background scheduler started with opportunity + subscription cycles.")
     return scheduler

@@ -42,6 +42,7 @@ from app.services.subscription_service import (
     create_checkout,
     get_active_micro_purchases,
     get_active_subscription,
+    get_subscription_status,
     resolve_feature_access,
     validate_coupon,
     verify_payment_and_activate,
@@ -50,6 +51,40 @@ from app.services.subscription_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# ══════════════════════════════════════════════════════════════
+# PRIMARY: SUBSCRIPTION STATUS (single source of truth)
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/status")
+def subscription_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    GET /subscription/status — THE single-source-of-truth endpoint.
+
+    This is the primary endpoint the frontend calls on login to determine
+    subscription state. It is cached (5 min TTL) and returns a normalized
+    response that the frontend should render without any local assumptions.
+
+    Response:
+        {
+            "plan": "free" | "starter" | "professional" | "ultimate",
+            "status": "active" | "expired" | "cancelled" | "none",
+            "stage": 0-3,
+            "expires_at": "2027-03-16T00:00:00+00:00" | null,
+            "is_admin": false,
+            "features": { "resume_download": true, ... },
+            "feature_expires": {},
+            "subscription_id": "uuid" | null,
+            "plan_name": "Ultimate Monthly" | null
+        }
+    """
+    from app.api.deps import _resolve_user_role
+    role = _resolve_user_role(current_user)
+    return get_subscription_status(db, current_user.id, role)
 
 
 # ══════════════════════════════════════════════════════════════

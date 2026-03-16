@@ -48,7 +48,7 @@ const navItems = [
 
 export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
     const { user, logout } = useAuth();
-    const { hasFeature, stage } = useSubscription();
+    const { hasFeature, stage, loading: subLoading, resolved: subResolved } = useSubscription();
     const location = useLocation();
     const { isDark, toggleTheme } = useTheme();
 
@@ -118,7 +118,8 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
 
                 {navItems.map((item) => {
                     const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
-                    const isLocked = item.featureKey ? !hasFeature(item.featureKey) : false;
+                    // Only show lock icons after subscription data resolves to prevent flicker
+                    const isLocked = subResolved && item.featureKey ? !hasFeature(item.featureKey) : false;
                     return (
                         <Link
                             key={item.label}
@@ -185,8 +186,9 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
 
             {/* ── Bottom Section ── */}
             <div className="border-t border-slate-200/80 dark:border-slate-800/60 p-3 space-y-1.5">
-                {/* Upgrade button (for free users only) */}
-                {!isAdmin && stage < 3 && (
+                {/* Upgrade button (for non-ultimate users only) */}
+                {/* Only show after subscription data resolves to prevent flicker */}
+                {subResolved && !subLoading && !isAdmin && stage < 3 && (
                     <Link
                         to="/plans"
                         className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/15 hover:to-orange-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 transition-all

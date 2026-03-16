@@ -1,10 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import {
-    getFeatureAccess,
-    FeatureAccess,
-    UserSubscription,
-    UserMicroPurchase,
+    getSubscriptionStatus,
+    SubscriptionStatus,
 } from '../services/subscription';
 
 // ══════════════════════════════════════════════════════════════
@@ -14,18 +12,29 @@ import {
 interface SubscriptionContextType {
     /** Current subscription stage (0-3) */
     stage: number;
+    /** Plan name: 'free' | 'starter' | 'professional' | 'ultimate' */
+    plan: string;
+    /** Subscription status: 'active' | 'expired' | 'cancelled' | 'none' */
+    status: string;
     /** Whether the user is admin/super-admin */
     isAdmin: boolean;
-    /** Active subscription details */
-    subscription: UserSubscription | null;
-    /** Active micro purchases */
-    microPurchases: UserMicroPurchase[];
     /** Feature access map: feature_key -> boolean */
     features: Record<string, boolean>;
     /** Feature expiry map: feature_key -> ISO timestamp or null */
     featureExpires: Record<string, string | null>;
-    /** Whether subscription data is loading */
+    /** Subscription expiry date (ISO string or null) */
+    expiresAt: string | null;
+    /**
+     * Whether subscription data is loading.
+     * Components MUST check this before rendering subscription-dependent UI.
+     * If loading is true, show a skeleton/shimmer — NEVER default to free.
+     */
     loading: boolean;
+    /**
+     * Whether the subscription data has been fetched at least once.
+     * This prevents the "free -> premium" flicker on first render.
+     */
+    resolved: boolean;
     /** Check if a specific feature is accessible */
     hasFeature: (featureKey: string) => boolean;
     /** Get expiry time for a feature (for countdown timer) */
@@ -36,53 +45,46 @@ interface SubscriptionContextType {
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
-// Default access for non-logged-in or free users
-const DEFAULT_ACCESS: FeatureAccess = {
-    stage: 0,
-    is_admin: false,
-    subscription: null,
-    active_micro_purchases: [],
-    features: {
-        dashboard: true,
-        resume_preview: true,
-        quiz_limited: true,
-        analytics_limited: true,
-        resume_download: false,
-        resume_builder: false,
-        roadmap_generate: false,
-        interview_start: false,
-        job_portal: false,
-        ads_free: false,
-    },
-    feature_expires: {},
-};
-
 // ══════════════════════════════════════════════════════════════
 // PROVIDER
 // ══════════════════════════════════════════════════════════════
 
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user, authReady } = useAuth();
-    const [access, setAccess] = useState<FeatureAccess>(DEFAULT_ACCESS);
+
+    // ── State ──────────────────────────────────────────────────
+    // CRITICAL: We do NOT initialize with any default subscription data.
+    // The initial state is "loading" until the backend responds.
+    // This prevents the free -> premium flicker entirely.
+    const [subscriptionData, setSubscriptionData] = useState<SubscriptionStatus | null>(null);
     const [loading, setLoading] = useState(true);
+    const [resolved, setResolved] = useState(false);
     const mountedRef = useRef(true);
 
-    const fetchAccess = useCallback(async () => {
+    // ── Fetch subscription status from backend ────────────────
+    const fetchStatus = useCallback(async () => {
         if (!user) {
-            setAccess(DEFAULT_ACCESS);
+            // No user = definitely free, no need to call API
+            setSubscriptionData(null);
             setLoading(false);
+            setResolved(true);
             return;
         }
 
         try {
             setLoading(true);
-            const data = await getFeatureAccess();
+            const data = await getSubscriptionStatus();
             if (mountedRef.current) {
-                setAccess(data);
+                setSubscriptionData(data);
+                setResolved(true);
             }
         } catch (err) {
-            console.warn('SubscriptionContext: Failed to fetch feature access', err);
-            // Keep existing access on failure (don't reset to default)
+            console.warn('SubscriptionContext: Failed to fetch subscription status', err);
+            // On failure, mark as resolved with null data (free tier)
+            // so the UI doesn't stay loading forever
+            if (mountedRef.current) {
+                setResolved(true);
+            }
         } finally {
             if (mountedRef.current) {
                 setLoading(false);
@@ -90,60 +92,75 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
     }, [user]);
 
-    // Fetch on mount and when user changes
+    // ── Fetch on mount and when user/authReady changes ────────
     useEffect(() => {
         mountedRef.current = true;
+
         if (authReady) {
-            fetchAccess();
+            fetchStatus();
         }
+
         return () => {
             mountedRef.current = false;
         };
-    }, [authReady, fetchAccess]);
+    }, [authReady, fetchStatus]);
 
-    // Auto-refresh every 60 seconds to catch expiry changes
+    // ── Auto-refresh every 60 seconds to catch expiry changes ─
     useEffect(() => {
         if (!user) return;
-        const interval = setInterval(fetchAccess, 60_000);
+        const interval = setInterval(fetchStatus, 60_000);
         return () => clearInterval(interval);
-    }, [user, fetchAccess]);
+    }, [user, fetchStatus]);
+
+    // ── Derived values ────────────────────────────────────────
+    const stage = subscriptionData?.stage ?? 0;
+    const plan = subscriptionData?.plan ?? 'free';
+    const status = subscriptionData?.status ?? 'none';
+    const isAdmin = subscriptionData?.is_admin ?? false;
+    const features = subscriptionData?.features ?? {};
+    const featureExpires = subscriptionData?.feature_expires ?? {};
+    const expiresAt = subscriptionData?.expires_at ?? null;
 
     const hasFeature = useCallback(
         (featureKey: string): boolean => {
+            // If not resolved yet, deny access (safe default)
+            if (!resolved) return false;
             // Admins always have full access
-            if (access.is_admin) return true;
-            return access.features[featureKey] ?? false;
+            if (isAdmin) return true;
+            return features[featureKey] ?? false;
         },
-        [access],
+        [resolved, isAdmin, features],
     );
 
     const getFeatureExpiry = useCallback(
         (featureKey: string): Date | null => {
-            const expiry = access.feature_expires[featureKey];
+            const expiry = featureExpires[featureKey];
             if (!expiry) return null;
             return new Date(expiry);
         },
-        [access],
+        [featureExpires],
     );
 
     const refreshAccess = useCallback(async () => {
-        await fetchAccess();
-    }, [fetchAccess]);
+        await fetchStatus();
+    }, [fetchStatus]);
 
     const contextValue = useMemo<SubscriptionContextType>(
         () => ({
-            stage: access.stage,
-            isAdmin: access.is_admin,
-            subscription: access.subscription,
-            microPurchases: access.active_micro_purchases,
-            features: access.features,
-            featureExpires: access.feature_expires,
+            stage,
+            plan,
+            status,
+            isAdmin,
+            features,
+            featureExpires,
+            expiresAt,
             loading,
+            resolved,
             hasFeature,
             getFeatureExpiry,
             refreshAccess,
         }),
-        [access, loading, hasFeature, getFeatureExpiry, refreshAccess],
+        [stage, plan, status, isAdmin, features, featureExpires, expiresAt, loading, resolved, hasFeature, getFeatureExpiry, refreshAccess],
     );
 
     return (

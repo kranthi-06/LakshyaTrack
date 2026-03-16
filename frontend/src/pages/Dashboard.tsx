@@ -31,7 +31,7 @@ import { getActiveRoadmap } from '../services/careerPlatform';
 
 export default function Dashboard() {
     const { user } = useAuth();
-    const { stage, hasFeature, isAdmin } = useSubscription();
+    const { stage, hasFeature, isAdmin, loading: subLoading, resolved: subResolved } = useSubscription();
     const navigate = useNavigate();
     const [roadmapProgress, setRoadmapProgress] = useState(0);
     const [roadmapRole, setRoadmapRole] = useState('Career Plan');
@@ -142,8 +142,9 @@ export default function Dashboard() {
 
                 {/* ═══════════════════════════════════════ */}
                 {/* Subscription Banner (Free users)         */}
+                {/* Only show after subscription data resolves to prevent flicker */}
                 {/* ═══════════════════════════════════════ */}
-                {!isAdmin && stage === 0 && (
+                {subResolved && !subLoading && !isAdmin && stage === 0 && (
                     <motion.div
                         {...fadeIn(0.5)}
                         onClick={() => navigate('/plans')}
