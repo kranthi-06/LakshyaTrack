@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import AuthLoadingScreen from '../components/AuthLoadingScreen';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,8 @@ import {
     Sparkles,
     ArrowRight,
 } from 'lucide-react';
+
+const OAUTH_ERROR_STORAGE_KEY = 'auth:last_oauth_error';
 
 /* ─────────────── Google Icon SVG ─────────────── */
 const GoogleIcon = () => (
@@ -102,6 +104,7 @@ export default function Login() {
     const [isLoading, setIsLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
     const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+    const [oauthNotice, setOauthNotice] = useState<{ message: string; suggestRegister: boolean } | null>(null);
     const navigate = useNavigate();
 
     // Redirect if already logged in
@@ -111,15 +114,41 @@ export default function Login() {
         }
     }, [user, navigate]);
 
+    const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 4000);
+    }, []);
+
+    // Surface OAuth errors captured in AuthCallback (e.g., Supabase DB save failure)
+    useEffect(() => {
+        const raw = sessionStorage.getItem(OAUTH_ERROR_STORAGE_KEY);
+        if (!raw) return;
+
+        sessionStorage.removeItem(OAUTH_ERROR_STORAGE_KEY);
+
+        try {
+            const parsed = JSON.parse(raw);
+            const isFresh = Date.now() - (parsed.ts || 0) < 5 * 60_000;
+            if (!isFresh) return;
+
+            const message: string = parsed.message || 'Google sign-in could not be completed. Please try again.';
+            const suggestRegister = !!parsed.suggestRegister;
+
+            setError(message);
+            setOauthNotice({ message, suggestRegister });
+            showToast(message, 'error');
+        } catch (e) {
+            const fallback = 'Google sign-in could not be completed. Please try again.';
+            setError(fallback);
+            setOauthNotice({ message: fallback, suggestRegister: false });
+            showToast(fallback, 'error');
+        }
+    }, [showToast]);
+
     // Show premium loading screen while auth state is being resolved
     if (authLoading) {
         return <AuthLoadingScreen />;
     }
-
-    const showToast = (message: string, type: 'success' | 'error' | 'info') => {
-        setToast({ message, type });
-        setTimeout(() => setToast(null), 4000);
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -150,6 +179,7 @@ export default function Login() {
         if (googleLoading) return;
         setGoogleLoading(true);
         setError('');
+        setOauthNotice(null);
         try {
             await signInWithGoogle();
         } catch (err: any) {
@@ -312,6 +342,34 @@ export default function Login() {
                         <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Welcome Back</h2>
                         <p className="text-slate-500 dark:text-slate-400 mt-2 text-[15px] font-medium">Sign in to continue to Vidorya</p>
                     </div>
+
+                    {oauthNotice && (
+                        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-4 py-3 shadow-sm">
+                            <p className="font-semibold text-sm">We couldn&apos;t finish Google sign-in.</p>
+                            <p className="text-sm mt-1 text-amber-800 leading-relaxed">{oauthNotice.message}</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {oauthNotice.suggestRegister && (
+                                    <Button
+                                        type="button"
+                                        onClick={() => navigate('/register')}
+                                        variant="secondary"
+                                        className="bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-200"
+                                    >
+                                        Create account first
+                                    </Button>
+                                )}
+                                <Button
+                                    type="button"
+                                    onClick={handleGoogleLogin}
+                                    variant="outline"
+                                    disabled={googleLoading}
+                                    className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                                >
+                                    Try Google again
+                                </Button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Error Banner */}
                     <AnimatePresence>

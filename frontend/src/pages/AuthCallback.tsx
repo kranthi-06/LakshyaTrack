@@ -21,6 +21,7 @@ import AuthLoadingScreen from '../components/AuthLoadingScreen';
  *   • Show an error with retry if something fails.
  */
 const OAUTH_TIMEOUT_MS = 20000; // 20s max wait for the full OAuth flow
+const OAUTH_ERROR_STORAGE_KEY = 'auth:last_oauth_error';
 
 export default function AuthCallback() {
     const { user, loading, authReady } = useAuth();
@@ -28,6 +29,41 @@ export default function AuthCallback() {
     const hasNavigated = useRef(false);
     const codeExchanged = useRef(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Step 0: If Supabase redirected back with an explicit error, capture it and
+    // send the user back to the login page with clear guidance.
+    useEffect(() => {
+        const url = new URL(window.location.href);
+        const oauthError = url.searchParams.get('error');
+        if (!oauthError) return;
+
+        const errorCode = url.searchParams.get('error_code');
+        const errorDescription = url.searchParams.get('error_description') || undefined;
+        const normalizedDescription = errorDescription?.replace(/\+/g, ' ');
+
+        const suggestRegister = !!normalizedDescription?.toLowerCase().includes('database error saving new user');
+        const friendlyMessage = suggestRegister
+            ? 'We could not finish Google sign-in because this Google account is new here. Please create an account first, then connect Google.'
+            : normalizedDescription || 'Google sign-in could not be completed. Please try again.';
+
+        sessionStorage.setItem(
+            OAUTH_ERROR_STORAGE_KEY,
+            JSON.stringify({
+                message: friendlyMessage,
+                reason: oauthError,
+                code: errorCode,
+                suggestRegister,
+                ts: Date.now(),
+            })
+        );
+
+        // Clean any partial session so the next attempt starts from a known state.
+        localStorage.removeItem('token');
+        supabase.auth.signOut().catch(() => {});
+
+        hasNavigated.current = true;
+        navigate('/login', { replace: true });
+    }, [navigate]);
 
     // Step 1: Exchange the PKCE authorization code for a session
     useEffect(() => {
