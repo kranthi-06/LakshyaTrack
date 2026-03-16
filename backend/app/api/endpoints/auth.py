@@ -22,8 +22,11 @@ def signup(
     """
     Create new user.
     """
+    # Normalize email (trim spaces)
+    email = user_in.email.strip()
+
     # Check if user already exists and is verified
-    user = crud.get_user_by_email(db, email=user_in.email)
+    user = crud.get_user_by_email(db, email=email)
     if user:
         if user.is_verified:
             raise HTTPException(
@@ -45,7 +48,7 @@ def signup(
     hashed_password = security.get_password_hash(user_in.password)
     
     user_data = {
-        "email": user_in.email,
+        "email": email,
         "hashed_password": hashed_password,
         "full_name": user_in.full_name,
         "is_active": True,
@@ -53,11 +56,11 @@ def signup(
     }
     
     # Store OTP with user data
-    crud.create_otp(db, email=user_in.email, otp_code=otp_code, expires_at=expires_at, user_data=user_data)
+    crud.create_otp(db, email=email, otp_code=otp_code, expires_at=expires_at, user_data=user_data)
     
     # Send Email
     try:
-        email_sent = send_email_otp(user_in.email, otp_code)
+        email_sent = send_email_otp(email, otp_code)
     except Exception as e:
         print(f"Error sending email in signup: {e}")
         email_sent = False
@@ -82,12 +85,13 @@ def send_otp(
     """
     Send OTP to email.
     """
-    user = crud.get_user_by_email(db, email=otp_in.email)
+    email = otp_in.email.strip()
+    user = crud.get_user_by_email(db, email=email)
     
     # If user not found, check if there is a pending registration (OTP with user_data)
     pending_user_data = None
     if not user:
-        latest_otp = crud.get_latest_otp(db, email=otp_in.email)
+        latest_otp = crud.get_latest_otp(db, email=email)
         if latest_otp and latest_otp.user_data:
             pending_user_data = latest_otp.user_data
         else:
@@ -103,7 +107,7 @@ def send_otp(
          return {"message": "User is already verified."}
 
     # Check cooldown
-    latest_otp = crud.get_latest_otp(db, email=otp_in.email)
+    latest_otp = crud.get_latest_otp(db, email=email)
     
     # Ensure current time is timezone aware for comparison
     now = datetime.now(timezone.utc)
@@ -124,15 +128,15 @@ def send_otp(
     otp_code = "".join([str(random.randint(0, 9)) for _ in range(6)])
     expires_at = now + timedelta(minutes=5)
     
-    print(f"DEBUG: OTP for {otp_in.email} is {otp_code}")
+    print(f"DEBUG: OTP for {email} is {otp_code}")
 
     # Store OTP
     # If we have pending_user_data, pass it along so the new OTP can also create the user
-    crud.create_otp(db, email=otp_in.email, otp_code=otp_code, expires_at=expires_at, user_data=pending_user_data)
+    crud.create_otp(db, email=email, otp_code=otp_code, expires_at=expires_at, user_data=pending_user_data)
     
     # Send Email
     try:
-        email_sent = send_email_otp(otp_in.email, otp_code)
+        email_sent = send_email_otp(email, otp_code)
     except Exception as e:
         print(f"Error sending email in send-otp: {e}")
         email_sent = False
@@ -158,12 +162,13 @@ def verify_otp(
     """
     Verify OTP and activate user account.
     """
-    user = crud.get_user_by_email(db, email=otp_in.email)
+    email = otp_in.email.strip()
+    user = crud.get_user_by_email(db, email=email)
     # logic changed: user might be None if deferred registration
     # if not user:
     #    raise HTTPException(status_code=404, detail="User not found")
         
-    latest_otp = crud.get_latest_otp(db, email=otp_in.email)
+    latest_otp = crud.get_latest_otp(db, email=email)
     if not latest_otp:
         raise HTTPException(status_code=400, detail="No OTP request found")
         
@@ -195,6 +200,25 @@ def verify_otp(
     # Check if we need to create the user (Deferred Registration)
     if user:
         # User already exists (old flow or password reset or unverified user)
+        # If OTP contains fresh user data (e.g., new password), merge it in.
+        if latest_otp.user_data:
+            user_data = dict(latest_otp.user_data)  # Copy dict
+            full_name = user_data.pop("full_name", None)
+
+            # Only allow specific fields to update existing user safely
+            for field in ("email", "hashed_password", "is_active", "is_verified", "login_type"):
+                value = user_data.get(field)
+                if value is not None and value != "":
+                    setattr(user, field, value)
+
+            # Update or create profile if full_name provided
+            if full_name:
+                profile = user.profile
+                if not profile:
+                    profile = models.Profile(id=user.id)
+                profile.full_name = full_name
+                db.add(profile)
+
         user.is_verified = True
         user.is_active = True
         db.add(user)

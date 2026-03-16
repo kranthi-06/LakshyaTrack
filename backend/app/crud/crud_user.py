@@ -8,7 +8,10 @@ def get_user(db: Session, user_id: UUID):
     return db.query(User).filter(User.id == user_id).first()
 
 def get_user_by_email(db: Session, email: str):
-    return db.query(User).filter(User.email == email).first()
+    if not email:
+        return None
+    normalized_email = email.strip()
+    return db.query(User).filter(User.email == normalized_email).first()
 
 
 def create_user(db: Session, user_in: UserCreate):
