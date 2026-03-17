@@ -16,6 +16,7 @@ REQUIRED_COLLECTIONS = (
     "ai_outputs",
     "ai_cache",
     "idempotency_keys",
+    "user_streaks",
 )
 
 _mongo_client: Optional[MongoClient] = None
@@ -90,6 +91,16 @@ def _ensure_indexes(db: Database) -> None:
         [("expires_at", ASCENDING)],
         name="idempotency_keys_expires_at_ttl_idx",
         expireAfterSeconds=0,
+    )
+
+    db["user_streaks"].create_index(
+        [("user_id", ASCENDING)],
+        name="user_streaks_user_id_idx",
+        unique=True,
+    )
+    db["user_streaks"].create_index(
+        [("updated_at", DESCENDING)],
+        name="user_streaks_updated_at_idx",
     )
 
 

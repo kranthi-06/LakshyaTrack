@@ -333,6 +333,22 @@ export const getProgressHistory = async (limit: number = 30) => {
     );
 };
 
+export const deleteProgressSnapshot = async (snapshotId: string) => {
+    const res = await api.delete(`/progress/snapshot/${snapshotId}`);
+    invalidateCache('progress:');
+    return res.data;
+};
+
+export const getDailyStreak = async () => {
+    const res = await api.get('/progress/streak');
+    return res.data;
+};
+
+export const touchDailyStreak = async () => {
+    const res = await api.post('/progress/streak/touch');
+    return res.data;
+};
+
 // ════════════════════════════════════════════
 // 7. EXAM PROCTORING SYSTEM
 // ════════════════════════════════════════════

@@ -4,6 +4,7 @@ import { setAuthInitialized } from '../services/api';
 import { invalidateCache } from '../services/cache';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { touchDailyStreak } from '../services/careerPlatform';
 
 interface User {
     email: string;
@@ -244,6 +245,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const userData = await fetchCurrentUser();
                     if (!mountedRef.current) return;
                     updateUser(userData);
+                    touchDailyStreak().catch(() => { });
 
                     // Navigate only when the user is on a public / callback page
                     const currentPath = window.location.pathname;
@@ -309,6 +311,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             invalidateCache('auth:');
             const userData = await getMe();
             updateUser(userData);
+            // Best-effort daily streak touch (non-blocking).
+            touchDailyStreak().catch(() => { });
             navigate('/dashboard', { replace: true });
         }
     }, [navigate, updateUser]);
@@ -326,6 +330,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             invalidateCache('auth:');
             const userData = await getMe();
             updateUser(userData);
+            touchDailyStreak().catch(() => { });
         }
     }, [updateUser]);
 
@@ -337,7 +342,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ── Refresh User Data ───────────────────────────────────────
     const refreshUser = useCallback(async () => {
         const userData = await fetchCurrentUser(false, true);
-        if (userData && mountedRef.current) updateUser(userData);
+        if (userData && mountedRef.current) {
+            updateUser(userData);
+            // Touch streak on first successful refresh each day (safe to call often).
+            touchDailyStreak().catch(() => { });
+        }
     }, [fetchCurrentUser, updateUser]);
 
     // ── Google Sign‑In via Supabase ─────────────────────────────

@@ -192,3 +192,31 @@ def get_progress_history(
         }
         for s in reversed(snapshots)  # Oldest first for charts
     ]
+
+
+def delete_progress_snapshot(
+    user_id: str,
+    db: Session,
+    snapshot_id: str,
+) -> bool:
+    """
+    Delete a single snapshot owned by the current user.
+    Returns True if deleted, False if not found.
+    """
+    import uuid
+
+    try:
+        snapshot_uuid = uuid.UUID(str(snapshot_id))
+    except Exception:
+        return False
+
+    snap = db.query(ProgressSnapshot).filter(
+        ProgressSnapshot.id == snapshot_uuid,
+        ProgressSnapshot.user_id == user_id,
+    ).first()
+    if not snap:
+        return False
+
+    db.delete(snap)
+    db.commit()
+    return True

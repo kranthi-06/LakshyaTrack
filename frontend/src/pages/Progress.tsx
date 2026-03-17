@@ -34,17 +34,22 @@ import {
     getCurrentProgress,
     getProgressHistory,
     saveProgressSnapshot,
+    deleteProgressSnapshot,
     getQuizHistory,
     getAdvancedInterviewHistory,
-    getMultistageHistory
+    getMultistageHistory,
+    getDailyStreak
 } from '../services/careerPlatform';
 
 export default function Progress() {
     const [quizHistory, setQuizHistory] = useState<any[]>([]);
     const [interviewHistory, setInterviewHistory] = useState<any[]>([]);
     const [progressData, setProgressData] = useState<any>(null);
+    const [snapshots, setSnapshots] = useState<any[]>([]);
+    const [streak, setStreak] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [deletingSnapshotId, setDeletingSnapshotId] = useState<string | null>(null);
 
     // Popup state
     const [selectedQuiz, setSelectedQuiz] = useState<any>(null);
@@ -57,6 +62,8 @@ export default function Progress() {
         setIsLoading(true);
         await Promise.allSettled([
             loadProgress(),
+            loadSnapshots(),
+            loadStreak(),
             loadQuizHistory(),
             loadInterviewHistory()
         ]);
@@ -69,6 +76,37 @@ export default function Progress() {
             setProgressData(res);
         } catch (e) {
             console.error('Failed to load progress:', e);
+        }
+    };
+
+    const loadSnapshots = async () => {
+        try {
+            const res = await getProgressHistory(60);
+            setSnapshots(res?.snapshots || []);
+        } catch {
+            setSnapshots([]);
+        }
+    };
+
+    const loadStreak = async () => {
+        try {
+            const res = await getDailyStreak();
+            setStreak(res);
+        } catch {
+            setStreak(null);
+        }
+    };
+
+    const handleDeleteSnapshot = async (snapshotId: string) => {
+        setDeletingSnapshotId(snapshotId);
+        try {
+            await deleteProgressSnapshot(snapshotId);
+            await loadSnapshots();
+            await loadProgress();
+        } catch (e) {
+            console.error('Failed to delete snapshot:', e);
+        } finally {
+            setDeletingSnapshotId(null);
         }
     };
 
@@ -309,6 +347,25 @@ export default function Progress() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-8 mb-8">
                                 <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[3rem] relative overflow-hidden group border border-white/20">
                                     <div className="absolute top-0 right-0 p-8">
+                                        <Flame className="w-12 h-12 text-orange-500/10 rotate-12 transition-transform group-hover:rotate-0" />
+                                    </div>
+                                    <div className="space-y-6">
+                                        <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center">
+                                            <Flame className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none mb-3">Daily Streak</p>
+                                            <p className="text-4xl font-[900] text-slate-900 tracking-tighter">{streak?.current_streak ?? 0}</p>
+                                            <p className="text-xs font-bold text-slate-400 mt-2">Longest: {streak?.longest_streak ?? 0} days</p>
+                                        </div>
+                                        <p className="text-[10px] font-bold text-slate-400">
+                                            Last active: {streak?.last_active_date ? new Date(streak.last_active_date).toLocaleDateString() : 'N/A'}
+                                        </p>
+                                    </div>
+                                </Card>
+
+                                <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[3rem] relative overflow-hidden group border border-white/20">
+                                    <div className="absolute top-0 right-0 p-8">
                                         <BrainCircuit className="w-12 h-12 text-blue-500/10 rotate-12 transition-transform group-hover:rotate-0" />
                                     </div>
                                     <div className="space-y-6">
@@ -431,6 +488,70 @@ export default function Progress() {
                                                         </td>
                                                     </tr>
                                                 ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </Card>
+                            </div>
+
+                            {/* Progress Snapshots (deletable) */}
+                            <div className="space-y-8">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
+                                        <History className="w-5 h-5 text-slate-900" />
+                                    </div>
+                                    <h2 className="text-2xl sm:text-3xl font-[900] text-slate-900 tracking-tight">Progress Snapshots</h2>
+                                </div>
+
+                                <Card className="border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[2.5rem] overflow-hidden border border-white/20">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead>
+                                                <tr className="bg-slate-900 text-white">
+                                                    <th className="px-8 py-6 text-left text-xs font-black uppercase tracking-widest">Date</th>
+                                                    <th className="px-8 py-6 text-left text-xs font-black uppercase tracking-widest">Readiness</th>
+                                                    <th className="px-8 py-6 text-left text-xs font-black uppercase tracking-widest">Quiz Avg</th>
+                                                    <th className="px-8 py-6 text-left text-xs font-black uppercase tracking-widest">Interview Avg</th>
+                                                    <th className="px-8 py-6 text-left text-xs font-black uppercase tracking-widest">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {snapshots.map((s: any) => (
+                                                    <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                                                        <td className="px-8 py-6">
+                                                            <span className="text-sm font-bold text-slate-500">{s.snapshot_date ? new Date(s.snapshot_date).toLocaleString() : 'N/A'}</span>
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <span className="text-sm font-black text-slate-900">{Math.round(s.career_readiness_score || 0)}%</span>
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <span className="text-sm font-black text-slate-900">{Math.round(s.quiz_avg_score || 0)}%</span>
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <span className="text-sm font-black text-slate-900">{Math.round(s.interview_avg_score || 0)}%</span>
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <Button
+                                                                variant="outline"
+                                                                disabled={deletingSnapshotId === s.id}
+                                                                onClick={() => handleDeleteSnapshot(s.id)}
+                                                                className="h-9 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                                            >
+                                                                {deletingSnapshotId === s.id ? (
+                                                                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                                                ) : null}
+                                                                Delete
+                                                            </Button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {snapshots.length === 0 && (
+                                                    <tr>
+                                                        <td className="px-8 py-10 text-center text-sm font-bold text-slate-400" colSpan={5}>
+                                                            No snapshots yet. Click “Refresh Stats” to save one.
+                                                        </td>
+                                                    </tr>
+                                                )}
                                             </tbody>
                                         </table>
                                     </div>

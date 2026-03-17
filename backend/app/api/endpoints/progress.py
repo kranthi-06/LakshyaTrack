@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.api import deps
-from app.services import document_store_service, progress_service
+from app.services import document_store_service, progress_service, streak_service
 
 router = APIRouter()
 
@@ -81,3 +81,52 @@ async def get_progress_history(
         limit=limit
     )
     return {"snapshots": history}
+
+
+@router.delete("/snapshot/{snapshot_id}")
+async def delete_snapshot(
+    snapshot_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Delete a single progress snapshot owned by the current user.
+    """
+    try:
+        deleted = progress_service.delete_progress_snapshot(
+            user_id=str(current_user.id),
+            db=db,
+            snapshot_id=snapshot_id,
+        )
+        if not deleted:
+            return {"deleted": False}
+        return {"deleted": True}
+    except Exception as e:
+        document_store_service.record_task_log(
+            task_name="progress_snapshot_delete",
+            status="failed",
+            source="api",
+            user_id=str(current_user.id),
+            details={"snapshot_id": snapshot_id, "error": str(e)},
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/streak")
+async def get_streak(
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get daily login streak stats (UTC day).
+    """
+    return streak_service.get_streak(user_id=str(current_user.id))
+
+
+@router.post("/streak/touch")
+async def touch_streak(
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Touch streak for today (increment if new day). Call this on login/app load.
+    """
+    return streak_service.touch_streak(user_id=str(current_user.id))
