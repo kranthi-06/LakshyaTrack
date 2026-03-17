@@ -14,6 +14,8 @@ REQUIRED_COLLECTIONS = (
     "resume_analysis",
     "task_logs",
     "ai_outputs",
+    "ai_cache",
+    "idempotency_keys",
 )
 
 _mongo_client: Optional[MongoClient] = None
@@ -61,6 +63,33 @@ def _ensure_indexes(db: Database) -> None:
     db["ai_outputs"].create_index(
         [("provider", ASCENDING), ("created_at", DESCENDING)],
         name="ai_outputs_provider_created_at_idx",
+    )
+    db["ai_cache"].create_index(
+        [("cache_key", ASCENDING)],
+        name="ai_cache_key_idx",
+        unique=True,
+    )
+    db["ai_cache"].create_index(
+        [("created_at", DESCENDING)],
+        name="ai_cache_created_at_idx",
+    )
+    # TTL index to keep cache bounded (defaults to 7 days via MongoDB option set below)
+    # Note: expireAfterSeconds is applied when index is created; changing it later requires index recreation.
+    db["ai_cache"].create_index(
+        [("expires_at", ASCENDING)],
+        name="ai_cache_expires_at_ttl_idx",
+        expireAfterSeconds=0,
+    )
+
+    db["idempotency_keys"].create_index(
+        [("idem_key", ASCENDING)],
+        name="idempotency_keys_key_idx",
+        unique=True,
+    )
+    db["idempotency_keys"].create_index(
+        [("expires_at", ASCENDING)],
+        name="idempotency_keys_expires_at_ttl_idx",
+        expireAfterSeconds=0,
     )
 
 

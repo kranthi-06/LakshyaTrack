@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Target,
-    TrendingUp,
     Map,
     Search,
     Code,
@@ -13,23 +13,20 @@ import {
     Megaphone,
     Building2,
     Grid,
-    ArrowRight,
     ChevronRight,
     Sparkles,
-    Users,
-    Laptop,
     Briefcase,
     Lock,
     Unlock,
+    Crown,
+    ArrowUpRight,
     CheckCircle2,
     BookOpen,
     Play,
     Loader2,
-    ExternalLink,
     Plus,
     X,
     ChevronDown,
-    Trash2,
 } from 'lucide-react';
 import {
     generateRoadmap,
@@ -146,8 +143,10 @@ interface RoadmapSummary {
 }
 
 export default function CareerIntelligence() {
+    const navigate = useNavigate();
+
     // ── Subscription gate for roadmap generation ──
-    const { isLocked, guardAction, gateProps } = useFeatureGate(
+    const { isLocked, guardAction, gateProps, openGate } = useFeatureGate(
         'roadmap_generate',
         'AI Learning Roadmaps',
         1,
@@ -529,6 +528,82 @@ export default function CareerIntelligence() {
                                 </div>
                             ) : roadmapData ? (
                                 <>
+                                    {/* ── LOCKED OVERLAY: Free plan users see upgrade prompt ── */}
+                                    {isLocked && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="relative"
+                                        >
+                                            <Card className="p-0 border-none shadow-2xl rounded-[3rem] overflow-hidden relative">
+                                                {/* Gradient Header */}
+                                                <div className="relative bg-gradient-to-br from-[#5c52d2] via-[#7c3aed] to-[#a855f7] p-10 pb-14 text-white overflow-hidden">
+                                                    <div className="absolute -top-8 -right-8 w-36 h-36 bg-white/10 rounded-full" />
+                                                    <div className="absolute -bottom-12 -left-12 w-44 h-44 bg-white/5 rounded-full" />
+                                                    <div className="absolute top-6 right-8 w-20 h-20 bg-white/5 rounded-full" />
+                                                    <div className="relative z-10 text-center space-y-5">
+                                                        <div className="w-20 h-20 bg-white/15 backdrop-blur-md rounded-[2rem] flex items-center justify-center mx-auto border border-white/20 shadow-xl shadow-purple-900/20">
+                                                            <Lock className="w-10 h-10" />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <h2 className="text-3xl sm:text-4xl font-[900] tracking-tight">Roadmap Locked</h2>
+                                                            <p className="text-white/70 text-base font-medium max-w-md mx-auto leading-relaxed">
+                                                                AI Learning Roadmaps are a premium feature. Upgrade your plan to generate, view, and interact with personalized career roadmaps.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Feature Highlights */}
+                                                <div className="p-8 bg-white space-y-6">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                        <div className="p-5 rounded-2xl bg-purple-50/80 border border-purple-100 text-center space-y-3">
+                                                            <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center mx-auto">
+                                                                <Map className="w-5 h-5 text-purple-600" />
+                                                            </div>
+                                                            <h4 className="text-sm font-black text-slate-900">AI Roadmaps</h4>
+                                                            <p className="text-[11px] font-medium text-slate-400 leading-relaxed">Personalized learning paths for any skill or role</p>
+                                                        </div>
+                                                        <div className="p-5 rounded-2xl bg-blue-50/80 border border-blue-100 text-center space-y-3">
+                                                            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center mx-auto">
+                                                                <Target className="w-5 h-5 text-blue-600" />
+                                                            </div>
+                                                            <h4 className="text-sm font-black text-slate-900">Skill Quizzes</h4>
+                                                            <p className="text-[11px] font-medium text-slate-400 leading-relaxed">Track progress with gated skill assessments</p>
+                                                        </div>
+                                                        <div className="p-5 rounded-2xl bg-emerald-50/80 border border-emerald-100 text-center space-y-3">
+                                                            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto">
+                                                                <Sparkles className="w-5 h-5 text-emerald-600" />
+                                                            </div>
+                                                            <h4 className="text-sm font-black text-slate-900">Learn & Grow</h4>
+                                                            <p className="text-[11px] font-medium text-slate-400 leading-relaxed">Curated YouTube resources for each skill</p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                                                        <Button
+                                                            onClick={() => navigate('/plans')}
+                                                            className="w-full sm:flex-1 h-14 bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black text-sm rounded-2xl shadow-xl shadow-purple-200/50 hover:shadow-purple-300/70 hover:scale-[1.02] transition-all group"
+                                                        >
+                                                            <Crown className="w-5 h-5 mr-2" />
+                                                            Upgrade to Unlock
+                                                            <ArrowUpRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                                                        </Button>
+                                                        <Button
+                                                            onClick={() => openGate()}
+                                                            variant="outline"
+                                                            className="w-full sm:w-auto h-14 px-8 rounded-2xl border-2 border-slate-200 font-black text-slate-500 text-xs uppercase tracking-widest hover:border-purple-300 hover:text-purple-600 transition-all"
+                                                        >
+                                                            View Options
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </Card>
+                                        </motion.div>
+                                    )}
+
+                                    {/* ── Unlocked: Show full roadmap content ── */}
+                                    {!isLocked && (<>
                                     <div className="text-center space-y-6">
                                         <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mx-auto shadow-sm">
                                             <Map className="w-8 h-8 text-[#5c52d2]" />
@@ -781,6 +856,7 @@ export default function CareerIntelligence() {
                                             </Card>
                                         </motion.div>
                                     )}
+                                </>)}
                                 </>
                             ) : null}
                         </motion.div>

@@ -5,6 +5,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Career Platform"
     API_V1_STR: str = "/api/v1"
+    # Environment
+    # - development: permissive defaults for local runs
+    # - production: require explicit env vars for secrets/DB
+    APP_ENV: str = "development"
     
     # Database
     # Database
@@ -43,8 +47,29 @@ class Settings(BaseSettings):
     
     # Admin System
     BLACK_ADMIN_EMAILS: str = ""  # Comma-separated emails for permanent super-admin access
+
+    # AI caching (MongoDB Atlas)
+    AI_CACHE_TTL_SECONDS: int = 60 * 60 * 24 * 7  # 7 days
+
+    # Idempotency (MongoDB Atlas)
+    IDEMPOTENCY_TTL_SECONDS: int = 60 * 60 * 24  # 24 hours
+    IDEMPOTENCY_MAX_RESPONSE_BYTES: int = 1024 * 1024  # 1MB
     
     class Config:
         env_file = Path(__file__).resolve().parents[2] / ".env"
 
 settings = Settings()
+
+# Production guardrails:
+# Keep behavior unchanged for development, but prevent accidental production runs
+# with committed default secrets/URLs.
+_DEFAULT_DATABASE_URL = "postgresql://postgres.prrbjfnmuzxbtesrtvmc:Ashok%40yeddula011003@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+_DEFAULT_SECRET_KEY = "temporary_secret_for_deployment"
+
+if settings.APP_ENV.lower() == "production":
+    if not settings.MONGODB_URI:
+        raise RuntimeError("Missing required env var: MONGODB_URI (production)")
+    if settings.DATABASE_URL == _DEFAULT_DATABASE_URL:
+        raise RuntimeError("DATABASE_URL must be set via env var in production (default is not allowed).")
+    if settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
+        raise RuntimeError("SECRET_KEY must be set via env var in production (default is not allowed).")

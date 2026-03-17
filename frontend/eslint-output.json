@@ -1,0 +1,19 @@
+[
+  "18:5 'Users' is defined but never used.",
+  "19:5 'Laptop' is defined but never used.",
+  "29:5 'ExternalLink' is defined but never used.",
+  "33:5 'Trash2' is defined but never used.",
+  "161:12 'selectedDomain' is assigned a value but never used.",
+  "166:52 Unexpected any. Specify a different type.",
+  "169:64 Unexpected any. Specify a different type.",
+  "170:72 Unexpected any. Specify a different type.",
+  "203:22 'e' is defined but never used.",
+  "329:44 Unexpected any. Specify a different type.",
+  "335:18 'e' is defined but never used.",
+  "343:36 Unexpected any. Specify a different type.",
+  "714:74 Unexpected any. Specify a different type.",
+  "716:93 Unexpected any. Specify a different type.",
+  "742:84 Unexpected any. Specify a different type.",
+  "742:89 'skillIdx' is defined but never used.",
+  "816:86 Unexpected any. Specify a different type."
+]

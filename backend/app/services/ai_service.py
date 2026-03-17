@@ -10,6 +10,8 @@ import asyncio
 import json
 import logging
 import sys
+import hashlib
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import google.generativeai as genai
@@ -48,7 +50,8 @@ class AIService:
 
         # ── Initialize Groq (Primary) ──────────────────────────
         self.groq_available = False
-        raw_key = settings.GROQ_API_KEY or HARDCODED_KEY
+        is_production = (settings.APP_ENV or "").lower() == "production"
+        raw_key = settings.GROQ_API_KEY or (None if is_production else HARDCODED_KEY)
         self.groq_api_key = raw_key.strip() if raw_key else None
 
         if self.groq_api_key and len(self.groq_api_key) > 10:
@@ -56,6 +59,8 @@ class AIService:
                 from groq import AsyncGroq  # noqa: F401
                 self.groq_available = True
                 logger.info("Groq initialized as primary AI provider")
+                if not settings.GROQ_API_KEY and not is_production:
+                    logger.warning("Groq is using a development fallback key (set GROQ_API_KEY for real usage).")
             except ImportError:
                 logger.error("Groq library not found. pip install groq")
             except Exception as e:
@@ -180,6 +185,24 @@ class AIService:
         if system_prompt:
             full_messages = [{"role": "system", "content": system_prompt}] + messages
 
+        # MongoDB-backed cache (behavior-preserving): same inputs → same output.
+        # If MongoDB is not configured, this is a no-op.
+        try:
+            cache_payload = {
+                "system_prompt": system_prompt or "",
+                "messages": messages,
+            }
+            cache_key = hashlib.sha256(
+                json.dumps(cache_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            cached = document_store_service.get_ai_cache(cache_key)
+            if cached and "response" in cached:
+                logger.info("AI cache hit")
+                return str(cached["response"])
+        except Exception:
+            # Cache must never affect correctness or availability
+            cache_key = None
+
         # ── 1. Try Groq (Primary) ──────────────────────────────
         if self.groq_available:
             groq_cb = get_circuit_breaker(GROQ_CB)
@@ -196,6 +219,14 @@ class AIService:
                         response=result,
                         metadata={"model": "llama-3.3-70b-versatile"},
                     )
+                    if cache_key:
+                        document_store_service.set_ai_cache(
+                            cache_key=cache_key,
+                            response=result,
+                            provider="groq",
+                            input_payload={"system_prompt": system_prompt, "messages": messages},
+                            metadata={"model": "llama-3.3-70b-versatile"},
+                        )
                     return result
                 except asyncio.TimeoutError:
                     groq_cb.record_failure()
@@ -234,6 +265,14 @@ class AIService:
                         response=result,
                         metadata={"model": "gemini-1.5-flash"},
                     )
+                    if cache_key:
+                        document_store_service.set_ai_cache(
+                            cache_key=cache_key,
+                            response=result,
+                            provider="gemini",
+                            input_payload={"system_prompt": system_prompt, "messages": messages},
+                            metadata={"model": "gemini-1.5-flash"},
+                        )
                     return result
                 except asyncio.TimeoutError:
                     gemini_cb.record_failure()
@@ -262,6 +301,14 @@ class AIService:
                         response=result,
                         metadata={"model": "gpt-4o-mini"},
                     )
+                    if cache_key:
+                        document_store_service.set_ai_cache(
+                            cache_key=cache_key,
+                            response=result,
+                            provider="openai",
+                            input_payload={"system_prompt": system_prompt, "messages": messages},
+                            metadata={"model": "gpt-4o-mini"},
+                        )
                     return result
                 except asyncio.TimeoutError:
                     openai_cb.record_failure()
@@ -285,6 +332,14 @@ class AIService:
             response=mock_response,
             metadata={"fallback": True},
         )
+        if cache_key:
+            document_store_service.set_ai_cache(
+                cache_key=cache_key,
+                response=mock_response,
+                provider="mock",
+                input_payload={"system_prompt": system_prompt, "messages": messages},
+                metadata={"fallback": True, "last_error": self.last_error},
+            )
         return mock_response
 
     async def generate_quiz_questions(

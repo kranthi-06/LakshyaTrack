@@ -7,11 +7,14 @@ Production-grade with:
 - Graceful fallback on any failure
 """
 import io
+import json
 import logging
+import hashlib
 from typing import Optional
 
 from app.core.resilience import safe_json_parse, sanitize_for_logging
 from app.services.ai_service import ai_hub
+from app.services import document_store_service
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,24 @@ async def analyze_resume_with_ai(
     # Truncate inputs for safety
     safe_resume = resume_text[:MAX_RESUME_TEXT_LENGTH]
     safe_jd = job_description[:MAX_JOB_DESC_LENGTH] if job_description else ""
+
+    # MongoDB Atlas caching (behavior-preserving): same inputs → same output.
+    # If MongoDB is not configured, this is a no-op.
+    try:
+        cache_payload = {
+            "type": "resume_analysis_v1",
+            "resume": safe_resume,
+            "job_description": safe_jd,
+        }
+        cache_key = hashlib.sha256(
+            json.dumps(cache_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        cached = document_store_service.get_ai_cache(cache_key)
+        if cached and isinstance(cached.get("response"), dict):
+            logger.info("Resume analysis cache hit")
+            return cached["response"]
+    except Exception:
+        cache_key = None
 
     system_prompt = "You are a world-class AI Career Consultant and Resume Strategist."
 
@@ -144,6 +165,14 @@ async def analyze_resume_with_ai(
         result = safe_json_parse(response)
 
         if result is not None and isinstance(result, dict):
+            if cache_key:
+                document_store_service.set_ai_cache(
+                    cache_key=cache_key,
+                    response=result,
+                    provider="ai_hub",
+                    input_payload={"resume": safe_resume, "job_description": safe_jd},
+                    metadata={"type": "resume_analysis_v1"},
+                )
             return result
 
         # If safe_json_parse returned None, log and return structured error
@@ -157,7 +186,18 @@ async def analyze_resume_with_ai(
 
     except Exception as e:
         logger.error("Resume analysis failed: %s", sanitize_for_logging(str(e)))
-        return _error_response(str(e))
+        error = _error_response(str(e))
+        if cache_key:
+            # Cache error responses briefly so traffic spikes don't DDOS AI providers.
+            # Still behavior-preserving: repeated identical failures would have returned the same error anyway.
+            document_store_service.set_ai_cache(
+                cache_key=cache_key,
+                response=error,
+                provider="error",
+                input_payload={"resume": safe_resume, "job_description": safe_jd},
+                metadata={"type": "resume_analysis_v1", "error": True},
+            )
+        return error
 
 
 def _error_response(error_message: str) -> dict:

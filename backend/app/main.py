@@ -12,6 +12,7 @@ import os
 import sys
 import time
 import traceback
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +23,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.api import api_router
 from app.core.config import settings
+from app.core.logging_utils import configure_logging_json
+from app.core.idempotency import build_idempotency_storage_key
+from app.core.request_context import set_request_id
 from app.core.resilience import (
     get_rate_limiter,
     health_metrics,
@@ -45,13 +49,11 @@ from app.models.subscription import (
     SubscriptionPlan, MicroPlan, UserSubscription,
     UserMicroPurchase, Coupon, CouponUsage, PaymentTransaction,
 )
+from app.services import document_store_service
 
-# Configure logging early so startup failures appear in Vercel logs.
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
+# Configure structured logging early so startup failures appear in logs.
+# This does not affect API behavior—only log format and request correlation.
+configure_logging_json(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -292,6 +294,17 @@ class RequestProtectionMiddleware:
         path = scope.get("path", "")
         method = scope.get("method", "")
         start = time.perf_counter()
+        request_id = None
+        for (k, v) in scope.get("headers", []):
+            if k == b"x-request-id":
+                try:
+                    request_id = v.decode("utf-8")
+                except Exception:
+                    request_id = None
+                break
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        set_request_id(request_id)
 
         # Rate limiting (skip health checks and docs)
         if path not in ("/health", "/docs", "/redoc", "/openapi.json"):
@@ -310,6 +323,7 @@ class RequestProtectionMiddleware:
                 headers.append(
                     (b"x-response-time", f"{duration_ms:.1f}ms".encode())
                 )
+                headers.append((b"x-request-id", request_id.encode()))
                 message = {**message, "headers": headers}
 
                 # Record metrics
@@ -321,8 +335,8 @@ class RequestProtectionMiddleware:
                 # Slow request warning
                 if duration_ms > self.SLOW_REQUEST_THRESHOLD_MS:
                     logger.warning(
-                        "SLOW REQUEST: %s %s took %.0fms (status %d)",
-                        method, path, duration_ms, status_code,
+                        "SLOW REQUEST [%s]: %s %s took %.0fms (status %d)",
+                        request_id, method, path, duration_ms, status_code,
                     )
             await send(message)
 
@@ -331,16 +345,175 @@ class RequestProtectionMiddleware:
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
             health_metrics.record_request("unhandled", duration_ms, success=False)
-            logger.error("Unhandled middleware exception on %s %s: %s", method, path, str(e))
+            logger.error("Unhandled middleware exception [%s] on %s %s: %s", request_id, method, path, str(e))
             # Return 500 instead of crashing
             response = JSONResponse(
                 status_code=500,
-                content={"detail": "Internal server error"},
+                content={"detail": "Internal server error", "request_id": request_id},
             )
             await response(scope, receive, send)
+        finally:
+            set_request_id(None)
 
 
 app.add_middleware(RequestProtectionMiddleware)
+
+class IdempotencyMiddleware:
+    """
+    Opt-in idempotency for write requests.
+    - Only active when request includes `Idempotency-Key` header.
+    - Uses MongoDB Atlas if configured; otherwise no-ops.
+    - Replays stored response for the same key+request fingerprint.
+    """
+
+    IDEMPOTENCY_HEADER = b"idempotency-key"
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = (scope.get("method") or "").upper()
+        if method not in ("POST", "PUT", "PATCH", "DELETE"):
+            await self.app(scope, receive, send)
+            return
+
+        headers = {k.lower(): v for (k, v) in (scope.get("headers") or [])}
+        idem_raw = headers.get(self.IDEMPOTENCY_HEADER)
+        if not idem_raw:
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            idempotency_key = idem_raw.decode("utf-8").strip()[:200]
+        except Exception:
+            await self.app(scope, receive, send)
+            return
+
+        # Read and buffer full request body so we can fingerprint it and still pass it downstream.
+        body_chunks = []
+        more_body = True
+
+        async def buffered_receive():
+            return await receive()
+
+        while more_body:
+            message = await buffered_receive()
+            if message["type"] != "http.request":
+                continue
+            chunk = message.get("body", b"")
+            if chunk:
+                body_chunks.append(chunk)
+            more_body = message.get("more_body", False)
+
+        body_bytes = b"".join(body_chunks)
+
+        # Re-create a receive() that replays the buffered body to downstream app.
+        replayed = False
+
+        async def replay_receive():
+            nonlocal replayed
+            if replayed:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            replayed = True
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+        path = scope.get("path", "")
+        authorization = None
+        auth_raw = headers.get(b"authorization")
+        if auth_raw:
+            try:
+                authorization = auth_raw.decode("utf-8")
+            except Exception:
+                authorization = None
+
+        idem_key, request_hash = build_idempotency_storage_key(
+            method=method,
+            path=path,
+            idempotency_key=idempotency_key,
+            authorization_header=authorization,
+            body_bytes=body_bytes,
+        )
+
+        existing = document_store_service.get_idempotency_record(idem_key)
+        if existing and existing.get("request_hash") == request_hash:
+            try:
+                import base64
+
+                resp_body = base64.b64decode(existing.get("response_body_b64") or "")
+                content_type = existing.get("content_type") or "application/json"
+                status_code = int(existing.get("status_code") or 200)
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": status_code,
+                        "headers": [
+                            (b"content-type", content_type.encode("utf-8")),
+                            (b"x-idempotent-replay", b"1"),
+                        ],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": resp_body,
+                        "more_body": False,
+                    }
+                )
+                return
+            except Exception:
+                # If replay fails, fall through to normal execution
+                pass
+
+        # Capture downstream response to store for replay
+        response_start = None
+        response_body = bytearray()
+
+        async def capturing_send(message):
+            nonlocal response_start, response_body
+            if message["type"] == "http.response.start":
+                response_start = message
+            elif message["type"] == "http.response.body":
+                chunk = message.get("body", b"")
+                if chunk and len(response_body) <= settings.IDEMPOTENCY_MAX_RESPONSE_BYTES:
+                    response_body.extend(chunk)
+            await send(message)
+
+        await self.app(scope, replay_receive, capturing_send)
+
+        # Store only if we captured a complete, bounded response and have MongoDB available.
+        try:
+            if response_start and len(response_body) <= settings.IDEMPOTENCY_MAX_RESPONSE_BYTES:
+                status_code = int(response_start.get("status", 200))
+                # Avoid caching server errors; they should be retried/fixed, not replayed.
+                if status_code < 500:
+                    headers_list = response_start.get("headers", []) or []
+                    content_type = "application/json"
+                    for (k, v) in headers_list:
+                        if k.lower() == b"content-type":
+                            try:
+                                content_type = v.decode("utf-8")
+                            except Exception:
+                                pass
+                            break
+                    document_store_service.set_idempotency_record(
+                        idem_key=idem_key,
+                        method=method,
+                        path=path,
+                        request_hash=request_hash,
+                        status_code=status_code,
+                        response_body=bytes(response_body),
+                        response_content_type=content_type,
+                        response_headers=None,
+                    )
+        except Exception:
+            pass
+
+
+app.add_middleware(IdempotencyMiddleware)
 
 
 # ── Global exception handlers ─────────────────────────────────

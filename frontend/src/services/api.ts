@@ -73,6 +73,17 @@ api.interceptors.request.use((config) => {
         return Promise.reject(new Error('Circuit breaker is open — backend temporarily unavailable'));
     }
 
+    // Correlation ID (backend echoes as x-request-id)
+    try {
+        const reqId =
+            (globalThis.crypto && 'randomUUID' in globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
+                ? globalThis.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        config.headers['x-request-id'] = reqId;
+    } catch {
+        // No-op: header is optional
+    }
+
     const token = localStorage.getItem('token');
     if (token && token !== 'undefined' && token !== 'null') {
         config.headers.Authorization = `Bearer ${token}`;
