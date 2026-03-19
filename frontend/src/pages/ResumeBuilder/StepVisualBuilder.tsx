@@ -37,6 +37,7 @@ interface StepVisualBuilderProps {
     onChange: (d: Partial<ResumeData>) => void;
     editMeta?: EditMeta | null;
     onBack?: () => void;
+    onExplicitSave?: () => void;
 }
 
 /* Render the correct base template component */
@@ -105,7 +106,7 @@ function MiniThumb({ base, color }: { base: BaseTemplate; color: string }) {
 /* A4 page height in pixels at 96dpi (794px width) */
 const A4_PAGE_HEIGHT = 1122;
 
-export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisualBuilderProps) {
+export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicitSave }: StepVisualBuilderProps) {
     // ── Subscription gate for download/export features ──
     const { isLocked: isDownloadLocked, guardAction: guardDownload, gateProps: downloadGateProps } = useFeatureGate(
         'resume_download',
@@ -374,6 +375,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
         setShowNameModal(false);
         try {
             await saveResumeToProfile(buildPayload(resumeNameInput.trim()));
+            onExplicitSave?.();
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {
@@ -389,6 +391,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
         setShowSaveModeModal(false);
         try {
             await updateSavedResume(editMeta.id, buildPayload(editMeta.originalName));
+            onExplicitSave?.();
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {
@@ -404,6 +407,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack }: StepVisu
         setShowSaveModeModal(false);
         try {
             await saveResumeToProfile(buildPayload(copyNameInput.trim()));
+            onExplicitSave?.();
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useBlocker } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight, FileText, Sparkles, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,12 @@ import { StepATSPreview } from './StepATSPreview';
 import { StepVisualBuilder } from './StepVisualBuilder';
 import type { BuilderStep, ResumeData } from './types';
 import { defaultResumeData } from './types';
+import { useAuth } from '../../context/AuthContext';
+import { saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
+import { useAutoSave, type AutoSaveReason } from './useAutoSave';
+import { useBeforeUnload } from './useBeforeUnload';
+import { useResumeStorage } from './useResumeStorage';
+import ResumeLeaveModal from './ResumeLeaveModal';
 
 interface AIBuilderProps {
     onBack: () => void;
@@ -22,6 +29,10 @@ interface AIBuilderProps {
 export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
     // If editResume is provided, start at step 8 (Visual Studio) directly
     const [step, setStep] = useState<BuilderStep>(editResume ? 8 : 1);
+
+    const { user } = useAuth();
+    const { loadDraft, saveDraft, clearDraft } = useResumeStorage();
+
     const [data, setData] = useState<ResumeData>(() => {
         if (editResume?.resume_data) {
             const rd = editResume.resume_data;
@@ -35,10 +46,268 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
                 ats: rd.ats || null,
             };
         }
+
+        const draft = loadDraft();
+        if (draft?.loaded) return draft.data;
         return { ...defaultResumeData };
     });
 
-    const update = (partial: Partial<ResumeData>) => setData(prev => ({ ...prev, ...partial }));
+    const [isDirty, setIsDirty] = useState(false);
+    const [isSaved, setIsSaved] = useState(true);
+    const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+
+    // Keep latest data and counters available to event handlers without stale closures.
+    const dataRef = useRef(data);
+    useEffect(() => {
+        dataRef.current = data;
+    }, [data]);
+
+    const editVersionRef = useRef(0);
+    const isDirtyRef = useRef(isDirty);
+    useEffect(() => {
+        isDirtyRef.current = isDirty;
+    }, [isDirty]);
+
+    const lastSavedDataRef = useRef<ResumeData>(data);
+    useEffect(() => {
+        // Keep "last saved" data in sync for the first paint and after explicit initialization.
+        lastSavedDataRef.current = data;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const authTokenPresentRef = useRef(false);
+    useEffect(() => {
+        try {
+            const token = localStorage.getItem('token');
+            authTokenPresentRef.current = !!user || (!!token && token !== 'undefined' && token !== 'null');
+        } catch {
+            authTokenPresentRef.current = !!user;
+        }
+    }, [user]);
+
+    const BACKEND_DRAFT_ID_STORAGE_KEY = 'vidhyamitra_resume_backend_draft_id';
+    const backendDraftIdRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (editResume) {
+            backendDraftIdRef.current = null;
+            return;
+        }
+        try {
+            backendDraftIdRef.current = localStorage.getItem(BACKEND_DRAFT_ID_STORAGE_KEY);
+        } catch {
+            backendDraftIdRef.current = null;
+        }
+    }, [editResume]);
+
+    const lastBackendSyncAtRef = useRef(0);
+
+    const update = useCallback(
+        (partial: Partial<ResumeData>) => {
+            editVersionRef.current += 1;
+            setIsDirty(true);
+            setIsSaved(false);
+            setData(prev => ({ ...prev, ...partial }));
+        },
+        [],
+    );
+
+    const syncBackendResume = useCallback(
+        async (resume: ResumeData) => {
+            if (!authTokenPresentRef.current) return;
+
+            // Avoid hammering the backend. LocalStorage persistence is the source of truth for crash safety.
+            const now = Date.now();
+            const minMs = 15_000;
+            if (now - lastBackendSyncAtRef.current < minMs) return;
+            lastBackendSyncAtRef.current = now;
+
+            const resume_data = {
+                personal: resume.personal,
+                education: resume.education,
+                experience: resume.experience,
+                projects: resume.projects,
+                skills: resume.skills,
+            };
+
+            try {
+                if (editResume) {
+                    await updateSavedResume(editResume.id, {
+                        resume_data,
+                        target_role: resume.target_role,
+                        ats_score: resume.ats?.score,
+                    });
+                    return;
+                }
+
+                if (!backendDraftIdRef.current) {
+                    const res = await saveResumeToProfile({
+                        resume_name: 'Auto-saved Resume',
+                        resume_data,
+                        template_id: 'ats-modern',
+                        theme: 'default',
+                        target_role: resume.target_role,
+                        ats_score: resume.ats?.score,
+                        is_primary: false,
+                    });
+                    backendDraftIdRef.current = res?.id ? String(res.id) : null;
+                    if (backendDraftIdRef.current) {
+                        try {
+                            localStorage.setItem(BACKEND_DRAFT_ID_STORAGE_KEY, backendDraftIdRef.current);
+                        } catch {
+                            // ignore
+                        }
+                    }
+                    return;
+                }
+
+                await updateSavedResume(backendDraftIdRef.current, {
+                    resume_data,
+                    target_role: resume.target_role,
+                    ats_score: resume.ats?.score,
+                });
+            } catch {
+                // Fail silently; auto-save must never break the UI.
+            }
+        },
+        [BACKEND_DRAFT_ID_STORAGE_KEY, editResume],
+    );
+
+    const saveAll = useCallback(
+        async (reason: AutoSaveReason) => {
+            const versionAtStart = editVersionRef.current;
+            const current = dataRef.current;
+
+            // 1) Always persist to localStorage (crash safety for guests + logged-in users).
+            const ok = saveDraft(current);
+            if (ok && editVersionRef.current === versionAtStart) {
+                lastSavedDataRef.current = current;
+                setIsDirty(false);
+                setIsSaved(true);
+            }
+
+            if (!authTokenPresentRef.current) return;
+
+            // 2) Best-effort backend sync (throttled).
+            // Visibility/manual saves should be given a chance even under throttling pressure.
+            if (reason === 'visibility' || reason === 'manual') {
+                lastBackendSyncAtRef.current = 0; // allow immediate backend attempt
+            }
+            void syncBackendResume(current);
+        },
+        [saveDraft, syncBackendResume],
+    );
+
+    const { saving: autoSaving, triggerSave } = useAutoSave({
+        enabled: true,
+        isDirty,
+        onSave: saveAll,
+        intervalMs: 5000,
+        debounceMs: 400,
+        minSavingMs: 300,
+    });
+
+    const onExplicitSave = useCallback(() => {
+        const versionAtStart = editVersionRef.current;
+        const current = dataRef.current;
+        const ok = saveDraft(current);
+        if (!ok) return;
+        if (editVersionRef.current === versionAtStart) {
+            lastSavedDataRef.current = current;
+            setIsDirty(false);
+            setIsSaved(true);
+        }
+    }, [saveDraft]);
+
+    useBeforeUnload(isDirty, {
+        onSyncSave: () => {
+            if (!isDirtyRef.current) return;
+            const versionAtStart = editVersionRef.current;
+            const current = dataRef.current;
+            const ok = saveDraft(current);
+            if (!ok) return;
+            if (editVersionRef.current === versionAtStart) {
+                lastSavedDataRef.current = current;
+                setIsDirty(false);
+                setIsSaved(true);
+            }
+        },
+        onSyncSaved: () => {
+            // No-op: state is already updated in onSyncSave.
+        },
+    });
+
+    // Ensure internal navigation (unmount/mount) doesn't lose the latest local draft.
+    useEffect(() => {
+        return () => {
+            if (!isDirtyRef.current) return;
+            try {
+                saveDraft(dataRef.current);
+            } catch {
+                // ignore
+            }
+        };
+    }, [saveDraft]);
+
+    const blocker = useBlocker(
+        ({ currentLocation, nextLocation }) =>
+            isDirtyRef.current && currentLocation.pathname !== nextLocation.pathname,
+    );
+
+    useEffect(() => {
+        if (blocker.state === 'blocked') {
+            setLeaveModalOpen(true);
+        }
+    }, [blocker.state]);
+
+    const handleStayOnPage = () => {
+        setLeaveModalOpen(false);
+        blocker.reset();
+    };
+
+    const handleDiscardAndLeave = () => {
+        setLeaveModalOpen(false);
+        try {
+            clearDraft();
+        } catch {
+            // ignore
+        }
+
+        // Only clear the backend draft pointer if we created one.
+        if (!editResume) {
+            try {
+                localStorage.removeItem(BACKEND_DRAFT_ID_STORAGE_KEY);
+            } catch {
+                // ignore
+            }
+            backendDraftIdRef.current = null;
+        }
+
+        isDirtyRef.current = false;
+        setIsDirty(false);
+        setIsSaved(true);
+        setData(lastSavedDataRef.current);
+        blocker.proceed();
+    };
+
+    const handleSaveAndLeave = async () => {
+        setLeaveModalOpen(false);
+        await triggerSave('manual', { immediate: true });
+        blocker.proceed();
+    };
+
+    const leaveModalIsSaving = autoSaving;
+    const statusText = autoSaving
+        ? 'Saving...'
+        : isDirty
+            ? 'Unsaved changes'
+            : 'Saved ✔';
+
+    const statusChipClass = autoSaving
+        ? 'bg-purple-50 text-[#5c52d2] border-purple-200'
+        : isDirty
+            ? 'bg-amber-50 text-amber-700 border-amber-200'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+
     const next = () => step < 8 && setStep((step + 1) as BuilderStep);
     const prev = () => step > 1 ? setStep((step - 1) as BuilderStep) : onBack();
 
@@ -58,26 +327,47 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
     // Step 8 (Visual Studio) gets full-width 3-panel layout
     if (step === 8) {
         return (
-            <motion.div
-                key="ai-builder-studio"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="w-full"
-            >
-                <StepVisualBuilder data={data} onChange={update} editMeta={editMeta} onBack={prev} />
-            </motion.div>
+            <>
+                <motion.div
+                    key="ai-builder-studio"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="w-full relative"
+                >
+                    <div
+                        className={`absolute top-4 right-4 z-[150] px-3 py-1.5 rounded-full text-[10px] font-bold border ${statusChipClass}`}
+                    >
+                        {statusText}
+                    </div>
+                    <StepVisualBuilder
+                        data={data}
+                        onChange={update}
+                        editMeta={editMeta}
+                        onBack={prev}
+                        onExplicitSave={onExplicitSave}
+                    />
+                </motion.div>
+                <ResumeLeaveModal
+                    open={leaveModalOpen}
+                    isSaving={leaveModalIsSaving}
+                    onSaveAndLeave={handleSaveAndLeave}
+                    onDiscardAndLeave={handleDiscardAndLeave}
+                    onStay={handleStayOnPage}
+                />
+            </>
         );
     }
 
     return (
-        <motion.div
-            key="ai-builder"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            className="max-w-4xl mx-auto py-10"
-        >
+        <>
+            <motion.div
+                key="ai-builder"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                className="max-w-4xl mx-auto py-10"
+            >
             {/* Header Bar */}
             <div className="bg-white/90 backdrop-blur-sm rounded-[2rem] shadow-xl p-6 mb-8 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -96,8 +386,15 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Step {step} of 8</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs font-bold text-[#5c52d2] bg-purple-50 px-3 py-1.5 rounded-xl">
-                    <Sparkles className="w-3.5 h-3.5" /> AI-Powered
+                <div className="flex items-center gap-2">
+                    <div
+                        className={`text-xs font-bold px-3 py-1.5 rounded-xl border ${statusChipClass}`}
+                    >
+                        {statusText}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#5c52d2] bg-purple-50 px-3 py-1.5 rounded-xl">
+                        <Sparkles className="w-3.5 h-3.5" /> AI-Powered
+                    </div>
                 </div>
             </div>
 
@@ -142,6 +439,14 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
                     )}
                 </div>
             </div>
-        </motion.div>
+            </motion.div>
+            <ResumeLeaveModal
+                open={leaveModalOpen}
+                isSaving={leaveModalIsSaving}
+                onSaveAndLeave={handleSaveAndLeave}
+                onDiscardAndLeave={handleDiscardAndLeave}
+                onStay={handleStayOnPage}
+            />
+        </>
     );
 }
