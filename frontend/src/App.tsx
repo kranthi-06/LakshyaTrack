@@ -68,6 +68,39 @@ function OAuthCodeInterceptor({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RouteFaviconSync() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const pngHref = '/favicon-32.png?v=4';
+    const svgHref = '/favicon-tab.svg?v=4';
+
+    const upsertIcon = (
+      selector: string,
+      rel: string,
+      href: string,
+      type?: string,
+      sizes?: string,
+    ) => {
+      let link = document.head.querySelector<HTMLLinkElement>(selector);
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = rel;
+        document.head.appendChild(link);
+      }
+      if (type) link.type = type;
+      if (sizes) link.sizes = sizes;
+      link.href = href;
+    };
+
+    upsertIcon('link[rel="icon"][sizes="32x32"]', 'icon', pngHref, 'image/png', '32x32');
+    upsertIcon('link[rel="shortcut icon"]', 'shortcut icon', pngHref);
+    upsertIcon('link[rel="icon"][sizes="any"]', 'icon', svgHref, 'image/svg+xml', 'any');
+  }, [location.pathname]);
+
+  return null;
+}
+
 /** Wrap a page with AppLayout + ProtectedRoute */
 const ProtectedPage = memo(function ProtectedPage({ children }: { children: React.ReactNode }) {
   return (
@@ -125,6 +158,7 @@ function App() {
     <ErrorBoundary moduleName="Application">
     <ThemeProvider>
     <Router>
+      <RouteFaviconSync />
       <AuthProvider>
         <SubscriptionProvider>
         <Suspense fallback={<AuthLoadingScreen />}>
