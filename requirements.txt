@@ -13,7 +13,8 @@ python-dotenv
 pypdf
 psycopg2-binary
 email-validator
-google-generativeai
+google-auth
+requests
 groq
 apscheduler
 cloudinary

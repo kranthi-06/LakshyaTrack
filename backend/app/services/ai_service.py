@@ -14,7 +14,7 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import google.generativeai as genai
+import httpx
 from openai import AsyncOpenAI
 
 from app.core.config import settings
@@ -42,6 +42,8 @@ OPENAI_TIMEOUT = 20.0
 GROQ_CB = "ai_groq"
 GEMINI_CB = "ai_gemini"
 OPENAI_CB = "ai_openai"
+GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 
 class AIService:
@@ -82,11 +84,10 @@ class AIService:
 
         # ── Initialize Gemini (Tertiary) ───────────────────────
         self.gemini_configured = False
-        self.gemini_model = None
+        self.gemini_api_key: Optional[str] = None
         if settings.GEMINI_API_KEY and len(settings.GEMINI_API_KEY) > 10:
             try:
-                genai.configure(api_key=settings.GEMINI_API_KEY)
-                self.gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+                self.gemini_api_key = settings.GEMINI_API_KEY.strip()
                 self.gemini_configured = True
                 logger.info("Gemini initialized as tertiary AI provider")
             except Exception as e:
@@ -139,14 +140,57 @@ class AIService:
 
     async def _call_gemini(self, prompt_text: str) -> str:
         """Call Gemini API with timeout protection."""
-        loop = asyncio.get_event_loop()
-        response = await asyncio.wait_for(
-            loop.run_in_executor(
-                None, lambda: self.gemini_model.generate_content(prompt_text)
-            ),
-            timeout=GEMINI_TIMEOUT,
-        )
-        return response.text
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt_text,
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.7,
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=GEMINI_TIMEOUT) as client:
+                response = await client.post(
+                    GEMINI_API_URL,
+                    params={"key": self.gemini_api_key},
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise asyncio.TimeoutError() from exc
+        except httpx.HTTPStatusError as exc:
+            error_body = exc.response.text.strip()
+            raise RuntimeError(
+                f"Gemini HTTP {exc.response.status_code}: {error_body[:500]}"
+            ) from exc
+
+        data = response.json()
+        candidates = data.get("candidates") or []
+        if not candidates:
+            prompt_feedback = data.get("promptFeedback") or {}
+            raise RuntimeError(
+                f"Gemini returned no candidates: {json.dumps(prompt_feedback, ensure_ascii=False)}"
+            )
+
+        content = candidates[0].get("content") or {}
+        parts = content.get("parts") or []
+        text = "".join(
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and part.get("text")
+        ).strip()
+        if text:
+            return text
+
+        finish_reason = candidates[0].get("finishReason") or "unknown"
+        raise RuntimeError(f"Gemini returned empty content (finish_reason={finish_reason})")
 
     async def _call_openai(
         self,
