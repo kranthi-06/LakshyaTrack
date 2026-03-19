@@ -1,23 +1,39 @@
 {
-    "$schema": "https://openapi.vercel.sh/vercel.json",
     "version": 2,
-    "installCommand": "cd frontend && npm ci",
-    "buildCommand": "cd frontend && npm run build",
-    "outputDirectory": "frontend/dist",
-    "functions": {
-        "api/index.py": {
-            "includeFiles": "backend/app/**",
-            "excludeFiles": "{backend/**/__pycache__/**,backend/**/*.pyc,backend/migrations/**,backend/*.sql,backend/*.db,backend/*.log,backend/error.txt,backend/err.log,backend/test_*.py,backend/*_test.py}"
+    "builds": [
+        {
+            "src": "api/index.py",
+            "use": "@vercel/python",
+            "config": {
+                "includeFiles": [
+                    "backend/app/**"
+                ]
+            }
+        },
+        {
+            "src": "frontend/package.json",
+            "use": "@vercel/static-build",
+            "config": {
+                "distDir": "dist"
+            }
         }
-    },
+    ],
     "rewrites": [
         {
             "source": "/api/(.*)",
             "destination": "/api/index.py"
         },
         {
-            "source": "/(.*)",
-            "destination": "/index.html"
+            "source": "/assets/(.*)",
+            "destination": "/frontend/assets/$1"
+        },
+        {
+            "source": "/(lakshyatrack\\.svg|favicon\\.ico|vite\\.svg|robots\\.txt|sitemap\\.xml)",
+            "destination": "/frontend/$1"
+        },
+        {
+            "source": "/((?!api/|frontend/).*)",
+            "destination": "/frontend/index.html"
         }
     ],
     "env": {
