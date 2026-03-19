@@ -57,8 +57,8 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
                                     <p className="text-xs font-bold text-gray-900">{proj.name}</p>
                                     {proj.technologies && (
                                         <div className="flex flex-wrap gap-1 mt-1">
-                                            {proj.technologies.split(',').slice(0, 3).map((t, ti) => (
-                                                <span key={ti} className="px-1.5 py-0.5 text-[8px] font-bold rounded-md bg-gray-100 text-gray-500">{t.trim()}</span>
+                                            {(typeof proj.technologies === 'string' ? proj.technologies.split(',') : Array.isArray(proj.technologies) ? proj.technologies : []).slice(0, 3).map((t, ti) => (
+                                                <span key={ti} className="px-1.5 py-0.5 text-[8px] font-bold rounded-md bg-gray-100 text-gray-500">{typeof t === 'string' ? t.trim() : String(t)}</span>
                                             ))}
                                         </div>
                                     )}
