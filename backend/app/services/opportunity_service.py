@@ -89,7 +89,7 @@ async def fetch_rss_opportunities(db: Session) -> int:
                 try:
                     resp = await client.get(
                         feed_config["url"],
-                        headers={"User-Agent": "VidyaMithra-OpportunityBot/1.0"}
+                        headers={"User-Agent": "LakshyaTrack-OpportunityBot/1.0"}
                     )
                     if resp.status_code != 200:
                         logger.warning(f"RSS feed {feed_config['source']} returned {resp.status_code}")
@@ -178,7 +178,7 @@ async def fetch_public_api_opportunities(db: Session) -> int:
             try:
                 resp = await client.get(
                     api_config["url"],
-                    headers={"User-Agent": "VidyaMithra-OpportunityBot/1.0"}
+                    headers={"User-Agent": "LakshyaTrack-OpportunityBot/1.0"}
                 )
                 if resp.status_code != 200:
                     continue

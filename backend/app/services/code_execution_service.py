@@ -30,7 +30,7 @@ MAX_EXECUTION_TIME_SEC = 10      # Per test case
 MAX_TOTAL_TIME_SEC = 30          # Total for all test cases
 MAX_OUTPUT_SIZE = 10_000         # Max chars of output per test
 MAX_CODE_SIZE = 50_000           # Max chars of code
-TEMP_DIR = os.path.join(tempfile.gettempdir(), "vidyamithra_code_exec")
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "lakshyatrack_code_exec")
 
 # Ensure temp dir exists
 os.makedirs(TEMP_DIR, exist_ok=True)

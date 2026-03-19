@@ -1,5 +1,5 @@
 """
-VidyaMithra Resilience Engine
+LakshyaTrack Resilience Engine
 ============================
 Production-grade fault-tolerance infrastructure:
 - Circuit Breaker pattern with automatic recovery

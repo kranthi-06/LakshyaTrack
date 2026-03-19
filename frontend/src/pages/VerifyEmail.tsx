@@ -203,7 +203,7 @@ export default function VerifyEmail() {
                             <div className="w-11 h-11 bg-white/15 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shadow-lg shadow-white/5">
                                 <GraduationCap size={24} className="text-white" />
                             </div>
-                            <span className="text-2xl font-extrabold tracking-tight text-white">Vidorya</span>
+                            <span className="text-2xl font-extrabold tracking-tight text-white">LakshyaTrack</span>
                         </Link>
                     </motion.div>
                 </div>
@@ -262,7 +262,7 @@ export default function VerifyEmail() {
                     className="relative z-10"
                 >
                     <p className="text-[11px] text-white/30 font-medium">
-                        Copyright {new Date().getFullYear()} Vidorya. All rights reserved.
+                        Copyright {new Date().getFullYear()} LakshyaTrack. All rights reserved.
                     </p>
                 </motion.div>
             </div>
@@ -288,7 +288,7 @@ export default function VerifyEmail() {
                             <GraduationCap size={22} className="text-white" />
                         </div>
                         <span className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                            Vidorya
+                            LakshyaTrack
                         </span>
                     </div>
 

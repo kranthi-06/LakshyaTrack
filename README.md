@@ -1,8 +1,8 @@
-# VidyaMitra Premium - AI Career Intelligence Platform
+# LakshyaTrack Premium - AI Career Intelligence Platform
 
 ## 🌟 Premium Features
 
-This is the **ULTIMATE PRE-RELEASE** of VidyaMitra with advanced AI-UX and cinematic interactive features!
+This is the **ULTIMATE PRE-RELEASE** of LakshyaTrack with advanced AI-UX and cinematic interactive features!
 
 ### ✨ What Makes This Premium?
 
@@ -20,7 +20,7 @@ This is the **ULTIMATE PRE-RELEASE** of VidyaMitra with advanced AI-UX and cinem
 ## 📁 Project Structure
 
 ```
-vidyamitra-premium/
+lakshyatrack-premium/
 ├── frontend/                    # React + Vite + TypeScript (Ultimate UI)
 │   ├── src/pages/               # Premium Landing, Login, Dashboard
 │   ├── src/components/          # Glassmorphism & Particle components
@@ -126,4 +126,4 @@ If a service fails:
 
 **Crafted for the future of career development.**
 
-🌟 **This is the ULTIMATE VidyaMitra Experience!** 🌟
+🌟 **This is the ULTIMATE LakshyaTrack Experience!** 🌟

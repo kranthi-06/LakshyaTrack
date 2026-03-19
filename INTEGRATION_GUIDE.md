@@ -1,4 +1,4 @@
-# VidyaMithra Advanced Integration Guide
+# LakshyaTrack Advanced Integration Guide
 
 This document outlines how to connect the existing frontend pages to the new Advanced AI Backend logic without changing the UI design.
 

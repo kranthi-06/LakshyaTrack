@@ -191,7 +191,7 @@ def test_cloudinary():
 
 if __name__ == "__main__":
     print("="*60)
-    print("  VIDYAMITHRA INFRASTRUCTURE CONNECTIVITY TEST")
+    print("  LAKSHYATRACK INFRASTRUCTURE CONNECTIVITY TEST")
     print("="*60)
     
     results = []

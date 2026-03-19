@@ -180,7 +180,7 @@ export default function Landing() {
                             <GraduationCap className="w-6 h-6 sm:w-7 sm:h-7 relative z-10" />
                         </motion.div>
                         <span className={`text-xl sm:text-2xl font-black tracking-tighter ${scrolled ? "text-gray-900" : "text-white"}`}>
-                            Vidor<span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500">ya</span>
+                            Lakshya<span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500">Track</span>
                         </span>
                     </div>
 
@@ -546,7 +546,7 @@ export default function Landing() {
                             <div className="w-12 h-12 bg-gray-900 rounded-xl flex items-center justify-center text-white">
                                 <GraduationCap className="w-6 h-6" />
                             </div>
-                            <span className="text-3xl font-black tracking-tighter text-gray-900">Vidorya</span>
+                            <span className="text-3xl font-black tracking-tighter text-gray-900">LakshyaTrack</span>
                         </div>
                         <div className="flex gap-4 sm:gap-8 text-gray-500 font-bold text-sm sm:text-base">
                             <a href="#" className="hover:text-purple-600 transition-colors">Privacy</a>
@@ -556,7 +556,7 @@ export default function Landing() {
                         </div>
                     </div>
                     <div className="mt-12 text-center text-gray-400 font-medium text-sm">
-                        &copy; 2026 Vidorya Intelligence. All rights reserved.
+                        &copy; 2026 LakshyaTrack Intelligence. All rights reserved.
                     </div>
                 </div>
             </footer>

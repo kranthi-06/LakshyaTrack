@@ -1,5 +1,5 @@
 """
-Background jobs scheduler for VidyaMithra.
+Background jobs scheduler for LakshyaTrack.
 Handles:
 - Opportunity expiry checks every 6 hours
 - Periodic fetching from RSS feeds and public APIs every 6 hours

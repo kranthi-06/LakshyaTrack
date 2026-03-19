@@ -243,7 +243,7 @@ export default function Register() {
                             <div className="w-11 h-11 bg-white/15 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 shadow-lg shadow-white/5">
                                 <GraduationCap size={24} className="text-white" />
                             </div>
-                            <span className="text-2xl font-extrabold tracking-tight text-white">Vidorya</span>
+                            <span className="text-2xl font-extrabold tracking-tight text-white">LakshyaTrack</span>
                         </Link>
                     </motion.div>
                 </div>
@@ -303,7 +303,7 @@ export default function Register() {
                     className="relative z-10"
                 >
                     <p className="text-[11px] text-white/30 font-medium">
-                        © {new Date().getFullYear()} Vidorya. All rights reserved.
+                        © {new Date().getFullYear()} LakshyaTrack. All rights reserved.
                     </p>
                 </motion.div>
             </div>
@@ -329,7 +329,7 @@ export default function Register() {
                         <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30">
                             <GraduationCap size={22} className="text-white" />
                         </div>
-                        <span className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Vidorya</span>
+                        <span className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">LakshyaTrack</span>
                     </div>
 
                     {/* Header */}

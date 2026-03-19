@@ -1,4 +1,4 @@
-# VidyaMithra Vercel Deployment Guide
+# LakshyaTrack Vercel Deployment Guide
 
 I have prepared your project for a unified deployment on Vercel. Both the **FastAPI Backend** and the **Vite Frontend** will run under the same project URL.
 
@@ -22,7 +22,7 @@ git push
 ### 2. Deploy on Vercel
 1.  Go to [vercel.com](https://vercel.com) and log in.
 2.  Click **"Add New"** > **"Project"**.
-3.  Import this repository (`ai-agent-resume` or `VidyaMithra`).
+3.  Import this repository (`ai-agent-resume` or `LakshyaTrack`).
 4.  **CRITICAL**: Before clicking Deploy, go to the **Environment Variables** section.
 5.  Add all the variables from your `backend/.env` file:
     *   `DATABASE_URL` (The Supabase connection string)

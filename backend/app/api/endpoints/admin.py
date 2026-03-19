@@ -1,5 +1,5 @@
 """
-Admin API Endpoints — VidyaMithra Multi-Level Admin System
+Admin API Endpoints — LakshyaTrack Multi-Level Admin System
 
 Routes:
   require_admin:

@@ -28,11 +28,11 @@
             "destination": "/frontend/assets/$1"
         },
         {
-            "source": "/(vidorya\\.svg|favicon\\.ico|vidyamitra\\.svg|vite\\.svg|robots\\.txt|sitemap\\.xml)",
+            "source": "/(lakshyatrack\\.svg|favicon\\.ico|vite\\.svg|robots\\.txt|sitemap\\.xml)",
             "destination": "/frontend/$1"
         },
         {
-            "source": "/((?!api/|assets/|vidorya\\.svg|favicon\\.ico|vidyamitra\\.svg|vite\\.svg|robots\\.txt|sitemap\\.xml).*)",
+            "source": "/((?!api/|assets/|lakshyatrack\\.svg|favicon\\.ico|vite\\.svg|robots\\.txt|sitemap\\.xml).*)",
             "destination": "/frontend/index.html"
         }
     ],

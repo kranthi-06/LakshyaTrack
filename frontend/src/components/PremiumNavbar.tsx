@@ -68,7 +68,7 @@ export const PremiumNavbar = () => {
                                 <GraduationCap className="w-6 h-6" />
                             </motion.div>
                             <span className="text-2xl font-black text-white tracking-tighter hidden sm:block">
-                                Vidor<span className="text-yellow-300">ya</span>
+                                Lakshya<span className="text-yellow-300">Track</span>
                             </span>
                         </Link>
 

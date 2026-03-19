@@ -89,7 +89,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                             animate={{ opacity: 1, x: 0 }}
                             className="text-[17px] font-extrabold text-slate-900 dark:text-white tracking-tight truncate"
                         >
-                            Vidya<span className="text-[#6C63FF]">Mithra</span>
+                            Lakshya<span className="text-[#6C63FF]">Track</span>
                         </motion.span>
                     )}
                 </Link>

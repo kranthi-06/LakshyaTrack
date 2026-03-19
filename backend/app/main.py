@@ -1,5 +1,5 @@
 """
-VidyaMithra API — Production-grade FastAPI application with:
+LakshyaTrack API — Production-grade FastAPI application with:
 - Comprehensive global error handling
 - Request timing and slow-request detection
 - Rate limiting middleware
@@ -216,7 +216,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("=== VidyaMithra API Starting ===")
+    logger.info("=== LakshyaTrack API Starting ===")
 
     # Initialize databases safely
     try:
@@ -256,12 +256,12 @@ async def startup_event():
     except Exception:
         logger.exception("Background scheduler failed to start.")
 
-    logger.info("=== VidyaMithra API Ready ===")
+    logger.info("=== LakshyaTrack API Ready ===")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("=== VidyaMithra API Shutting Down ===")
+    logger.info("=== LakshyaTrack API Shutting Down ===")
     try:
         close_mongodb()
     except Exception:

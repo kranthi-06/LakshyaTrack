@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 # Use structured logging
-logger = logging.getLogger("vidyamithra.middleware")
+logger = logging.getLogger("lakshyatrack.middleware")
 
 
 class ErrorLoggingMiddleware(BaseHTTPMiddleware):
