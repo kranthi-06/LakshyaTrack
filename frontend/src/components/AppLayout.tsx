@@ -176,7 +176,7 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
                             </svg>
                         </button>
                         <div className="ml-2 flex items-center gap-2">
-                            <div className="w-7 h-7 flex items-center justify-center">
+                            <div className="w-8 h-8 flex items-center justify-center">
                                 <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-sm" />
                             </div>
                             <span className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">

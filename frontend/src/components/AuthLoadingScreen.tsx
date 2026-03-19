@@ -52,7 +52,7 @@ export default function AuthLoadingScreen() {
                         <div className="auth-loading-logo-ring-spinner" />
                     </div>
                     <div className="auth-loading-logo">
-                        <img src={logoUrl} alt="Logo" className="w-10 h-10 object-contain drop-shadow-md" />
+                        <img src={logoUrl} alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" />
                     </div>
                 </div>
 

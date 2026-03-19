@@ -64,7 +64,7 @@ export const PremiumNavbar = () => {
                         <Link to="/dashboard" className="flex items-center space-x-3 group relative z-10">
                             <motion.div
                                 whileHover={{ rotate: 5, scale: 1.05 }}
-                                className="w-10 h-10 flex items-center justify-center relative overflow-hidden"
+                                className="w-12 h-12 flex items-center justify-center relative overflow-hidden"
                             >
                                 <img src={logoUrl} alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-xl" />
                             </motion.div>
