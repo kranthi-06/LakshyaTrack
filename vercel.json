@@ -21,19 +21,19 @@
     "rewrites": [
         {
             "source": "/api/(.*)",
-            "destination": "api/index.py"
+            "destination": "/api/index.py"
         },
         {
             "source": "/assets/(.*)",
-            "destination": "/frontend/assets/$1"
+            "destination": "/assets/$1"
         },
         {
             "source": "/(lakshyatrack\\.svg|favicon\\.ico|vite\\.svg|robots\\.txt|sitemap\\.xml)",
-            "destination": "/frontend/$1"
+            "destination": "/$1"
         },
         {
             "source": "/((?!api/|assets/|lakshyatrack\\.svg|favicon\\.ico|vite\\.svg|robots\\.txt|sitemap\\.xml).*)",
-            "destination": "/frontend/index.html"
+            "destination": "/index.html"
         }
     ],
     "env": {
