@@ -72,8 +72,7 @@ function RouteFaviconSync() {
   const location = useLocation();
 
   useEffect(() => {
-    const pngHref = '/favicon-32.png?v=4';
-    const svgHref = '/favicon-tab.svg?v=4';
+    const pngHref = '/favicon-wide.png?v=5';
 
     const upsertIcon = (
       selector: string,
@@ -93,9 +92,16 @@ function RouteFaviconSync() {
       link.href = href;
     };
 
-    upsertIcon('link[rel="icon"][sizes="32x32"]', 'icon', pngHref, 'image/png', '32x32');
+    upsertIcon('link[rel="icon"]', 'icon', pngHref, 'image/png');
     upsertIcon('link[rel="shortcut icon"]', 'shortcut icon', pngHref);
-    upsertIcon('link[rel="icon"][sizes="any"]', 'icon', svgHref, 'image/svg+xml', 'any');
+
+    document.head
+      .querySelectorAll('link[rel="icon"][sizes="32x32"], link[rel="icon"][sizes="any"]')
+      .forEach((node) => {
+        if ((node as HTMLLinkElement).href !== new URL(pngHref, window.location.origin).href) {
+          node.remove();
+        }
+      });
   }, [location.pathname]);
 
   return null;
