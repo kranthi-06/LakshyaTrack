@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThemeToggle } from './ThemeToggle';
+import logoUrl from '../assets/logo.png';
 import {
     LogOut,
     LayoutDashboard,
@@ -65,7 +66,7 @@ export const PremiumNavbar = () => {
                                 whileHover={{ rotate: 5, scale: 1.05 }}
                                 className="w-10 h-10 flex items-center justify-center relative overflow-hidden"
                             >
-                                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-xl" />
+                                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-xl" />
                             </motion.div>
                             <span className="text-2xl font-black text-white tracking-tighter hidden sm:block">
                                 Lakshya<span className="text-yellow-300">Track</span>

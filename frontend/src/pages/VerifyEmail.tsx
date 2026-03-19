@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import logoUrl from '../assets/logo.png';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -201,7 +202,7 @@ export default function VerifyEmail() {
                     >
                         <Link to="/" className="flex items-center gap-3 w-fit hover:opacity-80 transition-opacity">
                             <div className="w-11 h-11 flex items-center justify-center">
-                                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-md" />
+                                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-md" />
                             </div>
                             <span className="text-2xl font-extrabold tracking-tight text-white">LakshyaTrack</span>
                         </Link>
@@ -285,7 +286,7 @@ export default function VerifyEmail() {
                 >
                     <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
                         <div className="w-10 h-10 flex items-center justify-center">
-                            <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain drop-shadow-md" />
+                            <img src={logoUrl} alt="Logo" className="w-10 h-10 object-contain drop-shadow-md" />
                         </div>
                         <span className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                             LakshyaTrack

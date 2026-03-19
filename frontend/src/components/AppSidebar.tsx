@@ -46,6 +46,8 @@ const navItems = [
     { label: 'Progress Tracker', path: '/progress', icon: LineChart, featureKey: null },
 ];
 
+import logoUrl from '../assets/logo.png';
+
 export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
     const { user, logout } = useAuth();
     const { hasFeature, stage, loading: subLoading, resolved: subResolved } = useSubscription();
@@ -81,7 +83,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
             <div className={`flex items-center h-16 px-4 border-b border-slate-200/80 dark:border-slate-800/60 ${collapsed ? 'justify-center' : 'justify-between'}`}>
                 <Link to="/dashboard" className="flex items-center gap-3 group min-w-0">
                     <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
-                        <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-lg" />
+                        <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-lg" />
                     </div>
                     {!collapsed && (
                         <motion.span

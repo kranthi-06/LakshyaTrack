@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { usePerformanceMode } from '../hooks/usePerformanceMode';
+import logoUrl from '../assets/logo.png';
 
 // 3D Tilt Card Component
 const TiltCard = ({ children, className }: { children: React.ReactNode, className?: string }) => {
@@ -176,7 +177,7 @@ export default function Landing() {
                             whileHover={{ rotate: 5, scale: 1.05 }}
                             className="w-12 h-12 flex items-center justify-center relative overflow-hidden"
                         >
-                            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-lg" />
+                            <img src={logoUrl} alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-lg" />
                         </motion.div>
                         <span className={`text-xl sm:text-2xl font-black tracking-tighter ${scrolled ? "text-gray-900" : "text-white"}`}>
                             Lakshya<span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500">Track</span>
@@ -543,7 +544,7 @@ export default function Landing() {
                     <div className="flex flex-col md:flex-row justify-between items-center gap-6 sm:gap-10">
                         <div className="flex items-center space-x-3">
                             <div className="w-12 h-12 flex items-center justify-center">
-                                <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-lg" />
+                                <img src={logoUrl} alt="Logo" className="w-12 h-12 object-contain drop-shadow-lg" />
                             </div>
                             <span className="text-3xl font-black tracking-tighter text-gray-900">LakshyaTrack</span>
                         </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { GraduationCap } from 'lucide-react';
+import logoUrl from '../assets/logo.png';
 
 const statusMessages = [
     'Checking your session...',
@@ -51,7 +52,7 @@ export default function AuthLoadingScreen() {
                         <div className="auth-loading-logo-ring-spinner" />
                     </div>
                     <div className="auth-loading-logo">
-                        <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain drop-shadow-md" />
+                        <img src={logoUrl} alt="Logo" className="w-10 h-10 object-contain drop-shadow-md" />
                     </div>
                 </div>
 

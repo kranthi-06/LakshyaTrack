@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import logoUrl from '../assets/logo.png';
 import AuthLoadingScreen from '../components/AuthLoadingScreen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -248,7 +249,7 @@ export default function Login() {
                         className="flex items-center gap-3"
                     >
                         <div className="w-11 h-11 flex items-center justify-center">
-                            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-md" />
+                            <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-md" />
                         </div>
                         <span className="text-2xl font-extrabold tracking-tight text-white">LakshyaTrack</span>
                     </motion.div>
@@ -332,7 +333,7 @@ export default function Login() {
                     {/* Mobile Logo */}
                     <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
                         <div className="w-10 h-10 flex items-center justify-center">
-                            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-md" />
+                            <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-md" />
                         </div>
                         <span className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">LakshyaTrack</span>
                     </div>

@@ -7,6 +7,8 @@ import { usePerformanceMode } from '../hooks/usePerformanceMode';
 
 const NetworkBackground = lazy(() => import('./NetworkBackground'));
 
+import logoUrl from '../assets/logo.png';
+
 interface AppLayoutProps {
     children: React.ReactNode;
 }
@@ -175,7 +177,7 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
                         </button>
                         <div className="ml-2 flex items-center gap-2">
                             <div className="w-7 h-7 flex items-center justify-center">
-                                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-sm" />
+                                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-sm" />
                             </div>
                             <span className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">
                                 Lakshya<span className="text-[#6C63FF]">Track</span>
