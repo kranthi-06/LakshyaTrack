@@ -72,7 +72,7 @@ function RouteFaviconSync() {
   const location = useLocation();
 
   useEffect(() => {
-    const pngHref = '/favicon-wide.png?v=5';
+    const pngHref = '/favicon-wide.png?v=6';
 
     const upsertIcon = (
       selector: string,
