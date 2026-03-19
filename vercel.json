@@ -5,7 +5,7 @@
     "buildCommand": "cd frontend && npm run build",
     "outputDirectory": "frontend/dist",
     "functions": {
-        "api/index.py": {
+        "api/**/*.py": {
             "includeFiles": "backend/app/**",
             "excludeFiles": "{backend/**/__pycache__/**,backend/**/*.pyc,backend/migrations/**,backend/*.sql,backend/*.db,backend/*.log,backend/error.txt,backend/err.log,backend/test_*.py,backend/*_test.py}"
         }
