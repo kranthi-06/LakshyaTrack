@@ -82,7 +82,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
             {/* ── Logo Area ── */}
             <div className={`flex items-center h-16 px-4 border-b border-slate-200/80 dark:border-slate-800/60 ${collapsed ? 'justify-center' : 'justify-between'}`}>
                 <Link to="/dashboard" className="flex items-center gap-3 group min-w-0">
-                    <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
+                    <div className="w-12 h-12 flex items-center justify-center flex-shrink-0">
                         <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-lg" />
                     </div>
                     {!collapsed && (
