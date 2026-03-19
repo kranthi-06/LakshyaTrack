@@ -173,11 +173,10 @@ export default function Landing() {
                 <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-8 gap-4 sm:gap-6">
                     <div className="flex items-center space-x-2 sm:space-x-3 group cursor-pointer shrink-0" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
                         <motion.div
-                            whileHover={{ rotate: 12, scale: 1.1 }}
-                            className="w-10 h-10 sm:w-12 sm:h-12 bg-white text-[#5c52d2] rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg border border-white/20 relative overflow-hidden"
+                            whileHover={{ rotate: 5, scale: 1.05 }}
+                            className="w-12 h-12 flex items-center justify-center relative overflow-hidden"
                         >
-                            <div className="absolute inset-0 bg-gradient-to-tr from-purple-100 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                            <GraduationCap className="w-6 h-6 sm:w-7 sm:h-7 relative z-10" />
+                            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-lg" />
                         </motion.div>
                         <span className={`text-xl sm:text-2xl font-black tracking-tighter ${scrolled ? "text-gray-900" : "text-white"}`}>
                             Lakshya<span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500">Track</span>
@@ -543,8 +542,8 @@ export default function Landing() {
                 <div className="max-w-7xl mx-auto px-4 sm:px-8">
                     <div className="flex flex-col md:flex-row justify-between items-center gap-6 sm:gap-10">
                         <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-gray-900 rounded-xl flex items-center justify-center text-white">
-                                <GraduationCap className="w-6 h-6" />
+                            <div className="w-12 h-12 flex items-center justify-center">
+                                <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-lg" />
                             </div>
                             <span className="text-3xl font-black tracking-tighter text-gray-900">LakshyaTrack</span>
                         </div>

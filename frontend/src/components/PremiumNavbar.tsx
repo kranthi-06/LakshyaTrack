@@ -62,10 +62,10 @@ export const PremiumNavbar = () => {
                     <div className="flex items-center gap-10">
                         <Link to="/dashboard" className="flex items-center space-x-3 group relative z-10">
                             <motion.div
-                                whileHover={{ rotate: 12, scale: 1.1 }}
-                                className="w-10 h-10 bg-white text-[#5c52d2] rounded-xl flex items-center justify-center shadow-xl border border-white/20"
+                                whileHover={{ rotate: 5, scale: 1.05 }}
+                                className="w-10 h-10 flex items-center justify-center relative overflow-hidden"
                             >
-                                <GraduationCap className="w-6 h-6" />
+                                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-xl" />
                             </motion.div>
                             <span className="text-2xl font-black text-white tracking-tighter hidden sm:block">
                                 Lakshya<span className="text-yellow-300">Track</span>

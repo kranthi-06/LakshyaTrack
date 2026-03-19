@@ -174,11 +174,11 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
                             </svg>
                         </button>
                         <div className="ml-2 flex items-center gap-2">
-                            <div className="w-7 h-7 bg-gradient-to-br from-[#6C63FF] to-[#4F46E5] rounded-lg flex items-center justify-center shadow-sm">
-                                <GraduationCap className="w-4 h-4 text-white" />
+                            <div className="w-7 h-7 flex items-center justify-center">
+                                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-sm" />
                             </div>
                             <span className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                Vidya<span className="text-[#6C63FF]">Mithra</span>
+                                Lakshya<span className="text-[#6C63FF]">Track</span>
                             </span>
                         </div>
                     </div>

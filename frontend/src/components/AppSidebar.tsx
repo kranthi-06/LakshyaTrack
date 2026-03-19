@@ -80,8 +80,8 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
             {/* ── Logo Area ── */}
             <div className={`flex items-center h-16 px-4 border-b border-slate-200/80 dark:border-slate-800/60 ${collapsed ? 'justify-center' : 'justify-between'}`}>
                 <Link to="/dashboard" className="flex items-center gap-3 group min-w-0">
-                    <div className="w-9 h-9 bg-gradient-to-br from-[#6C63FF] to-[#4F46E5] rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 flex-shrink-0">
-                        <GraduationCap className="w-5 h-5 text-white" />
+                    <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                        <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-lg" />
                     </div>
                     {!collapsed && (
                         <motion.span
