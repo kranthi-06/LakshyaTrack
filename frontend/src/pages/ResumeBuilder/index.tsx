@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useBlocker } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight, FileText, Sparkles, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,9 @@ interface AIBuilderProps {
 export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
     // If editResume is provided, start at step 8 (Visual Studio) directly
     const [step, setStep] = useState<BuilderStep>(editResume ? 8 : 1);
+
+    const location = useLocation();
+    const navigate = useNavigate();
 
     const { user } = useAuth();
     const { loadDraft, saveDraft, clearDraft } = useResumeStorage();
@@ -248,24 +251,105 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
         };
     }, [saveDraft]);
 
-    const blocker = useBlocker(
-        ({ currentLocation, nextLocation }) =>
-            isDirtyRef.current && currentLocation.pathname !== nextLocation.pathname,
-    );
+    const lastLocationRef = useRef<string>(`${location.pathname}${location.search}${location.hash}`);
+    useEffect(() => {
+        lastLocationRef.current = `${location.pathname}${location.search}${location.hash}`;
+    }, [location.pathname, location.search, location.hash]);
+
+    const pendingNavigationRef = useRef<string | null>(null);
+    const leaveModalOpenRef = useRef(false);
+    useEffect(() => {
+        leaveModalOpenRef.current = leaveModalOpen;
+    }, [leaveModalOpen]);
+
+    const isHandlingNavigationRef = useRef(false);
+
+    // Intercept navigations inside this page (avoids useBlocker).
+    // 1) Link clicks (<a href="...">) while dirty
+    // 2) Browser back/forward (popstate) while dirty
+    useEffect(() => {
+        const onClickCapture = (e: MouseEvent) => {
+            if (!isDirtyRef.current) return;
+            if (leaveModalOpenRef.current) return;
+            if (isHandlingNavigationRef.current) return;
+            if (e.defaultPrevented) return;
+
+            const target = e.target as HTMLElement | null;
+            const anchor = target?.closest('a');
+            if (!anchor) return;
+
+            const targetAttr = anchor.getAttribute('target');
+            if (targetAttr === '_blank') return;
+
+            const href = anchor.getAttribute('href');
+            if (!href) return;
+            if (href.startsWith('#')) return;
+            if (href.startsWith('javascript:')) return;
+            if (href.startsWith('mailto:') || href.startsWith('tel:')) return;
+
+            let url: URL;
+            try {
+                url = new URL(href, window.location.origin);
+            } catch {
+                return;
+            }
+
+            if (url.origin !== window.location.origin) return;
+
+            const dest = `${url.pathname}${url.search}${url.hash}`;
+            if (!dest || dest === lastLocationRef.current) return;
+
+            pendingNavigationRef.current = dest;
+            setLeaveModalOpen(true);
+
+            e.preventDefault();
+            e.stopPropagation();
+        };
+
+        document.addEventListener('click', onClickCapture, true);
+        return () => document.removeEventListener('click', onClickCapture, true);
+    }, []);
 
     useEffect(() => {
-        if (blocker.state === 'blocked') {
+        const onPopState = () => {
+            if (!isDirtyRef.current) return;
+            if (leaveModalOpenRef.current) return;
+            if (isHandlingNavigationRef.current) return;
+
+            const current = lastLocationRef.current;
+            const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+            if (!next || next === current) return;
+
+            pendingNavigationRef.current = next;
             setLeaveModalOpen(true);
-        }
-    }, [blocker.state]);
+
+            // Cancel back/forward by immediately returning to the last stable URL.
+            isHandlingNavigationRef.current = true;
+            navigate(current, { replace: true });
+            setTimeout(() => {
+                isHandlingNavigationRef.current = false;
+            }, 0);
+        };
+
+        window.addEventListener('popstate', onPopState);
+        return () => window.removeEventListener('popstate', onPopState);
+    }, [navigate]);
+
+    const takePendingDestination = () => {
+        const dest = pendingNavigationRef.current;
+        pendingNavigationRef.current = null;
+        return dest;
+    };
 
     const handleStayOnPage = () => {
         setLeaveModalOpen(false);
-        blocker.reset();
+        pendingNavigationRef.current = null;
     };
 
     const handleDiscardAndLeave = () => {
+        const dest = takePendingDestination();
         setLeaveModalOpen(false);
+
         try {
             clearDraft();
         } catch {
@@ -286,13 +370,25 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
         setIsDirty(false);
         setIsSaved(true);
         setData(lastSavedDataRef.current);
-        blocker.proceed();
+
+        if (dest) {
+            navigate(dest);
+        }
     };
 
     const handleSaveAndLeave = async () => {
+        const dest = takePendingDestination();
         setLeaveModalOpen(false);
         await triggerSave('manual', { immediate: true });
-        blocker.proceed();
+
+        // User chose to leave; prevent further modal re-entry even if backend sync fails.
+        isDirtyRef.current = false;
+        setIsDirty(false);
+        setIsSaved(true);
+
+        if (dest) {
+            navigate(dest);
+        }
     };
 
     const leaveModalIsSaving = autoSaving;
