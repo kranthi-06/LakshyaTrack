@@ -46,9 +46,9 @@ export default function AuthLoadingScreen() {
             {/* Center content */}
             <div className="auth-loading-content">
                 {/* Logo with glow */}
-                <div className="auth-loading-logo-wrapper" style={{ width: '150px', height: '150px' }}>
-                    <div className="auth-loading-logo-glow" style={{ inset: '-28px' }} />
-                    <div className="auth-loading-logo-ring" style={{ inset: '-10px' }}>
+                <div className="auth-loading-logo-wrapper" style={{ width: '134px', height: '134px' }}>
+                    <div className="auth-loading-logo-glow" style={{ inset: '-20px' }} />
+                    <div className="auth-loading-logo-ring" style={{ inset: '-8px' }}>
                         <div className="auth-loading-logo-ring-spinner" />
                     </div>
                     <div className="auth-loading-logo" style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', backdropFilter: 'none', padding: 0 }}>
