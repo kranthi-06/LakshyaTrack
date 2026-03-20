@@ -33,6 +33,35 @@ interface PopulateJobStatus {
   finished_at?: string | null;
 }
 
+interface StoredPopulateSnapshot {
+  status: PopulateJobStatus | null;
+  result: any | null;
+}
+
+const POPULATE_STATUS_STORAGE_KEY = 'reasoning-admin-populate-status-v1';
+
+function readStoredPopulateSnapshot(): StoredPopulateSnapshot | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(POPULATE_STATUS_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as StoredPopulateSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredPopulateSnapshot(snapshot: StoredPopulateSnapshot) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(POPULATE_STATUS_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Ignore local storage failures.
+  }
+}
+
 const TOPICS = [
   { key: 'coding-decoding', label: 'Coding-Decoding' },
   { key: 'blood-relations', label: 'Blood Relations' },
@@ -73,6 +102,18 @@ export default function AdminQuestionUpload() {
   const [populateStatus, setPopulateStatus] = useState<PopulateJobStatus | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const populatePollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const storedSnapshot = readStoredPopulateSnapshot();
+    if (!storedSnapshot) return;
+
+    if (storedSnapshot.status) {
+      setPopulateStatus(storedSnapshot.status);
+    }
+    if (storedSnapshot.result) {
+      setPopulateResult(storedSnapshot.result);
+    }
+  }, []);
 
   const handleUpload = async () => {
     if (!textContent.trim() && !file) {
@@ -123,6 +164,20 @@ export default function AdminQuestionUpload() {
   const fetchPopulateStatus = useCallback(async (showErrors = false) => {
     try {
       const { data } = await api.get('/reasoning/admin/populate-status');
+      if (data.status === 'idle') {
+        const storedSnapshot = readStoredPopulateSnapshot();
+        if (storedSnapshot?.status && storedSnapshot.status.status !== 'idle') {
+          setPopulateStatus({
+            ...storedSnapshot.status,
+            message: storedSnapshot.status.message || 'Showing the last known populate run from this browser session.',
+          });
+          if (storedSnapshot.result) {
+            setPopulateResult(storedSnapshot.result);
+          }
+          return;
+        }
+      }
+
       setPopulateStatus(data);
 
       if (data.status === 'completed') {
@@ -147,7 +202,7 @@ export default function AdminQuestionUpload() {
     clearPopulatePolling();
     populatePollRef.current = window.setInterval(() => {
       void fetchPopulateStatus(false);
-    }, 2500);
+    }, 1000);
   }, [clearPopulatePolling, fetchPopulateStatus]);
 
   const handlePopulateAll = async () => {
@@ -177,6 +232,17 @@ export default function AdminQuestionUpload() {
   useEffect(() => () => {
     clearPopulatePolling();
   }, [clearPopulatePolling]);
+
+  useEffect(() => {
+    if (!populateStatus && !populateResult) {
+      return;
+    }
+
+    writeStoredPopulateSnapshot({
+      status: populateStatus,
+      result: populateResult,
+    });
+  }, [populateStatus, populateResult]);
 
   useEffect(() => {
     if (tab !== 'populate') {
