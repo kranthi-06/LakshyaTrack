@@ -1287,11 +1287,6 @@ html[data-mobile-perf-mode='true'] .blur-3xl {
 /* These pages use hardcoded dark colors; we invert them for light.   */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* ── Smooth theme transition ── */
-html * {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
 /* Disable transition on animated elements to prevent jank */
 .animate-spin,
 .animate-pulse,
@@ -1300,256 +1295,251 @@ html * {
 }
 
 /* ── Page backgrounds ── */
-html:not(.dark) .bg-\[\#060611\] {
+html:not(.dark) .theme-override-wrapper .bg-\[\#060611\] {
   background-color: #f8fafc !important;
 }
-html:not(.dark) .bg-\[\#0a0a14\] {
+html:not(.dark) .theme-override-wrapper .bg-\[\#0a0a14\] {
   background-color: #ffffff !important;
 }
 
 /* ── Hero gradient overlays → light variants ── */
-html:not(.dark) .bg-gradient-to-b.from-\[\#6C63FF\]\/8 {
+html:not(.dark) .theme-override-wrapper .bg-gradient-to-b.from-\[\#6C63FF\]\/8 {
   --tw-gradient-from: rgba(108, 99, 255, 0.04) !important;
 }
-html:not(.dark) .bg-\[\#6C63FF\]\/5 {
+html:not(.dark) .theme-override-wrapper .bg-\[\#6C63FF\]\/5 {
   background-color: rgba(108, 99, 255, 0.03) !important;
 }
 
 /* ── Card backgrounds ── */
-html:not(.dark) .bg-slate-800\/50,
-html:not(.dark) .bg-slate-800\/40,
-html:not(.dark) .bg-slate-800\/30,
-html:not(.dark) .bg-slate-800\/60,
-html:not(.dark) .bg-slate-800\/80 {
+html:not(.dark) .theme-override-wrapper .bg-slate-800\/50,
+html:not(.dark) .theme-override-wrapper .bg-slate-800\/40,
+html:not(.dark) .theme-override-wrapper .bg-slate-800\/30,
+html:not(.dark) .theme-override-wrapper .bg-slate-800\/60,
+html:not(.dark) .theme-override-wrapper .bg-slate-800\/80 {
   background-color: #ffffff !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
 }
 
-html:not(.dark) .bg-slate-900\/50,
-html:not(.dark) .bg-slate-900\/40,
-html:not(.dark) .bg-slate-900\/30,
-html:not(.dark) .bg-slate-900\/60 {
+html:not(.dark) .theme-override-wrapper .bg-slate-900\/50,
+html:not(.dark) .theme-override-wrapper .bg-slate-900\/40,
+html:not(.dark) .theme-override-wrapper .bg-slate-900\/30,
+html:not(.dark) .theme-override-wrapper .bg-slate-900\/60 {
   background-color: #f1f5f9 !important;
 }
 
-html:not(.dark) .bg-slate-800\/80.border-b {
+html:not(.dark) .theme-override-wrapper .bg-slate-800\/80.border-b {
   background-color: #f8fafc !important;
 }
 
 /* ── Option items ── */
-html:not(.dark) .bg-slate-900\/40.border-slate-700\/40 {
+html:not(.dark) .theme-override-wrapper .bg-slate-900\/40.border-slate-700\/40 {
   background-color: #f8fafc !important;
   border-color: #e2e8f0 !important;
   color: #334155 !important;
 }
 
-html:not(.dark) .bg-slate-800\/80.text-slate-500 {
+html:not(.dark) .theme-override-wrapper .bg-slate-800\/80.text-slate-500 {
   background-color: #f1f5f9 !important;
   color: #64748b !important;
 }
 
 /* ── Borders ── */
-html:not(.dark) .border-slate-700\/50,
-html:not(.dark) .border-slate-700\/40,
-html:not(.dark) .border-slate-700\/30 {
+html:not(.dark) .theme-override-wrapper .border-slate-700\/50,
+html:not(.dark) .theme-override-wrapper .border-slate-700\/40,
+html:not(.dark) .theme-override-wrapper .border-slate-700\/30 {
   border-color: #e2e8f0 !important;
 }
 
-html:not(.dark) .border-slate-600\/50,
-html:not(.dark) .border-slate-600\/30 {
+html:not(.dark) .theme-override-wrapper .border-slate-600\/50,
+html:not(.dark) .theme-override-wrapper .border-slate-600\/30 {
   border-color: #cbd5e1 !important;
 }
 
-html:not(.dark) .border-slate-800\/60 {
+html:not(.dark) .theme-override-wrapper .border-slate-800\/60 {
   border-color: #e2e8f0 !important;
 }
 
 /* ── Text colors ── */
-html:not(.dark) .text-white {
+html:not(.dark) .theme-override-wrapper .text-white {
   color: #0f172a !important;
 }
-html:not(.dark) .text-slate-400 {
+html:not(.dark) .theme-override-wrapper .text-slate-400 {
   color: #64748b !important;
 }
-html:not(.dark) .text-slate-500 {
+html:not(.dark) .theme-override-wrapper .text-slate-500 {
   color: #94a3b8 !important;
 }
-html:not(.dark) .text-slate-600 {
+html:not(.dark) .theme-override-wrapper .text-slate-600 {
   color: #475569 !important;
 }
-html:not(.dark) .text-slate-300 {
+html:not(.dark) .theme-override-wrapper .text-slate-300 {
   color: #334155 !important;
 }
 
 /* ── Purple accent colors (keep vibrant in light) ── */
-html:not(.dark) .text-\[\#8B83FF\] {
+html:not(.dark) .theme-override-wrapper .text-\[\#8B83FF\] {
   color: #6C63FF !important;
 }
-html:not(.dark) .bg-\[\#6C63FF\]\/15,
-html:not(.dark) .bg-\[\#6C63FF\]\/10 {
+html:not(.dark) .theme-override-wrapper .bg-\[\#6C63FF\]\/15,
+html:not(.dark) .theme-override-wrapper .bg-\[\#6C63FF\]\/10 {
   background-color: rgba(108, 99, 255, 0.08) !important;
 }
-html:not(.dark) .border-\[\#6C63FF\]\/30,
-html:not(.dark) .border-\[\#6C63FF\]\/20 {
+html:not(.dark) .theme-override-wrapper .border-\[\#6C63FF\]\/30,
+html:not(.dark) .theme-override-wrapper .border-\[\#6C63FF\]\/20 {
   border-color: rgba(108, 99, 255, 0.25) !important;
 }
-html:not(.dark) .bg-\[\#6C63FF\]\/5 {
+html:not(.dark) .theme-override-wrapper .bg-\[\#6C63FF\]\/5 {
   background-color: rgba(108, 99, 255, 0.04) !important;
 }
-html:not(.dark) .border-\[\#6C63FF\]\/15 {
+html:not(.dark) .theme-override-wrapper .border-\[\#6C63FF\]\/15 {
   border-color: rgba(108, 99, 255, 0.15) !important;
 }
 
 /* ── Emerald (correct answers / success) ── */
-html:not(.dark) .bg-emerald-500\/10,
-html:not(.dark) .bg-emerald-500\/5 {
+html:not(.dark) .theme-override-wrapper .bg-emerald-500\/10,
+html:not(.dark) .theme-override-wrapper .bg-emerald-500\/5 {
   background-color: rgba(16, 185, 129, 0.06) !important;
 }
-html:not(.dark) .border-emerald-500\/30,
-html:not(.dark) .border-emerald-500\/20,
-html:not(.dark) .border-emerald-500\/15 {
+html:not(.dark) .theme-override-wrapper .border-emerald-500\/30,
+html:not(.dark) .theme-override-wrapper .border-emerald-500\/20,
+html:not(.dark) .theme-override-wrapper .border-emerald-500\/15 {
   border-color: rgba(16, 185, 129, 0.25) !important;
 }
-html:not(.dark) .border-emerald-500\/25 {
+html:not(.dark) .theme-override-wrapper .border-emerald-500\/25 {
   border-color: rgba(16, 185, 129, 0.3) !important;
 }
-html:not(.dark) .text-emerald-400 {
+html:not(.dark) .theme-override-wrapper .text-emerald-400 {
   color: #059669 !important;
 }
-html:not(.dark) .text-emerald-300 {
+html:not(.dark) .theme-override-wrapper .text-emerald-300 {
   color: #047857 !important;
 }
-html:not(.dark) .bg-emerald-500\/20 {
+html:not(.dark) .theme-override-wrapper .bg-emerald-500\/20 {
   background-color: rgba(16, 185, 129, 0.12) !important;
 }
-html:not(.dark) .bg-emerald-500 {
+html:not(.dark) .theme-override-wrapper .bg-emerald-500 {
   background-color: #059669 !important;
 }
 
 /* ── Red (incorrect answers / errors) ── */
-html:not(.dark) .bg-red-500\/10,
-html:not(.dark) .bg-red-500\/5 {
+html:not(.dark) .theme-override-wrapper .bg-red-500\/10,
+html:not(.dark) .theme-override-wrapper .bg-red-500\/5 {
   background-color: rgba(239, 68, 68, 0.06) !important;
 }
-html:not(.dark) .border-red-500\/40,
-html:not(.dark) .border-red-500\/30,
-html:not(.dark) .border-red-500\/20 {
+html:not(.dark) .theme-override-wrapper .border-red-500\/40,
+html:not(.dark) .theme-override-wrapper .border-red-500\/30,
+html:not(.dark) .theme-override-wrapper .border-red-500\/20 {
   border-color: rgba(239, 68, 68, 0.25) !important;
 }
-html:not(.dark) .text-red-400 {
+html:not(.dark) .theme-override-wrapper .text-red-400 {
   color: #dc2626 !important;
 }
-html:not(.dark) .text-red-300 {
+html:not(.dark) .theme-override-wrapper .text-red-300 {
   color: #b91c1c !important;
 }
 
 /* ── Amber (star/bookmark) ── */
-html:not(.dark) .bg-amber-500\/10 {
+html:not(.dark) .theme-override-wrapper .bg-amber-500\/10 {
   background-color: rgba(245, 158, 11, 0.08) !important;
 }
-html:not(.dark) .border-amber-500\/20 {
+html:not(.dark) .theme-override-wrapper .border-amber-500\/20 {
   border-color: rgba(245, 158, 11, 0.25) !important;
 }
-html:not(.dark) .text-amber-400 {
+html:not(.dark) .theme-override-wrapper .text-amber-400 {
   color: #d97706 !important;
 }
-html:not(.dark) .bg-amber-500\/\[0\.03\] {
+html:not(.dark) .theme-override-wrapper .bg-amber-500\/\[0\.03\] {
   background-color: rgba(245, 158, 11, 0.04) !important;
 }
 
 /* ── Sky / Indigo (company section) ── */
-html:not(.dark) .text-sky-400 {
+html:not(.dark) .theme-override-wrapper .text-sky-400 {
   color: #0284c7 !important;
 }
 
 /* ── Rose / Pink (test mode) ── */
-html:not(.dark) .text-rose-400 {
+html:not(.dark) .theme-override-wrapper .text-rose-400 {
   color: #e11d48 !important;
 }
 
 /* ── Difficulty badges (keep readable) ── */
-html:not(.dark) .bg-emerald-500\/15.text-emerald-400 {
+html:not(.dark) .theme-override-wrapper .bg-emerald-500\/15.text-emerald-400 {
   background-color: rgba(16, 185, 129, 0.1) !important;
   color: #047857 !important;
 }
-html:not(.dark) .bg-amber-500\/15.text-amber-400 {
+html:not(.dark) .theme-override-wrapper .bg-amber-500\/15.text-amber-400 {
   background-color: rgba(245, 158, 11, 0.1) !important;
   color: #b45309 !important;
 }
-html:not(.dark) .bg-red-500\/15.text-red-400 {
+html:not(.dark) .theme-override-wrapper .bg-red-500\/15.text-red-400 {
   background-color: rgba(239, 68, 68, 0.1) !important;
   color: #b91c1c !important;
 }
 
 /* ── Hover states ── */
-html:not(.dark) .hover\:border-slate-600\/60:hover {
+html:not(.dark) .theme-override-wrapper .hover\:border-slate-600\/60:hover {
   border-color: #94a3b8 !important;
 }
-html:not(.dark) .hover\:text-white:hover {
+html:not(.dark) .theme-override-wrapper .hover\:text-white:hover {
   color: #0f172a !important;
 }
-html:not(.dark) .hover\:bg-slate-800\/60:hover,
-html:not(.dark) .hover\:bg-slate-800\/50:hover {
+html:not(.dark) .theme-override-wrapper .hover\:bg-slate-800\/60:hover,
+html:not(.dark) .theme-override-wrapper .hover\:bg-slate-800\/50:hover {
   background-color: #f1f5f9 !important;
 }
-html:not(.dark) .hover\:border-\[\#6C63FF\]\/30:hover {
+html:not(.dark) .theme-override-wrapper .hover\:border-\[\#6C63FF\]\/30:hover {
   border-color: rgba(108, 99, 255, 0.35) !important;
 }
-html:not(.dark) .hover\:bg-\[\#6C63FF\]\/25:hover {
+html:not(.dark) .theme-override-wrapper .hover\:bg-\[\#6C63FF\]\/25:hover {
   background-color: rgba(108, 99, 255, 0.1) !important;
 }
-html:not(.dark) .hover\:bg-emerald-500\/20:hover {
+html:not(.dark) .theme-override-wrapper .hover\:bg-emerald-500\/20:hover {
   background-color: rgba(16, 185, 129, 0.1) !important;
 }
-html:not(.dark) .hover\:bg-slate-700\/50:hover {
+html:not(.dark) .theme-override-wrapper .hover\:bg-slate-700\/50:hover {
   background-color: #e2e8f0 !important;
 }
-html:not(.dark) .hover\:border-sky-500\/30:hover {
+html:not(.dark) .theme-override-wrapper .hover\:border-sky-500\/30:hover {
   border-color: rgba(14, 165, 233, 0.3) !important;
 }
 
 /* ── Gradient buttons stay dark text on colored bg ── */
-html:not(.dark) .bg-gradient-to-r.from-\[\#6C63FF\].to-violet-500,
-html:not(.dark) .bg-gradient-to-r.from-rose-500.to-pink-500,
-html:not(.dark) .bg-gradient-to-r.from-sky-500.to-indigo-500,
-html:not(.dark) .bg-gradient-to-r.from-emerald-500.to-teal-500 {
+html:not(.dark) .theme-override-wrapper .bg-gradient-to-r.from-\[\#6C63FF\].to-violet-500,
+html:not(.dark) .theme-override-wrapper .bg-gradient-to-r.from-rose-500.to-pink-500,
+html:not(.dark) .theme-override-wrapper .bg-gradient-to-r.from-sky-500.to-indigo-500,
+html:not(.dark) .theme-override-wrapper .bg-gradient-to-r.from-emerald-500.to-teal-500 {
   color: #ffffff !important;
 }
 
 /* ── Loader spinner ── */
-html:not(.dark) .text-\[\#6C63FF\] {
+html:not(.dark) .theme-override-wrapper .text-\[\#6C63FF\] {
   color: #6C63FF !important;
 }
 
 /* ── Input/Select/Textarea in light ── */
-html:not(.dark) .bg-slate-900\/60 {
+html:not(.dark) .theme-override-wrapper .bg-slate-900\/60 {
   background-color: #ffffff !important;
   border-color: #e2e8f0 !important;
   color: #0f172a !important;
 }
 
 /* ── Placeholders in light ── */
-html:not(.dark) .placeholder-slate-600::placeholder {
+html:not(.dark) .theme-override-wrapper .placeholder-slate-600::placeholder {
   color: #94a3b8 !important;
 }
 
 /* ── SVG/Progress circle ── */
-html:not(.dark) .text-slate-700 {
+html:not(.dark) .theme-override-wrapper .text-slate-700 {
   color: #e2e8f0 !important;
 }
 
 /* ── Admin question upload page ── */
-html:not(.dark) .border-dashed.border-slate-600\/50 {
+html:not(.dark) .theme-override-wrapper .border-dashed.border-slate-600\/50 {
   border-color: #cbd5e1 !important;
 }
 
-/* ── Sidebar already themed — ensure it's unaffected ── */
-html:not(.dark) aside .text-white {
-  color: inherit !important;
-}
-
 /* ── Ensure gradient text clips still work ── */
-html:not(.dark) .text-transparent.bg-clip-text {
+html:not(.dark) .theme-override-wrapper .text-transparent.bg-clip-text {
   color: transparent !important;
   -webkit-text-fill-color: transparent !important;
 }

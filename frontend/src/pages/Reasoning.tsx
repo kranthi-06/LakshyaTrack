@@ -904,7 +904,7 @@ export default function Reasoning() {
   const isListView = viewState.view === 'topics' || viewState.view === 'companies';
 
   return (
-    <div className="min-h-screen bg-[#060611]">
+    <div className="theme-override-wrapper min-h-screen bg-[#060611]">
       {/* Hero */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-[#6C63FF]/8 via-transparent to-transparent pointer-events-none" />
