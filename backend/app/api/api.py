@@ -15,6 +15,8 @@ from app.api.endpoints import (
     code_execution,
     # Subscription system
     subscription,
+    # English communication module
+    english_speaking,
 )
 
 api_router = APIRouter()
@@ -49,3 +51,6 @@ api_router.include_router(code_execution.router, prefix="/code-execution", tags=
 
 # ── Subscription & Feature Access ────────────────────────
 api_router.include_router(subscription.router, prefix="/subscription", tags=["subscription"])
+
+# ── English Communication Module ─────────────────────────
+api_router.include_router(english_speaking.router, prefix="/english", tags=["english-speaking"])

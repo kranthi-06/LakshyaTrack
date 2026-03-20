@@ -21,6 +21,7 @@ const pageImporters: Record<string, Importer> = {
     '/auth/callback': () => import('../pages/AuthCallback'),
     '/plans': () => import('../pages/Plans'),
     '/admin/subscriptions': () => import('../pages/AdminSubscriptionPanel'),
+    '/english': () => import('../pages/EnglishSpeaking'),
 };
 
 const preloadedRoutes = new Set<string>();
