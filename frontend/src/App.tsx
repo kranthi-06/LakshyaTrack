@@ -45,6 +45,7 @@ const AdminCommandCentre = lazyPage('/admin/command-centre');
 const Plans = lazyPage('/plans');
 const AdminSubscriptionPanel = lazyPage('/admin/subscriptions');
 const EnglishSpeaking = lazyPage('/english');
+const Reasoning = lazyPage('/reasoning');
 
 /**
  * OAuth Code Interceptor
@@ -201,6 +202,7 @@ function App() {
             <Route path="/profile" element={<ProtectedPage><Profile /></ProtectedPage>} />
             <Route path="/plans" element={<ProtectedPage><Plans /></ProtectedPage>} />
             <Route path="/english" element={<ProtectedPage><EnglishSpeaking /></ProtectedPage>} />
+            <Route path="/reasoning" element={<ProtectedPage><Reasoning /></ProtectedPage>} />
 
             {/* ── Admin Routes ── */}
             <Route path="/admin/users" element={<AdminPage><AdminDashboard /></AdminPage>} />

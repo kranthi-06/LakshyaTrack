@@ -22,6 +22,7 @@ const pageImporters: Record<string, Importer> = {
     '/plans': () => import('../pages/Plans'),
     '/admin/subscriptions': () => import('../pages/AdminSubscriptionPanel'),
     '/english': () => import('../pages/EnglishSpeaking'),
+    '/reasoning': () => import('../pages/Reasoning'),
 };
 
 const preloadedRoutes = new Set<string>();

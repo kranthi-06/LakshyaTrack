@@ -17,6 +17,9 @@ REQUIRED_COLLECTIONS = (
     "ai_cache",
     "idempotency_keys",
     "user_streaks",
+    "reasoning_questions",
+    "reasoning_tests",
+    "reasoning_user_progress",
 )
 
 _mongo_client: Optional[MongoClient] = None

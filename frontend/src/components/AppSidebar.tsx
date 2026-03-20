@@ -27,6 +27,7 @@ import {
     Crown,
     Lock,
     Languages,
+    Brain,
 } from 'lucide-react';
 import SubscriptionBadge from './SubscriptionBadge';
 
@@ -44,6 +45,7 @@ const navItems = [
     { label: 'Quizzes', path: '/quiz', icon: BrainCircuit, featureKey: null },
     { label: 'Interview Simulator', path: '/interview', icon: Mic2, featureKey: 'interview_start' },
     { label: 'English Coach', path: '/english', icon: Languages, featureKey: null },
+    { label: 'Reasoning', path: '/reasoning', icon: Brain, featureKey: null },
     { label: 'Opportunity Portal', path: '/jobs', icon: Briefcase, featureKey: 'job_portal' },
     { label: 'Progress Tracker', path: '/progress', icon: LineChart, featureKey: null },
 ];

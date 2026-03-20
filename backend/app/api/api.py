@@ -17,6 +17,8 @@ from app.api.endpoints import (
     subscription,
     # English communication module
     english_speaking,
+    # Reasoning & Problem Solving module
+    reasoning,
 )
 
 api_router = APIRouter()
@@ -54,3 +56,6 @@ api_router.include_router(subscription.router, prefix="/subscription", tags=["su
 
 # ── English Communication Module ─────────────────────────
 api_router.include_router(english_speaking.router, prefix="/english", tags=["english-speaking"])
+
+# ── Reasoning & Problem Solving ──────────────────────────
+api_router.include_router(reasoning.router, prefix="/reasoning", tags=["reasoning"])
