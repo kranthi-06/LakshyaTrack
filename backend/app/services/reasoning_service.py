@@ -312,6 +312,9 @@ async def generate_questions_ai(
             system_prompt="You are an expert aptitude and reasoning question generator. Always respond with valid JSON only.",
         )
         questions = _parse_questions_json(response)
+        
+        if not questions:
+            raise ValueError("AI failed to generate a valid JSON array of questions.")
 
         # Tag with metadata
         for q in questions:
@@ -491,6 +494,10 @@ async def auto_populate_all() -> Dict[str, Any]:
     Also seeds fallback questions into MongoDB on first run.
     """
     results: Dict[str, Any] = {"topics": {}, "companies": {}, "fallback_seeded": 0}
+
+    coll = _get_questions_collection()
+    if coll is None:
+        raise RuntimeError("MongoDB is not configured or failed to connect.")
 
     # 1. Seed fallback questions into MongoDB (idempotent via dedup hash)
     fallback_total = 0
