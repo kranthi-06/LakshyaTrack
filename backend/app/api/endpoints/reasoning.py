@@ -17,6 +17,8 @@ from app.services.reasoning_service import (
     get_user_progress,
     generate_questions_ai, extract_questions_from_text,
     _get_fallback_questions,
+    on_demand_populate, count_topic_questions, count_company_questions,
+    auto_populate_all,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,18 +84,21 @@ async def get_topic_questions(
 ):
     """
     Get questions for a topic.
-    mode: learn (show explanations), practice (no timer), test (timer, no explanations until end)
+    1. Try DB first
+    2. If empty → on-demand populate (AI generate + persist)
+    3. Fallback to static pool
     """
     db_questions = get_questions_by_topic(topic, difficulty, limit, skip)
 
     if not db_questions:
-        # Use AI to generate questions dynamically
+        # On-demand populate: generate + persist to DB
         try:
-            count = 10 if mode == "test" else 5
-            diff = difficulty or "medium"
-            db_questions = await generate_questions_ai(topic, diff, count)
+            db_questions = await on_demand_populate(topic=topic)
         except Exception:
-            db_questions = _get_fallback_questions(topic, 5)
+            pass
+
+    if not db_questions:
+        db_questions = _get_fallback_questions(topic, 5)
 
     # Add IDs if missing
     for i, q in enumerate(db_questions):
@@ -114,20 +119,17 @@ async def get_company_questions(
     limit: int = 20,
     skip: int = 0,
 ):
-    """Get questions for a specific company."""
+    """Get questions for a specific company (DB → on-demand populate → fallback)."""
     db_questions = get_questions_by_company(company, limit, skip)
 
     if not db_questions:
-        # Generate AI questions styled for the company
         try:
-            db_questions = await generate_questions_ai(
-                topic="coding-decoding",
-                difficulty="medium",
-                count=5,
-                company=company,
-            )
+            db_questions = await on_demand_populate(company=company)
         except Exception:
-            db_questions = _get_fallback_questions("coding-decoding", 5)
+            pass
+
+    if not db_questions:
+        db_questions = _get_fallback_questions("coding-decoding", 5)
 
     for i, q in enumerate(db_questions):
         if "id" not in q:
@@ -138,6 +140,28 @@ async def get_company_questions(
         "questions": db_questions,
         "total": len(db_questions),
     }
+
+
+@router.get("/stats")
+async def get_stats():
+    """Get question count stats for all topics and companies."""
+    topics_stats = {t["key"]: count_topic_questions(t["key"]) for t in TOPICS}
+    companies_stats = {c["key"]: count_company_questions(c["key"]) for c in COMPANIES}
+    return {
+        "topics": topics_stats,
+        "companies": companies_stats,
+        "total_questions": sum(topics_stats.values()),
+    }
+
+
+@router.post("/admin/populate-all")
+async def admin_populate_all():
+    """Admin: Trigger manual population of all topics and companies."""
+    try:
+        results = await auto_populate_all()
+        return {"status": "success", "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Population failed: {str(e)}")
 
 
 @router.post("/generate")

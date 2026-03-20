@@ -46,6 +46,7 @@ const Plans = lazyPage('/plans');
 const AdminSubscriptionPanel = lazyPage('/admin/subscriptions');
 const EnglishSpeaking = lazyPage('/english');
 const Reasoning = lazyPage('/reasoning');
+const AdminQuestionUpload = lazyPage('/admin/questions');
 
 /**
  * OAuth Code Interceptor
@@ -209,6 +210,7 @@ function App() {
             <Route path="/admin/inactivity" element={<AdminPage><AdminInactivity /></AdminPage>} />
             <Route path="/admin/command-centre" element={<AdminPage requireBlackAdmin><AdminCommandCentre /></AdminPage>} />
             <Route path="/admin/subscriptions" element={<AdminPage><AdminSubscriptionPanel /></AdminPage>} />
+            <Route path="/admin/questions" element={<AdminPage><AdminQuestionUpload /></AdminPage>} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

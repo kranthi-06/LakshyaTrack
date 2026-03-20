@@ -301,8 +301,9 @@ async def generate_questions_ai(
     difficulty: str = "medium",
     count: int = 5,
     company: str = "",
+    persist: bool = False,
 ) -> List[Dict]:
-    """Use AI to generate reasoning questions."""
+    """Use AI to generate reasoning questions. Optionally persist to MongoDB."""
     prompt = _build_generate_questions_prompt(topic, difficulty, count, company)
 
     try:
@@ -318,6 +319,13 @@ async def generate_questions_ai(
             q["source"] = "ai_generated"
             if company:
                 q["company"] = company
+
+        # Auto-persist if requested (background jobs / on-demand populate)
+        if persist and questions:
+            deduped = _deduplicate_before_insert(questions)
+            if deduped:
+                inserted = insert_questions(deduped)
+                logger.info("Auto-persisted %d questions for topic=%s company=%s", inserted, topic, company)
 
         return questions
 
@@ -363,6 +371,189 @@ def _parse_questions_json(text: str) -> List[Dict]:
                     return result
             except json.JSONDecodeError:
                 pass
+    return []
+
+
+# ═══════════════════════════════════════════════════════════════
+# DEDUPLICATION
+# ═══════════════════════════════════════════════════════════════
+
+def _question_hash(q: Dict) -> str:
+    """Create a simple hash of a question for deduplication."""
+    import hashlib
+    text = (q.get("question", "") or "").strip().lower()
+    return hashlib.md5(text.encode()).hexdigest()
+
+
+def _deduplicate_before_insert(questions: List[Dict]) -> List[Dict]:
+    """Remove questions that already exist in the DB (by question text hash)."""
+    coll = _get_questions_collection()
+    if coll is None:
+        return questions  # Can't check, insert all
+
+    result = []
+    for q in questions:
+        q_hash = _question_hash(q)
+        q["question_hash"] = q_hash
+        try:
+            existing = coll.find_one({"question_hash": q_hash})
+            if not existing:
+                result.append(q)
+        except Exception:
+            result.append(q)  # On error, allow insertion
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════
+# AUTO-POPULATE PIPELINE (Background Job)
+# ═══════════════════════════════════════════════════════════════
+
+MIN_QUESTIONS_PER_TOPIC = 10
+MIN_QUESTIONS_PER_COMPANY = 5
+
+
+def count_topic_questions(topic: str) -> int:
+    """Count how many questions exist for a topic in MongoDB."""
+    coll = _get_questions_collection()
+    if coll is None:
+        return 0
+    try:
+        return coll.count_documents({"topic": topic})
+    except Exception:
+        return 0
+
+
+def count_company_questions(company: str) -> int:
+    """Count how many questions exist for a company in MongoDB."""
+    coll = _get_questions_collection()
+    if coll is None:
+        return 0
+    try:
+        return coll.count_documents({"company": company})
+    except Exception:
+        return 0
+
+
+async def auto_populate_topic(topic: str, target_count: int = MIN_QUESTIONS_PER_TOPIC) -> int:
+    """
+    Auto-populate a topic if it has fewer than target_count questions.
+    Returns number of new questions inserted.
+    """
+    current = count_topic_questions(topic)
+    if current >= target_count:
+        return 0
+
+    needed = target_count - current
+    # Generate in batches of up to 10
+    total_inserted = 0
+    for difficulty in ["easy", "medium", "hard"]:
+        batch_size = min(5, max(1, needed // 3))
+        if needed <= 0:
+            break
+        questions = await generate_questions_ai(
+            topic=topic, difficulty=difficulty, count=batch_size, persist=True,
+        )
+        total_inserted += len([q for q in questions if q.get("source") != "fallback"])
+        needed -= batch_size
+
+    return total_inserted
+
+
+async def auto_populate_company(company: str, target_count: int = MIN_QUESTIONS_PER_COMPANY) -> int:
+    """Auto-populate company questions if below threshold."""
+    current = count_company_questions(company)
+    if current >= target_count:
+        return 0
+
+    needed = target_count - current
+    total_inserted = 0
+
+    # Generate questions across a few topics, tagged with company
+    topic_keys = [t["key"] for t in TOPICS[:4]]  # First 4 topics
+    for topic_key in topic_keys:
+        if needed <= 0:
+            break
+        batch_size = min(3, max(1, needed))
+        questions = await generate_questions_ai(
+            topic=topic_key, difficulty="medium", count=batch_size,
+            company=company, persist=True,
+        )
+        total_inserted += len([q for q in questions if q.get("source") != "fallback"])
+        needed -= batch_size
+
+    return total_inserted
+
+
+async def auto_populate_all() -> Dict[str, Any]:
+    """
+    Background job: Cycle through all topics and companies,
+    auto-populating any that are below the minimum threshold.
+    Also seeds fallback questions into MongoDB on first run.
+    """
+    results: Dict[str, Any] = {"topics": {}, "companies": {}, "fallback_seeded": 0}
+
+    # 1. Seed fallback questions into MongoDB (idempotent via dedup hash)
+    fallback_total = 0
+    for topic_key, questions in _FALLBACK_DB.items():
+        tagged = []
+        for q in questions:
+            tagged.append({
+                **q,
+                "topic": topic_key,
+                "source": "fallback_seed",
+            })
+        deduped = _deduplicate_before_insert(tagged)
+        if deduped:
+            inserted = insert_questions(deduped)
+            fallback_total += inserted 
+    results["fallback_seeded"] = fallback_total
+
+    # 2. Auto-populate each topic via AI
+    for t in TOPICS:
+        try:
+            inserted = await auto_populate_topic(t["key"])
+            results["topics"][t["key"]] = inserted
+        except Exception as e:
+            logger.error("Failed to auto-populate topic %s: %s", t["key"], str(e))
+            results["topics"][t["key"]] = f"error: {str(e)}"
+
+    # 3. Auto-populate each company via AI
+    for c in COMPANIES:
+        try:
+            inserted = await auto_populate_company(c["key"])
+            results["companies"][c["key"]] = inserted
+        except Exception as e:
+            logger.error("Failed to auto-populate company %s: %s", c["key"], str(e))
+            results["companies"][c["key"]] = f"error: {str(e)}"
+
+    return results
+
+
+async def on_demand_populate(topic: str = "", company: str = "") -> List[Dict]:
+    """
+    Called when user opens a topic/company page and DB is empty.
+    Generates questions, persists them, and returns them.
+    """
+    if topic:
+        count = count_topic_questions(topic)
+        if count > 0:
+            return get_questions_by_topic(topic, limit=20)
+
+        # Generate + persist
+        questions = await generate_questions_ai(topic=topic, difficulty="medium", count=10, persist=True)
+        return questions
+
+    if company:
+        count = count_company_questions(company)
+        if count > 0:
+            return get_questions_by_company(company, limit=20)
+
+        questions = await generate_questions_ai(
+            topic="coding-decoding", difficulty="medium", count=10,
+            company=company, persist=True,
+        )
+        return questions
+
     return []
 
 

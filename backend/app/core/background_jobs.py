@@ -169,6 +169,42 @@ async def expire_subscriptions_job():
         db.close()
 
 
+async def auto_populate_reasoning_job():
+    """Auto-populate reasoning questions for all topics and companies."""
+    logger.info("Running job: auto_populate_reasoning_job")
+    _log_job_event("auto_populate_reasoning_job", "started")
+    try:
+        from app.services.reasoning_service import auto_populate_all
+        results = await auto_populate_all()
+        total_topics = sum(
+            v for v in results.get("topics", {}).values() if isinstance(v, int)
+        )
+        total_companies = sum(
+            v for v in results.get("companies", {}).values() if isinstance(v, int)
+        )
+        fallback_seeded = results.get("fallback_seeded", 0)
+        logger.info(
+            "Reasoning auto-populate: %d topic questions, %d company questions, %d fallback seeded.",
+            total_topics, total_companies, fallback_seeded,
+        )
+        _log_job_event(
+            "auto_populate_reasoning_job",
+            "success",
+            {
+                "topic_questions_added": total_topics,
+                "company_questions_added": total_companies,
+                "fallback_seeded": fallback_seeded,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error in auto_populate_reasoning_job: {e}")
+        _log_job_event(
+            "auto_populate_reasoning_job",
+            "failed",
+            {"error": str(e)},
+        )
+
+
 def setup_background_jobs():
     """Initialize and start the background scheduler."""
     scheduler = AsyncIOScheduler()
@@ -218,6 +254,15 @@ def setup_background_jobs():
         replace_existing=True
     )
 
+    # 6. Every 8 hours: Auto-populate reasoning questions via AI
+    scheduler.add_job(
+        auto_populate_reasoning_job,
+        IntervalTrigger(hours=8),
+        id="auto_populate_reasoning",
+        name="Auto-populate reasoning questions every 8 hours",
+        replace_existing=True
+    )
+
     scheduler.start()
-    logger.info("Background scheduler started with opportunity + subscription cycles.")
+    logger.info("Background scheduler started with opportunity + subscription + reasoning cycles.")
     return scheduler

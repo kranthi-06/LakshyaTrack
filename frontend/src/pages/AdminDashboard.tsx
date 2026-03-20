@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { getAdminUsers, blacklistUser, unblacklistUser, promoteUser, demoteUser, deleteUser, AdminUser } from '../services/admin';
 import { useAuth } from '../context/AuthContext';
-import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar, Loader2 } from 'lucide-react';
+import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar, Loader2, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const AdminDashboard: React.FC = () => {
@@ -132,6 +132,13 @@ const AdminDashboard: React.FC = () => {
                         >
                             <Crown className="w-4 h-4 text-amber-400" />
                             <span>Subscriptions</span>
+                        </Link>
+                        <Link
+                            to="/admin/questions"
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-800/50 border border-slate-700 hover:bg-slate-700/50 transition-colors"
+                        >
+                            <BrainCircuit className="w-4 h-4 text-[#8B83FF]" />
+                            <span>Questions</span>
                         </Link>
                         {isBlackAdmin && (
                             <Link
