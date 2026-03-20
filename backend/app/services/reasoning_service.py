@@ -2,14 +2,15 @@
 Reasoning & Problem Solving Service — MongoDB-backed question bank,
 AI question generation, and user progress tracking.
 """
+import asyncio
 import copy
 import hashlib
 import json
 import logging
 import random
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Set
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
 from pymongo import UpdateOne
 from sqlalchemy import func
@@ -34,10 +35,26 @@ ON_DEMAND_COMPANY_TARGET = 12
 MIN_QUESTIONS_PER_TOPIC = 36
 MIN_QUESTIONS_PER_COMPANY = 24
 MAX_AI_GENERATION_REQUEST = 60
+REASONING_AI_TIMEOUT_SECONDS = 12.0
 TOPIC_GENERATION_BATCH_SIZE = 12
-COMPANY_GENERATION_BATCH_SIZE = 4
+COMPANY_GENERATION_BATCH_SIZE = 8
 MAX_POPULATE_ATTEMPTS = 8
 _sql_storage_ready = False
+_population_lock: Optional[asyncio.Lock] = None
+_population_task: Optional[asyncio.Task] = None
+_population_status: Dict[str, Any] = {
+    "status": "idle",
+    "message": "No populate job has been started yet.",
+    "phase": "idle",
+    "current_key": None,
+    "progress": {"completed": 0, "total": 0},
+    "results": None,
+    "error": "",
+    "started_at": None,
+    "finished_at": None,
+    "updated_at": None,
+}
+_local_generation_cooldown_until: Optional[datetime] = None
 
 # ═══════════════════════════════════════════════════════════════
 # TOPIC & COMPANY DEFINITIONS
@@ -73,6 +90,72 @@ COMPANIES = [
 # ═══════════════════════════════════════════════════════════════
 # DATABASE OPERATIONS
 # ═══════════════════════════════════════════════════════════════
+
+LOCAL_VARIANT_PREFIXES = [
+    "Practice Variant {variant}",
+    "Mock Set {variant}",
+    "Campus Drill {variant}",
+    "Pattern Round {variant}",
+    "Assessment Set {variant}",
+    "Revision Batch {variant}",
+]
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _topic_label(topic: str) -> str:
+    normalized_topic = _normalize_key(topic)
+    match = next((item["label"] for item in TOPICS if item["key"] == normalized_topic), "")
+    return match or normalized_topic.replace("-", " ").title() or "General"
+
+
+def _company_label(company: str) -> str:
+    normalized_company = _normalize_key(company)
+    match = next((item["label"] for item in COMPANIES if item["key"] == normalized_company), "")
+    return match or normalized_company.upper() or "Company"
+
+
+def _get_population_lock() -> asyncio.Lock:
+    global _population_lock
+    if _population_lock is None:
+        _population_lock = asyncio.Lock()
+    return _population_lock
+
+
+def _snapshot_population_status() -> Dict[str, Any]:
+    return copy.deepcopy(_population_status)
+
+
+def _update_population_status(**updates: Any) -> None:
+    _population_status.update(updates)
+    _population_status["updated_at"] = _utcnow()
+
+
+def get_auto_populate_status() -> Dict[str, Any]:
+    status = _snapshot_population_status()
+    task_running = _population_task is not None and not _population_task.done()
+    status["running"] = task_running or _get_population_lock().locked()
+    return status
+
+
+def _local_generation_available() -> bool:
+    return (
+        _local_generation_cooldown_until is not None
+        and _local_generation_cooldown_until > _utcnow()
+    )
+
+
+def _activate_local_generation_cooldown(minutes: int = 5) -> None:
+    global _local_generation_cooldown_until
+    _local_generation_cooldown_until = _utcnow() + timedelta(minutes=minutes)
+
+
+def _clear_local_generation_cooldown() -> None:
+    global _local_generation_cooldown_until
+    _local_generation_cooldown_until = None
+
 
 def _get_questions_collection():
     return get_collection("reasoning_questions")
@@ -685,6 +768,121 @@ Rules:
 - Return ONLY valid JSON, nothing else"""
 
 
+def _rotate_options(options: Sequence[str], correct_answer: Any, shift: int) -> tuple[List[str], str]:
+    normalized_options = list(options[:4])
+    if len(normalized_options) != 4:
+        return [], "A"
+
+    normalized_answer = _normalize_correct_answer(correct_answer, normalized_options)
+    labels = ["A", "B", "C", "D"]
+    correct_index = labels.index(normalized_answer)
+    safe_shift = shift % len(normalized_options)
+    if safe_shift == 0:
+        return normalized_options, normalized_answer
+
+    rotated_options = normalized_options[safe_shift:] + normalized_options[:safe_shift]
+    rotated_correct_index = (correct_index - safe_shift) % len(normalized_options)
+    return rotated_options, labels[rotated_correct_index]
+
+
+def _build_local_variant_question(
+    base_question: Dict[str, Any],
+    *,
+    topic: str,
+    difficulty: str,
+    company: str = "",
+    variant_index: int,
+) -> Dict[str, Any]:
+    prefix_template = LOCAL_VARIANT_PREFIXES[(variant_index - 1) % len(LOCAL_VARIANT_PREFIXES)]
+    prefix = prefix_template.format(variant=variant_index)
+    context_label = _company_label(company) if company else _topic_label(topic)
+    context_suffix = (
+        f"{context_label} previous-year style"
+        if company
+        else f"{context_label} practice"
+    )
+    rotated_options, rotated_answer = _rotate_options(
+        base_question.get("options", []),
+        base_question.get("correct_answer"),
+        (variant_index - 1) % 4,
+    )
+    explanation_prefix = (
+        f"This {context_label} practice variant keeps the same solving pattern with a fresh ordering. "
+    )
+
+    return {
+        "question": f"{context_suffix} {prefix}: {base_question.get('question', '')}",
+        "options": rotated_options,
+        "correct_answer": rotated_answer,
+        "explanation": explanation_prefix + _normalize_text(base_question.get("explanation")),
+        "difficulty": difficulty or _normalize_difficulty(base_question.get("difficulty")),
+        "topic": topic,
+        "company": company,
+        "source": "local_generator",
+    }
+
+
+def _generate_local_question_variants(
+    topic: str,
+    difficulty: str,
+    count: int,
+    *,
+    company: str = "",
+    exclude_questions: Optional[Sequence[str]] = None,
+) -> List[Dict[str, Any]]:
+    normalized_topic = _normalize_key(topic)
+    normalized_company = _normalize_key(company)
+    normalized_difficulty = _normalize_difficulty(difficulty)
+    base_pool = list(_FALLBACK_DB.get(normalized_topic, []))
+    if not base_pool:
+        for topic_key, questions in _FALLBACK_DB.items():
+            for question in questions:
+                base_pool.append({**question, "topic": topic_key})
+
+    if not base_pool:
+        return []
+
+    excluded_texts = {
+        _canonical_question_text(text)
+        for text in (exclude_questions or [])
+        if _normalize_text(text)
+    }
+    seen_hashes: Set[str] = set()
+    generated: List[Dict[str, Any]] = []
+    variant_index = 1
+    max_attempts = max(80, count * 12)
+
+    while len(generated) < count and variant_index <= max_attempts:
+        base_question = base_pool[(variant_index - 1) % len(base_pool)]
+        raw_variant = _build_local_variant_question(
+            base_question,
+            topic=normalized_topic or _normalize_key(base_question.get("topic")),
+            difficulty=normalized_difficulty,
+            company=normalized_company,
+            variant_index=variant_index,
+        )
+        payload = _prepare_question_payload(
+            raw_variant,
+            default_topic=normalized_topic or _normalize_key(base_question.get("topic")),
+            default_company=normalized_company,
+            default_difficulty=normalized_difficulty,
+            default_source="local_generator",
+        )
+        variant_index += 1
+        if not payload:
+            continue
+
+        canonical_text = _canonical_question_text(payload["question"])
+        if canonical_text in excluded_texts or payload["question_hash"] in seen_hashes:
+            continue
+
+        excluded_texts.add(canonical_text)
+        seen_hashes.add(payload["question_hash"])
+        generated.append(payload)
+
+    return generated
+
+
 async def generate_questions_ai(
     topic: str,
     difficulty: str = "medium",
@@ -705,10 +903,25 @@ async def generate_questions_ai(
         exclude_questions=exclude_questions,
     )
 
+    if _local_generation_available():
+        local_questions = _generate_local_question_variants(
+            normalized_topic,
+            normalized_difficulty,
+            safe_count,
+            company=normalized_company,
+            exclude_questions=exclude_questions,
+        )
+        if persist and local_questions:
+            insert_questions(local_questions)
+        return local_questions
+
     try:
-        response = await ai_hub.chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            system_prompt="You are an expert aptitude and reasoning question generator. Always respond with valid JSON only.",
+        response = await asyncio.wait_for(
+            ai_hub.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt="You are an expert aptitude and reasoning question generator. Always respond with valid JSON only.",
+            ),
+            timeout=REASONING_AI_TIMEOUT_SECONDS,
         )
         questions = _sanitize_generated_questions(
             _parse_questions_json(response),
@@ -728,16 +941,107 @@ async def generate_questions_ai(
                 normalized_company,
             )
 
+        _clear_local_generation_cooldown()
         return questions[:safe_count]
 
     except Exception as e:
+        _activate_local_generation_cooldown()
         logger.exception(
             "AI question generation failed for topic=%s company=%s: %s",
             normalized_topic,
             normalized_company,
             str(e),
         )
+        local_questions = _generate_local_question_variants(
+            normalized_topic,
+            normalized_difficulty,
+            safe_count,
+            company=normalized_company,
+            exclude_questions=exclude_questions,
+        )
+        if local_questions:
+            if persist:
+                inserted = insert_questions(local_questions)
+                logger.info(
+                    "Persisted %d locally generated reasoning questions for topic=%s company=%s",
+                    inserted,
+                    normalized_topic,
+                    normalized_company,
+                )
+            return local_questions[:safe_count]
+
         return _get_fallback_questions(normalized_topic, safe_count, company=normalized_company)
+
+
+def _extract_questions_from_text_locally(text: str, topic: str = "") -> List[Dict[str, Any]]:
+    normalized_topic = _normalize_key(topic)
+    lines = [line.strip() for line in (text or "").splitlines()]
+    question_start_re = re.compile(r"^(?:q(?:uestion)?\s*)?(\d+)[\).\:-]\s*(.+)$", re.IGNORECASE)
+    option_re = re.compile(r"^([A-D])[\).\:-]\s*(.+)$", re.IGNORECASE)
+    answer_re = re.compile(r"^(?:answer|correct answer)\s*[:\-]?\s*([A-D])\b", re.IGNORECASE)
+
+    parsed: List[Dict[str, Any]] = []
+    current_question: Optional[Dict[str, Any]] = None
+
+    def flush_current_question() -> None:
+        nonlocal current_question
+        if not current_question:
+            return
+
+        options_map = current_question.get("options_map", {})
+        if len(options_map) == 4:
+            parsed.append(
+                {
+                    "question": _normalize_text(current_question.get("question")),
+                    "options": [options_map[label] for label in ["A", "B", "C", "D"]],
+                    "correct_answer": current_question.get("correct_answer") or "A",
+                    "explanation": "Locally extracted from uploaded content.",
+                    "difficulty": "medium",
+                    "topic": normalized_topic,
+                    "source": "uploaded_local",
+                }
+            )
+        current_question = None
+
+    for line in lines:
+        if not line:
+            continue
+
+        question_match = question_start_re.match(line)
+        if question_match:
+            flush_current_question()
+            current_question = {
+                "question": question_match.group(2).strip(),
+                "options_map": {},
+                "correct_answer": "",
+            }
+            continue
+
+        option_match = option_re.match(line)
+        if option_match and current_question is not None:
+            current_question["options_map"][option_match.group(1).upper()] = option_match.group(2).strip()
+            continue
+
+        answer_match = answer_re.match(line)
+        if answer_match and current_question is not None:
+            current_question["correct_answer"] = answer_match.group(1).upper()
+            continue
+
+        if current_question is None:
+            current_question = {
+                "question": line,
+                "options_map": {},
+                "correct_answer": "",
+            }
+            continue
+
+        if current_question.get("options_map"):
+            continue
+
+        current_question["question"] = f"{current_question['question']} {line}".strip()
+
+    flush_current_question()
+    return parsed
 
 
 async def extract_questions_from_text(text: str, topic: str = "") -> List[Dict]:
@@ -749,10 +1053,13 @@ async def extract_questions_from_text(text: str, topic: str = "") -> List[Dict]:
             messages=[{"role": "user", "content": prompt}],
             system_prompt="You are an expert at extracting exam questions from text. Always respond with valid JSON only.",
         )
-        return _parse_questions_json(response)
+        extracted = _parse_questions_json(response)
+        if extracted:
+            return extracted
     except Exception as e:
         logger.exception("Question extraction failed: %s", str(e))
-        return []
+
+    return _extract_questions_from_text_locally(text, topic)
 
 
 def _parse_questions_json(text: str) -> List[Dict]:
@@ -968,7 +1275,7 @@ async def auto_populate_topic(topic: str, target_count: int = MIN_QUESTIONS_PER_
             difficulty=difficulties[attempt % len(difficulties)],
             count=batch_size,
             persist=False,
-            exclude_questions=_get_existing_question_texts(topic=normalized_topic, limit=16),
+            exclude_questions=_get_existing_question_texts(topic=normalized_topic, limit=100),
         )
         inserted = insert_questions(generated)
         inserted_total += inserted
@@ -1002,7 +1309,7 @@ async def auto_populate_company(company: str, target_count: int = MIN_QUESTIONS_
             count=batch_size,
             company=normalized_company,
             persist=False,
-            exclude_questions=_get_existing_question_texts(company=normalized_company, limit=18),
+            exclude_questions=_get_existing_question_texts(company=normalized_company, limit=100),
         )
         inserted = insert_questions(generated)
         inserted_total += inserted
@@ -1013,11 +1320,41 @@ async def auto_populate_company(company: str, target_count: int = MIN_QUESTIONS_
     return inserted_total
 
 
-async def auto_populate_all() -> Dict[str, Any]:
+def _notify_population_progress(
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]],
+    *,
+    message: str,
+    phase: str,
+    results: Dict[str, Any],
+    completed_steps: int,
+    total_steps: int,
+    current_key: Optional[str] = None,
+) -> None:
+    if progress_callback is None:
+        return
+
+    try:
+        progress_callback(
+            message=message,
+            phase=phase,
+            current_key=current_key,
+            progress={"completed": completed_steps, "total": total_steps},
+            results=copy.deepcopy(results),
+            error="",
+        )
+    except Exception:
+        logger.exception("Failed to publish reasoning populate progress update.")
+
+
+async def _run_auto_populate_all(
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
     backend = get_reasoning_storage_backend()
     if backend == "unavailable":
         raise RuntimeError("No reasoning storage backend is available.")
 
+    total_steps = 1 + len(TOPICS) + len(COMPANIES)
+    completed_steps = 0
     results: Dict[str, Any] = {
         "storage_backend": backend,
         "targets": {
@@ -1026,24 +1363,154 @@ async def auto_populate_all() -> Dict[str, Any]:
         },
         "topics": {},
         "companies": {},
-        "fallback_seeded": seed_fallback_questions(),
+        "fallback_seeded": 0,
     }
 
-    for topic in TOPICS:
+    _notify_population_progress(
+        progress_callback,
+        message="Seeding fallback questions before AI/local generation.",
+        phase="seeding",
+        results=results,
+        completed_steps=completed_steps,
+        total_steps=total_steps,
+    )
+    results["fallback_seeded"] = seed_fallback_questions()
+    completed_steps += 1
+    _notify_population_progress(
+        progress_callback,
+        message=f"Seeded {results['fallback_seeded']} fallback questions.",
+        phase="topics",
+        results=results,
+        completed_steps=completed_steps,
+        total_steps=total_steps,
+    )
+
+    for index, topic in enumerate(TOPICS, start=1):
+        _notify_population_progress(
+            progress_callback,
+            message=f"Populating topic {index}/{len(TOPICS)}: {topic['label']}",
+            phase="topics",
+            current_key=topic["key"],
+            results=results,
+            completed_steps=completed_steps,
+            total_steps=total_steps,
+        )
         try:
             results["topics"][topic["key"]] = await auto_populate_topic(topic["key"])
         except Exception as e:
             logger.error("Failed to auto-populate topic %s: %s", topic["key"], str(e))
             results["topics"][topic["key"]] = f"error: {str(e)}"
+        completed_steps += 1
+        _notify_population_progress(
+            progress_callback,
+            message=f"Finished topic {topic['label']}.",
+            phase="topics",
+            current_key=topic["key"],
+            results=results,
+            completed_steps=completed_steps,
+            total_steps=total_steps,
+        )
 
-    for company in COMPANIES:
+    for index, company in enumerate(COMPANIES, start=1):
+        _notify_population_progress(
+            progress_callback,
+            message=f"Populating company {index}/{len(COMPANIES)}: {company['label']}",
+            phase="companies",
+            current_key=company["key"],
+            results=results,
+            completed_steps=completed_steps,
+            total_steps=total_steps,
+        )
         try:
             results["companies"][company["key"]] = await auto_populate_company(company["key"])
         except Exception as e:
             logger.error("Failed to auto-populate company %s: %s", company["key"], str(e))
             results["companies"][company["key"]] = f"error: {str(e)}"
+        completed_steps += 1
+        _notify_population_progress(
+            progress_callback,
+            message=f"Finished company {company['label']}.",
+            phase="companies",
+            current_key=company["key"],
+            results=results,
+            completed_steps=completed_steps,
+            total_steps=total_steps,
+        )
 
     return results
+
+
+async def auto_populate_all(
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
+    async with _get_population_lock():
+        return await _run_auto_populate_all(progress_callback=progress_callback)
+
+
+async def _background_auto_populate_runner() -> None:
+    global _population_task
+    started_at = _utcnow()
+    _update_population_status(
+        status="running",
+        message="Reasoning auto-population is running.",
+        phase="seeding",
+        current_key=None,
+        progress={"completed": 0, "total": 1 + len(TOPICS) + len(COMPANIES)},
+        results=None,
+        error="",
+        started_at=started_at,
+        finished_at=None,
+    )
+
+    try:
+        results = await auto_populate_all(progress_callback=_update_population_status)
+        _update_population_status(
+            status="completed",
+            message="Reasoning auto-population completed successfully.",
+            phase="completed",
+            current_key=None,
+            results=results,
+            error="",
+            finished_at=_utcnow(),
+        )
+    except Exception as exc:
+        logger.exception("Background reasoning auto-population failed.")
+        _update_population_status(
+            status="failed",
+            message="Reasoning auto-population failed.",
+            phase="failed",
+            current_key=None,
+            error=str(exc),
+            finished_at=_utcnow(),
+        )
+    finally:
+        _population_task = None
+
+
+def start_auto_populate_job() -> Dict[str, Any]:
+    global _population_task
+
+    if _population_task is not None and not _population_task.done():
+        return get_auto_populate_status()
+
+    if _get_population_lock().locked():
+        status = get_auto_populate_status()
+        status["message"] = "A reasoning population run is already in progress."
+        return status
+
+    _update_population_status(
+        status="running",
+        message="Reasoning auto-population is starting.",
+        phase="queued",
+        current_key=None,
+        progress={"completed": 0, "total": 1 + len(TOPICS) + len(COMPANIES)},
+        results=None,
+        error="",
+        started_at=_utcnow(),
+        finished_at=None,
+    )
+    _population_task = asyncio.create_task(_background_auto_populate_runner())
+    return get_auto_populate_status()
 
 
 async def on_demand_populate(topic: str = "", company: str = "") -> List[Dict]:

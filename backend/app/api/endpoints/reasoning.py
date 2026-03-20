@@ -18,7 +18,7 @@ from app.services.reasoning_service import (
     generate_questions_ai, extract_questions_from_text,
     _get_fallback_questions,
     on_demand_populate, count_all_questions, count_topic_questions, count_company_questions,
-    auto_populate_all,
+    start_auto_populate_job, get_auto_populate_status,
     get_reasoning_storage_backend,
     MIN_QUESTIONS_PER_TOPIC,
     MIN_QUESTIONS_PER_COMPANY,
@@ -164,12 +164,19 @@ async def get_stats():
 
 @router.post("/admin/populate-all")
 async def admin_populate_all():
-    """Admin: Trigger manual population of all topics and companies."""
+    """Admin: Trigger manual population of all topics and companies in the background."""
     try:
-        results = await auto_populate_all()
-        return {"status": "success", "results": results}
+        job = start_auto_populate_job()
+        status = "running" if job.get("running") else job.get("status", "queued")
+        return {"status": status, "job": job}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Population failed: {str(e)}")
+
+
+@router.get("/admin/populate-status")
+async def admin_populate_status():
+    """Admin: Get current status for the manual reasoning population job."""
+    return get_auto_populate_status()
 
 
 @router.post("/generate")

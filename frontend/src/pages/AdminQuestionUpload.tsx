@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Upload, FileText, Brain, Loader2, CheckCircle2, AlertCircle,
@@ -15,6 +15,22 @@ interface ExtractedQuestion {
   difficulty?: string;
   topic?: string;
   company?: string;
+}
+
+interface PopulateJobStatus {
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  running?: boolean;
+  message?: string;
+  phase?: string;
+  current_key?: string | null;
+  progress?: {
+    completed: number;
+    total: number;
+  };
+  results?: any;
+  error?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 
 const TOPICS = [
@@ -54,7 +70,9 @@ export default function AdminQuestionUpload() {
   const [error, setError] = useState('');
   const [stats, setStats] = useState<any>(null);
   const [populateResult, setPopulateResult] = useState<any>(null);
+  const [populateStatus, setPopulateStatus] = useState<PopulateJobStatus | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const populatePollRef = useRef<number | null>(null);
 
   const handleUpload = async () => {
     if (!textContent.trim() && !file) {
@@ -82,20 +100,6 @@ export default function AdminQuestionUpload() {
     setLoading(false);
   };
 
-  const handlePopulateAll = async () => {
-    setLoading(true);
-    setError('');
-    setPopulateResult(null);
-    try {
-      const { data } = await api.post('/reasoning/admin/populate-all');
-      setPopulateResult(data);
-      await fetchStats();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Population failed');
-    }
-    setLoading(false);
-  };
-
   const fetchStats = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -108,6 +112,85 @@ export default function AdminQuestionUpload() {
     }
     setLoading(false);
   }, []);
+
+  const clearPopulatePolling = useCallback(() => {
+    if (populatePollRef.current !== null) {
+      window.clearInterval(populatePollRef.current);
+      populatePollRef.current = null;
+    }
+  }, []);
+
+  const fetchPopulateStatus = useCallback(async (showErrors = false) => {
+    try {
+      const { data } = await api.get('/reasoning/admin/populate-status');
+      setPopulateStatus(data);
+
+      if (data.status === 'completed') {
+        clearPopulatePolling();
+        setPopulateResult({ results: data.results });
+        await fetchStats();
+      } else if (data.status === 'failed') {
+        clearPopulatePolling();
+        setPopulateResult(null);
+        if (data.error) {
+          setError(data.error);
+        }
+      }
+    } catch (e: any) {
+      if (showErrors) {
+        setError(e?.response?.data?.detail || e?.message || 'Failed to load population status');
+      }
+    }
+  }, [clearPopulatePolling, fetchStats]);
+
+  const startPopulatePolling = useCallback(() => {
+    clearPopulatePolling();
+    populatePollRef.current = window.setInterval(() => {
+      void fetchPopulateStatus(false);
+    }, 2500);
+  }, [clearPopulatePolling, fetchPopulateStatus]);
+
+  const handlePopulateAll = async () => {
+    setLoading(true);
+    setError('');
+    setPopulateResult(null);
+    try {
+      const { data } = await api.post('/reasoning/admin/populate-all');
+      setPopulateStatus(data.job);
+      startPopulatePolling();
+      await fetchPopulateStatus(false);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || e?.message || 'Population failed');
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (tab === 'populate') {
+      void fetchPopulateStatus(false);
+    }
+    if (tab === 'stats') {
+      void fetchStats();
+    }
+  }, [tab, fetchPopulateStatus, fetchStats]);
+
+  useEffect(() => () => {
+    clearPopulatePolling();
+  }, [clearPopulatePolling]);
+
+  useEffect(() => {
+    if (tab !== 'populate') {
+      return;
+    }
+
+    if (populateStatus?.status === 'running' && populatePollRef.current === null) {
+      startPopulatePolling();
+    }
+
+    if (populateStatus && populateStatus.status !== 'running') {
+      clearPopulatePolling();
+    }
+  }, [tab, populateStatus, startPopulatePolling, clearPopulatePolling]);
 
   const tabs = [
     { key: 'upload', label: 'Upload & Extract', icon: Upload, gradient: 'from-[#6C63FF] to-violet-500' },
@@ -142,7 +225,7 @@ export default function AdminQuestionUpload() {
           <div className="flex gap-3 mb-2">
             {tabs.map(t => (
               <button key={t.key}
-                onClick={() => { setTab(t.key as any); setError(''); if (t.key === 'stats') fetchStats(); }}
+                onClick={() => { setTab(t.key as any); setError(''); }}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all
                   ${tab === t.key ? `bg-gradient-to-r ${t.gradient} text-white shadow-lg` : 'bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:text-slate-200'}`}>
                 <t.icon className="w-4 h-4" /> {t.label}
@@ -265,14 +348,53 @@ export default function AdminQuestionUpload() {
               <h3 className="text-xl font-bold text-white">Auto-Populate All Topics & Companies</h3>
                 <p className="text-sm text-slate-400 max-w-lg mx-auto leading-relaxed">
                   This will cycle through all 12 topics and 8 companies, generating AI questions for any that are below the minimum threshold
-                  {' '}(36 per topic, 24 per company). Fallback questions are also seeded before AI generation.
+                  {' '}(36 per topic, 24 per company). The job now runs in the background, so you can track progress here without waiting on one long request.
                 </p>
-              <button onClick={handlePopulateAll} disabled={loading}
+              <button onClick={handlePopulateAll} disabled={loading || populateStatus?.status === 'running'}
                 className="px-8 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 inline-flex items-center gap-2">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {loading ? 'Populating (takes a few minutes)...' : 'Start Auto-Population'}
+                {loading
+                  ? 'Starting background population...'
+                  : populateStatus?.status === 'running'
+                    ? 'Population Running in Background'
+                    : 'Start Auto-Population'}
               </button>
             </div>
+
+            {populateStatus && (
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/40 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase">Population Status</p>
+                    <p className="text-sm text-white mt-1">{populateStatus.message || 'Waiting for the latest job update.'}</p>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                    populateStatus.status === 'completed'
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                      : populateStatus.status === 'failed'
+                        ? 'bg-red-500/10 border-red-500/20 text-red-300'
+                        : 'bg-sky-500/10 border-sky-500/20 text-sky-300'
+                  }`}>
+                    {populateStatus.status}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-slate-900/40 p-3 rounded-xl text-center">
+                    <p className="text-2xl font-bold text-white">{populateStatus.progress?.completed || 0}</p>
+                    <p className="text-xs text-slate-500">Completed Steps</p>
+                  </div>
+                  <div className="bg-slate-900/40 p-3 rounded-xl text-center">
+                    <p className="text-2xl font-bold text-sky-400">{populateStatus.progress?.total || 0}</p>
+                    <p className="text-xs text-slate-500">Total Steps</p>
+                  </div>
+                  <div className="bg-slate-900/40 p-3 rounded-xl text-center">
+                    <p className="text-2xl font-bold text-emerald-400">{populateStatus.current_key || '—'}</p>
+                    <p className="text-xs text-slate-500">Current Item</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3">
