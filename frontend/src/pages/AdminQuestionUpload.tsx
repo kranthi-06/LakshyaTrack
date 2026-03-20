@@ -89,6 +89,7 @@ export default function AdminQuestionUpload() {
     try {
       const { data } = await api.post('/reasoning/admin/populate-all');
       setPopulateResult(data);
+      await fetchStats();
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Population failed');
     }
@@ -97,10 +98,14 @@ export default function AdminQuestionUpload() {
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const { data } = await api.get('/reasoning/stats');
       setStats(data);
-    } catch { }
+    } catch (e: any) {
+      setStats(null);
+      setError(e?.response?.data?.detail || 'Failed to load database stats');
+    }
     setLoading(false);
   }, []);
 
@@ -137,7 +142,7 @@ export default function AdminQuestionUpload() {
           <div className="flex gap-3 mb-2">
             {tabs.map(t => (
               <button key={t.key}
-                onClick={() => { setTab(t.key as any); if (t.key === 'stats') fetchStats(); }}
+                onClick={() => { setTab(t.key as any); setError(''); if (t.key === 'stats') fetchStats(); }}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all
                   ${tab === t.key ? `bg-gradient-to-r ${t.gradient} text-white shadow-lg` : 'bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:text-slate-200'}`}>
                 <t.icon className="w-4 h-4" /> {t.label}
@@ -258,10 +263,10 @@ export default function AdminQuestionUpload() {
             <div className="p-8 rounded-2xl bg-slate-800/40 border border-slate-700/40 text-center space-y-4">
               <Sparkles className="w-12 h-12 text-emerald-400 mx-auto" />
               <h3 className="text-xl font-bold text-white">Auto-Populate All Topics & Companies</h3>
-              <p className="text-sm text-slate-400 max-w-lg mx-auto leading-relaxed">
-                This will cycle through all 12 topics and 8 companies, generating AI questions for any that are below the minimum threshold (10 per topic, 5 per company).
-                Fallback questions are also seeded into MongoDB.
-              </p>
+                <p className="text-sm text-slate-400 max-w-lg mx-auto leading-relaxed">
+                  This will cycle through all 12 topics and 8 companies, generating AI questions for any that are below the minimum threshold
+                  {' '}(36 per topic, 24 per company). Fallback questions are also seeded before AI generation.
+                </p>
               <button onClick={handlePopulateAll} disabled={loading}
                 className="px-8 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 inline-flex items-center gap-2">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -281,6 +286,9 @@ export default function AdminQuestionUpload() {
                 <div className="flex items-center gap-2 text-emerald-400 font-semibold">
                   <CheckCircle2 className="w-5 h-5" /> Population Complete
                 </div>
+                <p className="text-xs text-slate-500">
+                  Storage backend: {populateResult.results?.storage_backend || stats?.storage_backend || 'unknown'}
+                </p>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-slate-800/40 p-3 rounded-xl text-center">
                     <p className="text-2xl font-bold text-white">{populateResult.results?.fallback_seeded || 0}</p>
@@ -328,12 +336,22 @@ export default function AdminQuestionUpload() {
               </div>
             )}
 
+            {error && !loading && (
+              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400" />
+                <p className="text-sm text-red-300">{error}</p>
+              </div>
+            )}
+
             {stats && (
               <>
                 <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/40 flex items-center justify-between">
                   <div>
                     <p className="text-sm text-slate-400">Total Questions in DB</p>
                     <p className="text-3xl font-extrabold text-white">{stats.total_questions}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Backend: {stats.storage_backend || 'unknown'} · Targets: {stats.targets?.topic_minimum || 36} per topic, {stats.targets?.company_minimum || 24} per company
+                    </p>
                   </div>
                   <button onClick={fetchStats}
                     className="p-2 rounded-xl bg-slate-700/30 text-slate-400 hover:text-white transition-all">

@@ -44,6 +44,7 @@ from app.models.career import (
     Roadmap,
 )
 from app.models.resume import SavedResume
+from app.models.reasoning import ReasoningQuestion, ReasoningTest, ReasoningUserProgress
 from app.models.user import Blacklist, Profile, User
 from app.models.subscription import (
     SubscriptionPlan, MicroPlan, UserSubscription,

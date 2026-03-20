@@ -2,16 +2,42 @@
 Reasoning & Problem Solving Service — MongoDB-backed question bank,
 AI question generation, and user progress tracking.
 """
+import copy
+import hashlib
 import json
 import logging
 import random
+import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Set
+
+from pymongo import UpdateOne
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.db.mongodb import get_collection
+from app.db.session import SessionLocal
+from app.models.reasoning import (
+    ReasoningQuestion,
+    ReasoningTest,
+    ReasoningUserProgress,
+)
 from app.services.ai_service import ai_hub
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_TOPIC_FETCH_LIMIT = 36
+DEFAULT_COMPANY_FETCH_LIMIT = 30
+ON_DEMAND_TOPIC_TARGET = 18
+ON_DEMAND_COMPANY_TARGET = 12
+MIN_QUESTIONS_PER_TOPIC = 36
+MIN_QUESTIONS_PER_COMPANY = 24
+MAX_AI_GENERATION_REQUEST = 60
+TOPIC_GENERATION_BATCH_SIZE = 12
+COMPANY_GENERATION_BATCH_SIZE = 4
+MAX_POPULATE_ATTEMPTS = 8
+_sql_storage_ready = False
 
 # ═══════════════════════════════════════════════════════════════
 # TOPIC & COMPANY DEFINITIONS
@@ -60,93 +86,345 @@ def _get_progress_collection():
     return get_collection("reasoning_user_progress")
 
 
-def get_topics() -> List[Dict]:
-    """Return all available topics with question counts."""
+def _ensure_sql_storage_ready(session: Session) -> None:
+    global _sql_storage_ready
+    if _sql_storage_ready:
+        return
+
+    bind = session.get_bind()
+    ReasoningQuestion.__table__.create(bind=bind, checkfirst=True)
+    ReasoningTest.__table__.create(bind=bind, checkfirst=True)
+    ReasoningUserProgress.__table__.create(bind=bind, checkfirst=True)
+    _sql_storage_ready = True
+
+
+def _get_sql_session() -> Optional[Session]:
+    session: Optional[Session] = None
+    try:
+        session = SessionLocal()
+        _ensure_sql_storage_ready(session)
+        return session
+    except Exception:
+        logger.exception("Reasoning relational storage is unavailable.")
+        if session is not None:
+            session.close()
+        return None
+
+
+def get_reasoning_storage_backend() -> str:
+    if _get_questions_collection() is not None:
+        return "mongodb"
+
+    session = _get_sql_session()
+    if session is None:
+        return "unavailable"
+
+    try:
+        return session.get_bind().dialect.name
+    finally:
+        session.close()
+
+
+def _normalize_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _normalize_key(value: Any) -> str:
+    return _normalize_text(value).lower()
+
+
+def _canonical_question_text(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", _normalize_text(value).lower()).strip()
+
+
+def _question_hash(question: Dict[str, Any]) -> str:
+    return hashlib.md5(_canonical_question_text(question.get("question")).encode("utf-8")).hexdigest()
+
+
+def _normalize_options(options: Any) -> List[str]:
+    if not isinstance(options, list):
+        return []
+
+    normalized = [_normalize_text(option) for option in options if _normalize_text(option)]
+    if len(normalized) < 4:
+        return []
+    return normalized[:4]
+
+
+def _normalize_correct_answer(correct_answer: Any, options: Sequence[str]) -> str:
+    labels = ["A", "B", "C", "D"]
+
+    if isinstance(correct_answer, int) and 0 <= correct_answer < len(labels):
+        return labels[correct_answer]
+
+    answer = _normalize_text(correct_answer).upper()
+    if answer in labels:
+        return answer
+
+    match = re.match(r"^([A-D])\b", answer)
+    if match:
+        return match.group(1)
+
+    for index, option in enumerate(options[:4]):
+        if answer and answer == option.upper():
+            return labels[index]
+
+    return "A"
+
+
+def _normalize_difficulty(value: Any, default: str = "medium") -> str:
+    difficulty = _normalize_key(value) or default
+    return difficulty if difficulty in {"easy", "medium", "hard"} else default
+
+
+def _prepare_question_payload(
+    raw_question: Dict[str, Any],
+    *,
+    default_topic: str = "",
+    default_company: str = "",
+    default_difficulty: str = "medium",
+    default_source: str = "ai_generated",
+) -> Optional[Dict[str, Any]]:
+    question_text = _normalize_text(raw_question.get("question"))
+    options = _normalize_options(raw_question.get("options"))
+    if not question_text or len(options) != 4:
+        return None
+
+    payload: Dict[str, Any] = {
+        "question": question_text,
+        "options": options,
+        "correct_answer": _normalize_correct_answer(raw_question.get("correct_answer"), options),
+        "explanation": _normalize_text(raw_question.get("explanation")) or "Explanation unavailable.",
+        "difficulty": _normalize_difficulty(raw_question.get("difficulty"), default_difficulty),
+        "topic": _normalize_key(raw_question.get("topic") or default_topic) or None,
+        "company": _normalize_key(raw_question.get("company") or default_company) or None,
+        "source": _normalize_key(raw_question.get("source") or default_source) or default_source,
+    }
+    payload["question_hash"] = _question_hash(payload)
+    return payload
+
+
+def _prepare_question_batch(questions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    prepared: List[Dict[str, Any]] = []
+    seen_hashes: Set[str] = set()
+
+    for question in questions:
+        payload = _prepare_question_payload(question)
+        if not payload:
+            continue
+        if payload["question_hash"] in seen_hashes:
+            continue
+        seen_hashes.add(payload["question_hash"])
+        prepared.append(payload)
+
+    return prepared
+
+
+def _serialize_sql_question(row: ReasoningQuestion) -> Dict[str, Any]:
+    return {
+        "id": row.id,
+        "topic": row.topic,
+        "company": row.company,
+        "difficulty": row.difficulty,
+        "question": row.question,
+        "options": list(row.options or []),
+        "correct_answer": row.correct_answer,
+        "explanation": row.explanation,
+        "source": row.source,
+        "question_hash": row.question_hash,
+        "created_at": row.created_at,
+    }
+
+
+def _existing_question_hashes(question_hashes: Sequence[str]) -> Set[str]:
+    hashes = [question_hash for question_hash in question_hashes if question_hash]
+    if not hashes:
+        return set()
+
     coll = _get_questions_collection()
-    result = []
-    for t in TOPICS:
-        count = 0
-        if coll is not None:
-            try:
-                count = coll.count_documents({"topic": t["key"]})
-            except Exception:
-                pass
-        result.append({**t, "question_count": count})
-    return result
+    if coll is not None:
+        try:
+            cursor = coll.find(
+                {"question_hash": {"$in": hashes}},
+                {"_id": 0, "question_hash": 1},
+            )
+            return {doc["question_hash"] for doc in cursor if doc.get("question_hash")}
+        except Exception:
+            logger.exception("Failed to check MongoDB reasoning question hashes.")
+
+    session = _get_sql_session()
+    if session is None:
+        return set()
+
+    try:
+        rows = (
+            session.query(ReasoningQuestion.question_hash)
+            .filter(ReasoningQuestion.question_hash.in_(hashes))
+            .all()
+        )
+        return {row[0] for row in rows if row and row[0]}
+    except SQLAlchemyError:
+        logger.exception("Failed to check relational reasoning question hashes.")
+        return set()
+    finally:
+        session.close()
+
+
+def get_topics() -> List[Dict]:
+    return [{**topic, "question_count": count_topic_questions(topic["key"])} for topic in TOPICS]
 
 
 def get_companies() -> List[Dict]:
-    """Return all companies with question counts."""
-    coll = _get_questions_collection()
-    result = []
-    for c in COMPANIES:
-        count = 0
-        if coll is not None:
-            try:
-                count = coll.count_documents({"company": c["key"]})
-            except Exception:
-                pass
-        result.append({**c, "question_count": count})
-    return result
+    return [{**company, "question_count": count_company_questions(company["key"])} for company in COMPANIES]
 
 
 def get_questions_by_topic(
     topic: str,
     difficulty: Optional[str] = None,
-    limit: int = 20,
+    limit: int = DEFAULT_TOPIC_FETCH_LIMIT,
     skip: int = 0,
 ) -> List[Dict]:
-    """Fetch questions for a topic from MongoDB."""
-    coll = _get_questions_collection()
-    if coll is None:
-        return []
+    normalized_topic = _normalize_key(topic)
+    normalized_difficulty = _normalize_difficulty(difficulty, "") if difficulty else ""
+    safe_limit = max(1, min(limit, 100))
+    safe_skip = max(skip, 0)
 
-    query: Dict[str, Any] = {"topic": topic}
-    if difficulty:
-        query["difficulty"] = difficulty
+    coll = _get_questions_collection()
+    if coll is not None:
+        query: Dict[str, Any] = {"topic": normalized_topic}
+        if normalized_difficulty:
+            query["difficulty"] = normalized_difficulty
+        try:
+            cursor = (
+                coll.find(query, {"_id": 0})
+                .sort("created_at", -1)
+                .skip(safe_skip)
+                .limit(safe_limit)
+            )
+            return list(cursor)
+        except Exception:
+            logger.exception("Failed to fetch MongoDB topic questions for %s.", normalized_topic)
+
+    session = _get_sql_session()
+    if session is None:
+        return []
 
     try:
-        cursor = coll.find(query, {"_id": 0}).skip(skip).limit(limit)
-        return list(cursor)
-    except Exception:
-        logger.exception("Failed to fetch questions for topic %s", topic)
+        query = session.query(ReasoningQuestion).filter(ReasoningQuestion.topic == normalized_topic)
+        if normalized_difficulty:
+            query = query.filter(ReasoningQuestion.difficulty == normalized_difficulty)
+        rows = (
+            query.order_by(ReasoningQuestion.created_at.desc())
+            .offset(safe_skip)
+            .limit(safe_limit)
+            .all()
+        )
+        return [_serialize_sql_question(row) for row in rows]
+    except SQLAlchemyError:
+        logger.exception("Failed to fetch relational topic questions for %s.", normalized_topic)
         return []
+    finally:
+        session.close()
 
 
 def get_questions_by_company(
     company: str,
-    limit: int = 20,
+    limit: int = DEFAULT_COMPANY_FETCH_LIMIT,
     skip: int = 0,
 ) -> List[Dict]:
-    """Fetch company-specific questions."""
+    normalized_company = _normalize_key(company)
+    safe_limit = max(1, min(limit, 100))
+    safe_skip = max(skip, 0)
+
     coll = _get_questions_collection()
-    if coll is None:
+    if coll is not None:
+        try:
+            cursor = (
+                coll.find({"company": normalized_company}, {"_id": 0})
+                .sort("created_at", -1)
+                .skip(safe_skip)
+                .limit(safe_limit)
+            )
+            return list(cursor)
+        except Exception:
+            logger.exception("Failed to fetch MongoDB company questions for %s.", normalized_company)
+
+    session = _get_sql_session()
+    if session is None:
         return []
 
     try:
-        cursor = coll.find({"company": company}, {"_id": 0}).skip(skip).limit(limit)
-        return list(cursor)
-    except Exception:
-        logger.exception("Failed to fetch questions for company %s", company)
+        rows = (
+            session.query(ReasoningQuestion)
+            .filter(ReasoningQuestion.company == normalized_company)
+            .order_by(ReasoningQuestion.created_at.desc())
+            .offset(safe_skip)
+            .limit(safe_limit)
+            .all()
+        )
+        return [_serialize_sql_question(row) for row in rows]
+    except SQLAlchemyError:
+        logger.exception("Failed to fetch relational company questions for %s.", normalized_company)
         return []
+    finally:
+        session.close()
 
 
 def insert_questions(questions: List[Dict]) -> int:
-    """Bulk insert questions into the database. Returns count inserted."""
-    coll = _get_questions_collection()
-    if coll is None:
+    prepared = _prepare_question_batch(questions)
+    if not prepared:
         return 0
 
-    now = datetime.now(timezone.utc)
-    for q in questions:
-        q["created_at"] = now
+    existing_hashes = _existing_question_hashes([question["question_hash"] for question in prepared])
+    to_insert = [question for question in prepared if question["question_hash"] not in existing_hashes]
+    if not to_insert:
+        return 0
+
+    coll = _get_questions_collection()
+    if coll is not None:
+        try:
+            now = datetime.now(timezone.utc)
+            operations = [
+                UpdateOne(
+                    {"question_hash": question["question_hash"]},
+                    {"$setOnInsert": {**question, "created_at": now}},
+                    upsert=True,
+                )
+                for question in to_insert
+            ]
+            result = coll.bulk_write(operations, ordered=False)
+            return int(result.upserted_count)
+        except Exception:
+            logger.exception("Failed to insert reasoning questions into MongoDB.")
+
+    session = _get_sql_session()
+    if session is None:
+        return 0
 
     try:
-        result = coll.insert_many(questions)
-        return len(result.inserted_ids)
-    except Exception:
-        logger.exception("Failed to bulk insert questions.")
+        rows = [
+            ReasoningQuestion(
+                topic=question.get("topic"),
+                company=question.get("company"),
+                difficulty=question["difficulty"],
+                question=question["question"],
+                options=question["options"],
+                correct_answer=question["correct_answer"],
+                explanation=question["explanation"],
+                source=question["source"],
+                question_hash=question["question_hash"],
+            )
+            for question in to_insert
+        ]
+        session.add_all(rows)
+        session.commit()
+        return len(rows)
+    except SQLAlchemyError:
+        session.rollback()
+        logger.exception("Failed to insert reasoning questions into relational storage.")
         return 0
+    finally:
+        session.close()
 
 
 def save_test_result(
@@ -157,27 +435,50 @@ def save_test_result(
     total: int,
     answers: List[Dict],
 ) -> Optional[str]:
-    """Save a test result to MongoDB."""
+    accuracy = round((score / total) * 100, 1) if total > 0 else 0
+
     coll = _get_tests_collection()
-    if coll is None:
+    if coll is not None:
+        try:
+            result = coll.insert_one(
+                {
+                    "user_id": user_id,
+                    "test_type": test_type,
+                    "category": topic_or_company,
+                    "score": score,
+                    "total": total,
+                    "accuracy": accuracy,
+                    "answers": answers,
+                    "created_at": datetime.now(timezone.utc),
+                }
+            )
+            return str(result.inserted_id)
+        except Exception:
+            logger.exception("Failed to save reasoning test result to MongoDB.")
+
+    session = _get_sql_session()
+    if session is None:
         return None
 
-    doc = {
-        "user_id": user_id,
-        "test_type": test_type,
-        "category": topic_or_company,
-        "score": score,
-        "total": total,
-        "accuracy": round((score / total) * 100, 1) if total > 0 else 0,
-        "answers": answers,
-        "created_at": datetime.now(timezone.utc),
-    }
     try:
-        result = coll.insert_one(doc)
-        return str(result.inserted_id)
-    except Exception:
-        logger.exception("Failed to save test result.")
+        row = ReasoningTest(
+            user_id=user_id,
+            test_type=test_type,
+            category=topic_or_company,
+            score=score,
+            total=total,
+            accuracy=accuracy,
+            answers=answers,
+        )
+        session.add(row)
+        session.commit()
+        return row.id
+    except SQLAlchemyError:
+        session.rollback()
+        logger.exception("Failed to save reasoning test result to relational storage.")
         return None
+    finally:
+        session.close()
 
 
 def record_user_answer(
@@ -186,62 +487,149 @@ def record_user_answer(
     topic: str,
     is_correct: bool,
 ) -> None:
-    """Track per-question user progress."""
-    coll = _get_progress_collection()
-    if coll is None:
-        return
+    normalized_topic = _normalize_key(topic)
+    now = datetime.now(timezone.utc)
 
-    try:
-        coll.update_one(
-            {"user_id": user_id, "topic": topic},
-            {
+    coll = _get_progress_collection()
+    if coll is not None:
+        try:
+            update_doc: Dict[str, Any] = {
                 "$inc": {
                     "total_attempted": 1,
                     "correct": 1 if is_correct else 0,
                     "wrong": 0 if is_correct else 1,
                 },
-                "$set": {"updated_at": datetime.now(timezone.utc)},
-                "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
-                "$push" if not is_correct else "$addToSet": {
-                    "wrong_question_ids": question_id,
-                } if not is_correct else {},
-            },
-            upsert=True,
+                "$set": {"updated_at": now},
+                "$setOnInsert": {"created_at": now},
+            }
+            if not is_correct:
+                update_doc["$addToSet"] = {"wrong_question_ids": question_id}
+
+            coll.update_one(
+                {"user_id": user_id, "topic": normalized_topic},
+                update_doc,
+                upsert=True,
+            )
+            return
+        except Exception:
+            logger.exception("Failed to record reasoning answer to MongoDB.")
+
+    session = _get_sql_session()
+    if session is None:
+        return
+
+    try:
+        progress = (
+            session.query(ReasoningUserProgress)
+            .filter(
+                ReasoningUserProgress.user_id == user_id,
+                ReasoningUserProgress.topic == normalized_topic,
+            )
+            .one_or_none()
         )
-    except Exception:
-        logger.exception("Failed to record user answer.")
+        if progress is None:
+            progress = ReasoningUserProgress(
+                user_id=user_id,
+                topic=normalized_topic,
+                total_attempted=0,
+                correct=0,
+                wrong=0,
+                wrong_question_ids=[],
+            )
+            session.add(progress)
+
+        progress.total_attempted += 1
+        if is_correct:
+            progress.correct += 1
+        else:
+            progress.wrong += 1
+            wrong_ids = list(progress.wrong_question_ids or [])
+            if question_id not in wrong_ids:
+                wrong_ids.append(question_id)
+            progress.wrong_question_ids = wrong_ids
+        progress.updated_at = now
+        session.commit()
+    except SQLAlchemyError:
+        session.rollback()
+        logger.exception("Failed to record reasoning answer to relational storage.")
+    finally:
+        session.close()
 
 
 def get_user_progress(user_id: str) -> List[Dict]:
-    """Get user's topic-wise progress."""
     coll = _get_progress_collection()
-    if coll is None:
+    if coll is not None:
+        try:
+            cursor = coll.find({"user_id": user_id}, {"_id": 0}).sort("updated_at", -1)
+            return list(cursor)
+        except Exception:
+            logger.exception("Failed to fetch reasoning progress from MongoDB.")
+
+    session = _get_sql_session()
+    if session is None:
         return []
 
     try:
-        cursor = coll.find({"user_id": user_id}, {"_id": 0})
-        return list(cursor)
-    except Exception:
+        rows = (
+            session.query(ReasoningUserProgress)
+            .filter(ReasoningUserProgress.user_id == user_id)
+            .order_by(ReasoningUserProgress.updated_at.desc())
+            .all()
+        )
+        return [
+            {
+                "user_id": row.user_id,
+                "topic": row.topic,
+                "total_attempted": row.total_attempted,
+                "correct": row.correct,
+                "wrong": row.wrong,
+                "wrong_question_ids": list(row.wrong_question_ids or []),
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+            for row in rows
+        ]
+    except SQLAlchemyError:
+        logger.exception("Failed to fetch reasoning progress from relational storage.")
         return []
+    finally:
+        session.close()
 
 
 # ═══════════════════════════════════════════════════════════════
 # AI QUESTION GENERATION
 # ═══════════════════════════════════════════════════════════════
 
-def _build_generate_questions_prompt(topic: str, difficulty: str, count: int, company: str = "") -> str:
-    company_ctx = f"\nThese questions should be in the style of {company} placement exams." if company else ""
+def _trim_prompt_text(text: str, limit: int = 180) -> str:
+    normalized = _normalize_text(text)
+    return normalized if len(normalized) <= limit else f"{normalized[: limit - 3]}..."
 
-    topic_label = topic
-    for t in TOPICS:
-        if t["key"] == topic:
-            topic_label = t["label"]
-            break
+
+def _build_generate_questions_prompt(
+    topic: str,
+    difficulty: str,
+    count: int,
+    company: str = "",
+    exclude_questions: Optional[Sequence[str]] = None,
+) -> str:
+    topic_label = next((item["label"] for item in TOPICS if item["key"] == topic), topic)
+    company_ctx = (
+        f"\nCompany style: {company.upper()} campus-placement questions inspired by previous-year patterns."
+        if company
+        else ""
+    )
+    avoid_ctx = ""
+    if exclude_questions:
+        sampled = [_trim_prompt_text(item) for item in exclude_questions if _normalize_text(item)][:10]
+        if sampled:
+            avoid_ctx = "\nAvoid repeating or lightly paraphrasing any of these existing questions:\n"
+            avoid_ctx += "\n".join(f"- {item}" for item in sampled)
 
     return f"""Generate {count} unique reasoning/aptitude questions for placement exam preparation.
 
 Topic: {topic_label}
 Difficulty: {difficulty}{company_ctx}
+{avoid_ctx}
 
 Return a JSON array with EXACTLY this structure (no markdown, no extra text):
 [
@@ -249,18 +637,19 @@ Return a JSON array with EXACTLY this structure (no markdown, no extra text):
     "question": "The question text",
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correct_answer": "B",
-    "explanation": "Step 1: ...\nStep 2: ...\nStep 3: ...\nTherefore, the answer is B.",
+    "explanation": "Step 1: ...\\nStep 2: ...\\nStep 3: ...\\nTherefore, the answer is B.",
     "difficulty": "{difficulty}"
   }}
 ]
 
 Rules:
-- Each question must have exactly 4 options labeled A, B, C, D
-- correct_answer must be one of "A", "B", "C", "D"
-- explanation must be step-by-step, clear, and educational
-- Questions must be original and placement-exam quality
-- Vary the correct answer positions (don't always use B)
-- Return ONLY valid JSON, nothing else"""
+- Each question must have exactly 4 options.
+- correct_answer must be one of "A", "B", "C", "D".
+- explanation must be step-by-step, clear, and educational.
+- Questions must feel like realistic placement-exam questions, not trivia.
+- Use different numbers, names, and setups so no two questions are near-duplicates.
+- Vary the correct-answer positions across A, B, C, and D.
+- Return ONLY valid JSON, nothing else."""
 
 
 def _build_extract_questions_prompt(text: str, topic: str = "") -> str:
@@ -302,39 +691,53 @@ async def generate_questions_ai(
     count: int = 5,
     company: str = "",
     persist: bool = False,
+    exclude_questions: Optional[Sequence[str]] = None,
 ) -> List[Dict]:
-    """Use AI to generate reasoning questions. Optionally persist to MongoDB."""
-    prompt = _build_generate_questions_prompt(topic, difficulty, count, company)
+    normalized_topic = _normalize_key(topic)
+    normalized_company = _normalize_key(company)
+    normalized_difficulty = _normalize_difficulty(difficulty)
+    safe_count = max(1, min(count, MAX_AI_GENERATION_REQUEST))
+    prompt = _build_generate_questions_prompt(
+        normalized_topic,
+        normalized_difficulty,
+        safe_count,
+        normalized_company,
+        exclude_questions=exclude_questions,
+    )
 
     try:
         response = await ai_hub.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             system_prompt="You are an expert aptitude and reasoning question generator. Always respond with valid JSON only.",
         )
-        questions = _parse_questions_json(response)
-        
+        questions = _sanitize_generated_questions(
+            _parse_questions_json(response),
+            topic=normalized_topic,
+            difficulty=normalized_difficulty,
+            company=normalized_company,
+        )
         if not questions:
-            raise ValueError("AI failed to generate a valid JSON array of questions.")
+            raise ValueError("AI failed to return a valid question array.")
 
-        # Tag with metadata
-        for q in questions:
-            q["topic"] = topic
-            q["source"] = "ai_generated"
-            if company:
-                q["company"] = company
+        if persist:
+            inserted = insert_questions(questions)
+            logger.info(
+                "Persisted %d reasoning questions for topic=%s company=%s",
+                inserted,
+                normalized_topic,
+                normalized_company,
+            )
 
-        # Auto-persist if requested (background jobs / on-demand populate)
-        if persist and questions:
-            deduped = _deduplicate_before_insert(questions)
-            if deduped:
-                inserted = insert_questions(deduped)
-                logger.info("Auto-persisted %d questions for topic=%s company=%s", inserted, topic, company)
-
-        return questions
+        return questions[:safe_count]
 
     except Exception as e:
-        logger.exception("AI question generation failed: %s", str(e))
-        return _get_fallback_questions(topic, count)
+        logger.exception(
+            "AI question generation failed for topic=%s company=%s: %s",
+            normalized_topic,
+            normalized_company,
+            str(e),
+        )
+        return _get_fallback_questions(normalized_topic, safe_count, company=normalized_company)
 
 
 async def extract_questions_from_text(text: str, topic: str = "") -> List[Dict]:
@@ -381,185 +784,307 @@ def _parse_questions_json(text: str) -> List[Dict]:
 # DEDUPLICATION
 # ═══════════════════════════════════════════════════════════════
 
-def _question_hash(q: Dict) -> str:
-    """Create a simple hash of a question for deduplication."""
-    import hashlib
-    text = (q.get("question", "") or "").strip().lower()
-    return hashlib.md5(text.encode()).hexdigest()
+def _sanitize_generated_questions(
+    questions: Sequence[Dict[str, Any]],
+    *,
+    topic: str,
+    difficulty: str,
+    company: str = "",
+    source: str = "ai_generated",
+) -> List[Dict[str, Any]]:
+    sanitized: List[Dict[str, Any]] = []
+    seen_hashes: Set[str] = set()
+
+    for question in questions:
+        payload = _prepare_question_payload(
+            question,
+            default_topic=topic,
+            default_company=company,
+            default_difficulty=difficulty,
+            default_source=source,
+        )
+        if not payload:
+            continue
+        if payload["question_hash"] in seen_hashes:
+            continue
+        seen_hashes.add(payload["question_hash"])
+        sanitized.append(payload)
+
+    return sanitized
 
 
 def _deduplicate_before_insert(questions: List[Dict]) -> List[Dict]:
-    """Remove questions that already exist in the DB (by question text hash)."""
-    coll = _get_questions_collection()
-    if coll is None:
-        return questions  # Can't check, insert all
+    prepared = _prepare_question_batch(questions)
+    if not prepared:
+        return []
 
-    result = []
-    for q in questions:
-        q_hash = _question_hash(q)
-        q["question_hash"] = q_hash
-        try:
-            existing = coll.find_one({"question_hash": q_hash})
-            if not existing:
-                result.append(q)
-        except Exception:
-            result.append(q)  # On error, allow insertion
-    return result
+    existing_hashes = _existing_question_hashes([question["question_hash"] for question in prepared])
+    return [question for question in prepared if question["question_hash"] not in existing_hashes]
+
+
+def _get_existing_question_texts(
+    *,
+    topic: str = "",
+    company: str = "",
+    limit: int = 12,
+) -> List[str]:
+    if company:
+        return [
+            question["question"]
+            for question in get_questions_by_company(company, limit=limit)
+            if question.get("question")
+        ]
+    if topic:
+        return [
+            question["question"]
+            for question in get_questions_by_topic(topic, limit=limit)
+            if question.get("question")
+        ]
+    return []
+
+
+def seed_fallback_questions(topic_keys: Optional[Sequence[str]] = None) -> int:
+    selected_keys = {_normalize_key(key) for key in (topic_keys or _FALLBACK_DB.keys())}
+    payloads: List[Dict[str, Any]] = []
+
+    for topic_key, questions in _FALLBACK_DB.items():
+        if selected_keys and topic_key not in selected_keys:
+            continue
+        for question in questions:
+            payloads.append(
+                {
+                    **copy.deepcopy(question),
+                    "topic": topic_key,
+                    "source": "fallback_seed",
+                }
+            )
+
+    return insert_questions(payloads)
 
 
 # ═══════════════════════════════════════════════════════════════
 # AUTO-POPULATE PIPELINE (Background Job)
 # ═══════════════════════════════════════════════════════════════
 
-MIN_QUESTIONS_PER_TOPIC = 10
-MIN_QUESTIONS_PER_COMPANY = 5
-
-
 def count_topic_questions(topic: str) -> int:
-    """Count how many questions exist for a topic in MongoDB."""
+    normalized_topic = _normalize_key(topic)
+    if not normalized_topic:
+        return 0
+
     coll = _get_questions_collection()
-    if coll is None:
+    if coll is not None:
+        try:
+            return coll.count_documents({"topic": normalized_topic})
+        except Exception:
+            logger.exception("Failed to count MongoDB topic questions for %s.", normalized_topic)
+
+    session = _get_sql_session()
+    if session is None:
         return 0
+
     try:
-        return coll.count_documents({"topic": topic})
-    except Exception:
+        return int(
+            session.query(func.count(ReasoningQuestion.id))
+            .filter(ReasoningQuestion.topic == normalized_topic)
+            .scalar()
+            or 0
+        )
+    except SQLAlchemyError:
+        logger.exception("Failed to count relational topic questions for %s.", normalized_topic)
         return 0
+    finally:
+        session.close()
 
 
 def count_company_questions(company: str) -> int:
-    """Count how many questions exist for a company in MongoDB."""
+    normalized_company = _normalize_key(company)
+    if not normalized_company:
+        return 0
+
     coll = _get_questions_collection()
-    if coll is None:
+    if coll is not None:
+        try:
+            return coll.count_documents({"company": normalized_company})
+        except Exception:
+            logger.exception("Failed to count MongoDB company questions for %s.", normalized_company)
+
+    session = _get_sql_session()
+    if session is None:
         return 0
+
     try:
-        return coll.count_documents({"company": company})
-    except Exception:
+        return int(
+            session.query(func.count(ReasoningQuestion.id))
+            .filter(ReasoningQuestion.company == normalized_company)
+            .scalar()
+            or 0
+        )
+    except SQLAlchemyError:
+        logger.exception("Failed to count relational company questions for %s.", normalized_company)
         return 0
+    finally:
+        session.close()
+
+
+def count_all_questions() -> int:
+    coll = _get_questions_collection()
+    if coll is not None:
+        try:
+            return coll.count_documents({})
+        except Exception:
+            logger.exception("Failed to count reasoning questions in MongoDB.")
+
+    session = _get_sql_session()
+    if session is None:
+        return 0
+
+    try:
+        return int(session.query(func.count(ReasoningQuestion.id)).scalar() or 0)
+    except SQLAlchemyError:
+        logger.exception("Failed to count reasoning questions in relational storage.")
+        return 0
+    finally:
+        session.close()
 
 
 async def auto_populate_topic(topic: str, target_count: int = MIN_QUESTIONS_PER_TOPIC) -> int:
-    """
-    Auto-populate a topic if it has fewer than target_count questions.
-    Returns number of new questions inserted.
-    """
-    current = count_topic_questions(topic)
-    if current >= target_count:
+    normalized_topic = _normalize_key(topic)
+    if count_topic_questions(normalized_topic) >= target_count:
         return 0
 
-    needed = target_count - current
-    # Generate in batches of up to 10
-    total_inserted = 0
-    for difficulty in ["easy", "medium", "hard"]:
-        batch_size = min(5, max(1, needed // 3))
-        if needed <= 0:
-            break
-        questions = await generate_questions_ai(
-            topic=topic, difficulty=difficulty, count=batch_size, persist=True,
-        )
-        total_inserted += len([q for q in questions if q.get("source") != "fallback"])
-        needed -= batch_size
+    inserted_total = 0
+    stalled_attempts = 0
+    difficulties = ["easy", "medium", "hard"]
 
-    return total_inserted
+    for attempt in range(MAX_POPULATE_ATTEMPTS):
+        current = count_topic_questions(normalized_topic)
+        if current >= target_count:
+            break
+
+        needed = target_count - current
+        batch_size = min(TOPIC_GENERATION_BATCH_SIZE, max(4, needed))
+        generated = await generate_questions_ai(
+            topic=normalized_topic,
+            difficulty=difficulties[attempt % len(difficulties)],
+            count=batch_size,
+            persist=False,
+            exclude_questions=_get_existing_question_texts(topic=normalized_topic, limit=16),
+        )
+        inserted = insert_questions(generated)
+        inserted_total += inserted
+        stalled_attempts = stalled_attempts + 1 if inserted == 0 else 0
+        if stalled_attempts >= 2:
+            break
+
+    return inserted_total
 
 
 async def auto_populate_company(company: str, target_count: int = MIN_QUESTIONS_PER_COMPANY) -> int:
-    """Auto-populate company questions if below threshold."""
-    current = count_company_questions(company)
-    if current >= target_count:
+    normalized_company = _normalize_key(company)
+    if count_company_questions(normalized_company) >= target_count:
         return 0
 
-    needed = target_count - current
-    total_inserted = 0
+    inserted_total = 0
+    stalled_attempts = 0
+    topic_keys = [topic["key"] for topic in TOPICS]
+    difficulties = ["medium", "hard", "easy"]
 
-    # Generate questions across a few topics, tagged with company
-    topic_keys = [t["key"] for t in TOPICS[:4]]  # First 4 topics
-    for topic_key in topic_keys:
-        if needed <= 0:
+    for attempt in range(MAX_POPULATE_ATTEMPTS * 2):
+        current = count_company_questions(normalized_company)
+        if current >= target_count:
             break
-        batch_size = min(3, max(1, needed))
-        questions = await generate_questions_ai(
-            topic=topic_key, difficulty="medium", count=batch_size,
-            company=company, persist=True,
-        )
-        total_inserted += len([q for q in questions if q.get("source") != "fallback"])
-        needed -= batch_size
 
-    return total_inserted
+        needed = target_count - current
+        batch_size = min(COMPANY_GENERATION_BATCH_SIZE, max(1, needed))
+        generated = await generate_questions_ai(
+            topic=topic_keys[attempt % len(topic_keys)],
+            difficulty=difficulties[attempt % len(difficulties)],
+            count=batch_size,
+            company=normalized_company,
+            persist=False,
+            exclude_questions=_get_existing_question_texts(company=normalized_company, limit=18),
+        )
+        inserted = insert_questions(generated)
+        inserted_total += inserted
+        stalled_attempts = stalled_attempts + 1 if inserted == 0 else 0
+        if stalled_attempts >= 3:
+            break
+
+    return inserted_total
 
 
 async def auto_populate_all() -> Dict[str, Any]:
-    """
-    Background job: Cycle through all topics and companies,
-    auto-populating any that are below the minimum threshold.
-    Also seeds fallback questions into MongoDB on first run.
-    """
-    results: Dict[str, Any] = {"topics": {}, "companies": {}, "fallback_seeded": 0}
+    backend = get_reasoning_storage_backend()
+    if backend == "unavailable":
+        raise RuntimeError("No reasoning storage backend is available.")
 
-    coll = _get_questions_collection()
-    if coll is None:
-        raise RuntimeError("MongoDB is not configured or failed to connect.")
+    results: Dict[str, Any] = {
+        "storage_backend": backend,
+        "targets": {
+            "topic_minimum": MIN_QUESTIONS_PER_TOPIC,
+            "company_minimum": MIN_QUESTIONS_PER_COMPANY,
+        },
+        "topics": {},
+        "companies": {},
+        "fallback_seeded": seed_fallback_questions(),
+    }
 
-    # 1. Seed fallback questions into MongoDB (idempotent via dedup hash)
-    fallback_total = 0
-    for topic_key, questions in _FALLBACK_DB.items():
-        tagged = []
-        for q in questions:
-            tagged.append({
-                **q,
-                "topic": topic_key,
-                "source": "fallback_seed",
-            })
-        deduped = _deduplicate_before_insert(tagged)
-        if deduped:
-            inserted = insert_questions(deduped)
-            fallback_total += inserted 
-    results["fallback_seeded"] = fallback_total
-
-    # 2. Auto-populate each topic via AI
-    for t in TOPICS:
+    for topic in TOPICS:
         try:
-            inserted = await auto_populate_topic(t["key"])
-            results["topics"][t["key"]] = inserted
+            results["topics"][topic["key"]] = await auto_populate_topic(topic["key"])
         except Exception as e:
-            logger.error("Failed to auto-populate topic %s: %s", t["key"], str(e))
-            results["topics"][t["key"]] = f"error: {str(e)}"
+            logger.error("Failed to auto-populate topic %s: %s", topic["key"], str(e))
+            results["topics"][topic["key"]] = f"error: {str(e)}"
 
-    # 3. Auto-populate each company via AI
-    for c in COMPANIES:
+    for company in COMPANIES:
         try:
-            inserted = await auto_populate_company(c["key"])
-            results["companies"][c["key"]] = inserted
+            results["companies"][company["key"]] = await auto_populate_company(company["key"])
         except Exception as e:
-            logger.error("Failed to auto-populate company %s: %s", c["key"], str(e))
-            results["companies"][c["key"]] = f"error: {str(e)}"
+            logger.error("Failed to auto-populate company %s: %s", company["key"], str(e))
+            results["companies"][company["key"]] = f"error: {str(e)}"
 
     return results
 
 
 async def on_demand_populate(topic: str = "", company: str = "") -> List[Dict]:
-    """
-    Called when user opens a topic/company page and DB is empty.
-    Generates questions, persists them, and returns them.
-    """
-    if topic:
-        count = count_topic_questions(topic)
-        if count > 0:
-            return get_questions_by_topic(topic, limit=20)
+    normalized_topic = _normalize_key(topic)
+    normalized_company = _normalize_key(company)
 
-        # Generate + persist
-        questions = await generate_questions_ai(topic=topic, difficulty="medium", count=10, persist=True)
-        return questions
+    if normalized_topic:
+        existing = get_questions_by_topic(normalized_topic, limit=DEFAULT_TOPIC_FETCH_LIMIT)
+        if existing:
+            return existing
 
-    if company:
-        count = count_company_questions(company)
-        if count > 0:
-            return get_questions_by_company(company, limit=20)
+        seed_fallback_questions([normalized_topic])
+        await auto_populate_topic(normalized_topic, target_count=ON_DEMAND_TOPIC_TARGET)
+        hydrated = get_questions_by_topic(normalized_topic, limit=DEFAULT_TOPIC_FETCH_LIMIT)
+        if hydrated:
+            return hydrated
 
-        questions = await generate_questions_ai(
-            topic="coding-decoding", difficulty="medium", count=10,
-            company=company, persist=True,
+        return await generate_questions_ai(
+            topic=normalized_topic,
+            difficulty="medium",
+            count=ON_DEMAND_TOPIC_TARGET,
+            persist=False,
         )
-        return questions
+
+    if normalized_company:
+        existing = get_questions_by_company(normalized_company, limit=DEFAULT_COMPANY_FETCH_LIMIT)
+        if existing:
+            return existing
+
+        await auto_populate_company(normalized_company, target_count=ON_DEMAND_COMPANY_TARGET)
+        hydrated = get_questions_by_company(normalized_company, limit=DEFAULT_COMPANY_FETCH_LIMIT)
+        if hydrated:
+            return hydrated
+
+        return await generate_questions_ai(
+            topic=TOPICS[0]["key"],
+            difficulty="medium",
+            count=ON_DEMAND_COMPANY_TARGET,
+            company=normalized_company,
+            persist=False,
+        )
 
     return []
 
@@ -615,19 +1140,27 @@ _FALLBACK_DB: Dict[str, List[Dict]] = {
 }
 
 
-def _get_fallback_questions(topic: str, count: int = 5) -> List[Dict]:
-    """Return fallback questions when AI is unavailable."""
+def _get_fallback_questions(topic: str, count: int = 5, company: str = "") -> List[Dict]:
     pool = _FALLBACK_DB.get(topic, [])
     if not pool:
-        # Return from any available pool
-        all_q = []
-        for qs in _FALLBACK_DB.values():
-            all_q.extend(qs)
-        pool = all_q
+        all_questions: List[Dict[str, Any]] = []
+        for questions in _FALLBACK_DB.values():
+            all_questions.extend(questions)
+        pool = all_questions
 
-    selected = pool[:count] if len(pool) <= count else random.sample(pool, min(count, len(pool)))
-    for i, q in enumerate(selected):
-        q["id"] = f"fallback-{topic}-{i}"
-        q["topic"] = topic
-        q["source"] = "fallback"
-    return selected
+    sample_size = min(count, len(pool))
+    selected = pool[:sample_size] if len(pool) <= sample_size else random.sample(pool, sample_size)
+    fallback_questions: List[Dict[str, Any]] = []
+    normalized_topic = _normalize_key(topic)
+    normalized_company = _normalize_key(company)
+
+    for index, question in enumerate(selected):
+        payload = copy.deepcopy(question)
+        payload["id"] = f"fallback-{normalized_topic or 'general'}-{index}"
+        payload["topic"] = normalized_topic or payload.get("topic")
+        payload["source"] = "fallback"
+        if normalized_company:
+            payload["company"] = normalized_company
+        fallback_questions.append(payload)
+
+    return fallback_questions

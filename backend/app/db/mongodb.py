@@ -106,6 +106,29 @@ def _ensure_indexes(db: Database) -> None:
         name="user_streaks_updated_at_idx",
     )
 
+    db["reasoning_questions"].create_index(
+        [("question_hash", ASCENDING)],
+        name="reasoning_questions_hash_idx",
+        unique=True,
+    )
+    db["reasoning_questions"].create_index(
+        [("topic", ASCENDING), ("created_at", DESCENDING)],
+        name="reasoning_questions_topic_created_at_idx",
+    )
+    db["reasoning_questions"].create_index(
+        [("company", ASCENDING), ("created_at", DESCENDING)],
+        name="reasoning_questions_company_created_at_idx",
+    )
+    db["reasoning_tests"].create_index(
+        [("user_id", ASCENDING), ("created_at", DESCENDING)],
+        name="reasoning_tests_user_created_at_idx",
+    )
+    db["reasoning_user_progress"].create_index(
+        [("user_id", ASCENDING), ("topic", ASCENDING)],
+        name="reasoning_user_progress_user_topic_idx",
+        unique=True,
+    )
+
 
 def init_mongodb() -> Optional[Database]:
     global _mongo_client, _mongo_db, _mongo_init_attempted

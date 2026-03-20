@@ -493,7 +493,7 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
   const fetchQuestions = useCallback(async (mode: string) => {
     setLoading(true);
     try {
-      const { data } = await api.get(`/reasoning/questions/topic/${topic}?mode=${mode}&limit=20`);
+      const { data } = await api.get(`/reasoning/questions/topic/${topic}?mode=${mode}&limit=36`);
       return data.questions || [];
     } catch {
       return [];
@@ -657,7 +657,7 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
 
   useEffect(() => {
     setLoading(true);
-    api.get(`/reasoning/questions/company/${company}?limit=20`)
+    api.get(`/reasoning/questions/company/${company}?limit=30`)
       .then(({ data }) => setQuestions(data.questions || []))
       .catch(() => {})
       .finally(() => setLoading(false));

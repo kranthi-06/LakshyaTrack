@@ -17,8 +17,11 @@ from app.services.reasoning_service import (
     get_user_progress,
     generate_questions_ai, extract_questions_from_text,
     _get_fallback_questions,
-    on_demand_populate, count_topic_questions, count_company_questions,
+    on_demand_populate, count_all_questions, count_topic_questions, count_company_questions,
     auto_populate_all,
+    get_reasoning_storage_backend,
+    MIN_QUESTIONS_PER_TOPIC,
+    MIN_QUESTIONS_PER_COMPANY,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,7 +35,7 @@ router = APIRouter()
 class GenerateQuestionsRequest(BaseModel):
     topic: str
     difficulty: str = "medium"
-    count: int = Field(5, ge=1, le=20)
+    count: int = Field(10, ge=1, le=60)
     company: str = ""
 
 
@@ -78,7 +81,7 @@ async def list_companies():
 async def get_topic_questions(
     topic: str,
     difficulty: Optional[str] = None,
-    limit: int = 20,
+    limit: int = 36,
     skip: int = 0,
     mode: str = "learn",
 ):
@@ -116,7 +119,7 @@ async def get_topic_questions(
 @router.get("/questions/company/{company}")
 async def get_company_questions(
     company: str,
-    limit: int = 20,
+    limit: int = 30,
     skip: int = 0,
 ):
     """Get questions for a specific company (DB → on-demand populate → fallback)."""
@@ -129,7 +132,7 @@ async def get_company_questions(
             pass
 
     if not db_questions:
-        db_questions = _get_fallback_questions("coding-decoding", 5)
+        db_questions = _get_fallback_questions("coding-decoding", 5, company=company)
 
     for i, q in enumerate(db_questions):
         if "id" not in q:
@@ -150,7 +153,12 @@ async def get_stats():
     return {
         "topics": topics_stats,
         "companies": companies_stats,
-        "total_questions": sum(topics_stats.values()),
+        "total_questions": count_all_questions(),
+        "storage_backend": get_reasoning_storage_backend(),
+        "targets": {
+            "topic_minimum": MIN_QUESTIONS_PER_TOPIC,
+            "company_minimum": MIN_QUESTIONS_PER_COMPANY,
+        },
     }
 
 
