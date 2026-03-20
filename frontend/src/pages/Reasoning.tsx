@@ -4,7 +4,8 @@ import {
   BookOpen, Brain, Building2, Lightbulb, CheckCircle2, XCircle,
   ChevronRight, Timer, ArrowLeft, Trophy, BarChart3, Sparkles,
   Loader2, RefreshCw, Play, Clock, Target, Zap, Eye, EyeOff,
-  ChevronDown, Award, AlertCircle, ArrowRight, FileText
+  ChevronDown, Award, AlertCircle, ArrowRight, FileText,
+  Star, MessageSquareText
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -132,6 +133,162 @@ function QuestionCard({ question, index, total, onAnswer }: {
                   {isCorrect ? 'Correct!' : `Incorrect — Correct answer is ${correct}`}
                 </p>
                 <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">{question.explanation}</div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LEARN CARD — Scrollable study mode (no answer required)
+   ═══════════════════════════════════════════════════════════════ */
+
+function LearnCard({ question, index }: { question: Question; index: number }) {
+  const [showSolution, setShowSolution] = useState(false);
+  const [starred, setStarred] = useState(false);
+  const [aiExplaining, setAiExplaining] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState('');
+
+  const correct = question.correct_answer;
+  const correctIdx = OPTION_LABELS.indexOf(correct);
+
+  const handleExplainMore = async () => {
+    if (aiExplanation) { setAiExplaining(false); return; }
+    setAiExplaining(true);
+    try {
+      const { data } = await api.post('/reasoning/generate', {
+        topic: question.topic || 'general',
+        difficulty: question.difficulty || 'medium',
+        count: 1,
+      });
+      const generatedQ = data.questions?.[0];
+      setAiExplanation(
+        generatedQ?.explanation ||
+        'The AI was unable to generate a deeper explanation at this time. Please review the existing step-by-step solution carefully.'
+      );
+    } catch {
+      setAiExplanation('AI explanation unavailable. Please try again later.');
+    }
+    setAiExplaining(false);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04 }}
+      className={`rounded-2xl border overflow-hidden transition-all duration-300
+        ${starred
+          ? 'bg-amber-500/[0.03] border-amber-500/20 shadow-[0_0_20px_rgba(245,158,11,0.04)]'
+          : 'bg-slate-800/40 border-slate-700/40'}`}
+    >
+      {/* Header */}
+      <div className="px-5 py-3 bg-slate-800/60 border-b border-slate-700/30 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[#6C63FF]/15 text-[#8B83FF] text-xs font-extrabold">
+            {index + 1}
+          </span>
+          {question.difficulty && (
+            <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold uppercase ${getDifficultyColor(question.difficulty)}`}>
+              {question.difficulty}
+            </span>
+          )}
+        </div>
+        <button onClick={() => setStarred(s => !s)}
+          className={`p-1.5 rounded-lg transition-all ${starred ? 'text-amber-400 bg-amber-500/10' : 'text-slate-600 hover:text-slate-400'}`}
+          title={starred ? 'Remove bookmark' : 'Mark as important'}>
+          <Star className={`w-4 h-4 ${starred ? 'fill-amber-400' : ''}`} />
+        </button>
+      </div>
+
+      {/* Question */}
+      <div className="p-5 space-y-4">
+        <p className="text-[15px] text-white font-medium leading-relaxed">{question.question}</p>
+
+        {/* Options — always visible, correct one highlighted when solution shown */}
+        <div className="space-y-2">
+          {question.options.map((opt, i) => {
+            const label = OPTION_LABELS[i];
+            const isCorrectOpt = i === correctIdx;
+
+            let cls = 'bg-slate-900/40 border-slate-700/40 text-slate-400';
+            if (showSolution && isCorrectOpt) {
+              cls = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300';
+            }
+
+            return (
+              <div key={i}
+                className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm flex items-center gap-3 transition-all duration-300 ${cls}`}>
+                <span className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold flex-shrink-0
+                  ${showSolution && isCorrectOpt
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-slate-800/80 text-slate-500 border border-slate-600/50'}`}>
+                  {label}
+                </span>
+                <span className="flex-1">{opt}</span>
+                {showSolution && isCorrectOpt && <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Show Solution Button */}
+        <button onClick={() => setShowSolution(s => !s)}
+          className={`w-full py-2.5 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-300
+            ${showSolution
+              ? 'bg-[#6C63FF]/10 border-[#6C63FF]/30 text-[#8B83FF]'
+              : 'bg-slate-800/50 border-slate-700/40 text-slate-400 hover:text-white hover:border-slate-600'}`}>
+          {showSolution ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          {showSolution ? 'Hide Solution' : 'Show Solution'}
+        </button>
+
+        {/* Expandable Solution */}
+        <AnimatePresence>
+          {showSolution && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="overflow-hidden"
+            >
+              <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15 space-y-3">
+                <p className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4" /> Step-by-Step Solution
+                </p>
+                <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                  {question.explanation}
+                </div>
+
+                {/* AI Explain More */}
+                <div className="pt-2 border-t border-emerald-500/10">
+                  <button onClick={handleExplainMore} disabled={aiExplaining}
+                    className="flex items-center gap-2 text-xs font-semibold text-[#8B83FF] hover:text-[#A59BFF] transition-colors disabled:opacity-50">
+                    {aiExplaining
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <MessageSquareText className="w-3.5 h-3.5" />}
+                    {aiExplanation ? 'AI Explanation ↓' : 'Explain More with AI'}
+                  </button>
+
+                  <AnimatePresence>
+                    {aiExplanation && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="mt-3 p-3 rounded-lg bg-[#6C63FF]/5 border border-[#6C63FF]/15 text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                          {aiExplanation}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </motion.div>
           )}
@@ -329,8 +486,6 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
   const [tab, setTab] = useState<'learn' | 'practice' | 'test'>('learn');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
-  const [learnIdx, setLearnIdx] = useState(0);
-  const [learnStats, setLearnStats] = useState({ correct: 0, wrong: 0 });
   const [testResults, setTestResults] = useState<{ score: number; total: number; answers: any[] } | null>(null);
   const [testQuestions, setTestQuestions] = useState<Question[]>([]);
   const [testStarted, setTestStarted] = useState(false);
@@ -354,8 +509,6 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
     try {
       const { data } = await api.post('/reasoning/generate', { topic, difficulty: 'medium', count: 10 });
       setQuestions(data.questions || []);
-      setLearnIdx(0);
-      setLearnStats({ correct: 0, wrong: 0 });
     } catch { /* keep existing */ }
     setLoading(false);
   };
@@ -423,25 +576,22 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
 
       {!loading && (
         <>
-          {/* LEARN MODE */}
+          {/* LEARN MODE — Scrollable study page */}
           {tab === 'learn' && questions.length > 0 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between text-sm text-slate-500">
-                <span>✅ {learnStats.correct} correct · ❌ {learnStats.wrong} wrong</span>
-                <span>{learnIdx + 1} / {questions.length}</span>
+              {/* Learn header */}
+              <div className="p-4 rounded-xl bg-[#6C63FF]/5 border border-[#6C63FF]/15 flex items-center gap-3">
+                <BookOpen className="w-5 h-5 text-[#8B83FF]" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Study Mode</p>
+                  <p className="text-xs text-slate-400">{questions.length} questions — Read, understand, and learn at your own pace</p>
+                </div>
               </div>
-              <QuestionCard key={learnIdx} question={questions[learnIdx]} index={learnIdx} total={questions.length}
-                onAnswer={(correct) => setLearnStats(s => correct ? { ...s, correct: s.correct + 1 } : { ...s, wrong: s.wrong + 1 })} />
-              <div className="flex gap-3">
-                <button onClick={() => setLearnIdx(i => Math.max(0, i - 1))} disabled={learnIdx === 0}
-                  className="px-4 py-2 rounded-xl bg-slate-700/30 text-slate-400 border border-slate-600/30 text-sm disabled:opacity-40 hover:bg-slate-700/50 transition-all">
-                  Previous
-                </button>
-                <button onClick={() => setLearnIdx(i => Math.min(questions.length - 1, i + 1))} disabled={learnIdx >= questions.length - 1}
-                  className="px-4 py-2 rounded-xl bg-[#6C63FF]/15 text-[#8B83FF] border border-[#6C63FF]/30 text-sm font-medium hover:bg-[#6C63FF]/25 transition-all disabled:opacity-40">
-                  Next <ArrowRight className="w-4 h-4 inline ml-1" />
-                </button>
-              </div>
+
+              {/* Scrollable question list */}
+              {questions.map((q, i) => (
+                <LearnCard key={`learn-${q.id || i}-${q.question.substring(0, 20)}`} question={q} index={i} />
+              ))}
             </div>
           )}
 
