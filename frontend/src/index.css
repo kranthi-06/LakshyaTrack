@@ -348,7 +348,7 @@ html.dark {
 .dark .text-gray-400,
 .dark .text-slate-400 { color: #64748b !important; }
 .dark .text-black { color: #f1f5f9 !important; }
-.dark .text-\[\\#0F172A\] { color: #f1f5f9 !important; }
+.dark .text-\[\#0F172A\] { color: #f1f5f9 !important; }
 
 /* ═════════════════════════════ */
 /* BORDERS — Slate-800 style    */
@@ -1295,10 +1295,12 @@ html[data-mobile-perf-mode='true'] .blur-3xl {
 }
 
 /* ── Page backgrounds ── */
-html:not(.dark) .theme-override-wrapper .bg-\[\#060611\] {
+html:not(.dark) .theme-override-wrapper .bg-\[\#060611\],
+html:not(.dark) .theme-override-wrapper.bg-\[\#060611\] {
   background-color: #f8fafc !important;
 }
-html:not(.dark) .theme-override-wrapper .bg-\[\#0a0a14\] {
+html:not(.dark) .theme-override-wrapper .bg-\[\#0a0a14\],
+html:not(.dark) .theme-override-wrapper.bg-\[\#0a0a14\] {
   background-color: #ffffff !important;
 }
 

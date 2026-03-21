@@ -56,7 +56,7 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                 </div>
 
                 {/* Brand name */}
-                <h1 className="auth-loading-brand">FluxaTrap</h1>
+                <h1 className="auth-loading-brand">LakshyaTrack</h1>
 
                 {/* Status message with fade */}
                 <div className="auth-loading-message-container">

@@ -15,7 +15,7 @@ export default function AuthHydrationGate({ children }: { children: React.ReactN
     }, [loading, authReady]);
 
     if ((!authReady || loading) && !timedOut) {
-        return <AuthLoadingScreen message="Connecting to FluxaTrap..." />;
+        return <AuthLoadingScreen message="Connecting to LakshyaTrack..." />;
     }
 
     return <>{children}</>;
