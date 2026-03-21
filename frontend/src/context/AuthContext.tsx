@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { login as loginApi, register as registerApi, getMe, verifyOtp as verifyOtpApi, sendOtp as sendOtpApi } from '../services/auth';
-import { setAuthInitialized } from '../services/api';
+import { setAuthInitialized, setUnauthorizedHandler } from '../services/api';
 import { invalidateCache } from '../services/cache';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { touchDailyStreak } from '../services/careerPlatform';
+import { useAuthStore } from '../store/authStore';
 
 interface User {
     email: string;
@@ -51,6 +52,7 @@ const SUPABASE_TIMEOUT_MS = 4000;
 const AUTH_CALLBACK_SAFETY_TIMEOUT_MS = 8000;
 const BACKEND_FETCH_TIMEOUT_MS = 10000; // Max wait for /users/me during init
 const TOKEN_KEY = 'token';
+const USER_CACHE_KEY = 'auth:user-cache';
 const RETRY_INTERVAL_MS = 15000; // Retry fetching user every 15s when offline
 
 /** Check whether a non-empty auth token lives in localStorage */
@@ -60,8 +62,11 @@ function hasValidToken(): boolean {
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
+    const user = useAuthStore((s) => s.user) as User | null;
+    const loading = useAuthStore((s) => s.loading);
+    const setStoreUser = useAuthStore((s) => s.setUser);
+    const setStoreLoading = useAuthStore((s) => s.setLoading);
+    const storeLogout = useAuthStore((s) => s.logout);
     const [authReady, setAuthReady] = useState(false); // Only true after full init
     const navigate = useNavigate();
 
@@ -74,8 +79,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updateUser = useCallback((u: User | null) => {
         userRef.current = u;
-        setUser(u);
-    }, []);
+        setStoreUser(u);
+        if (u) {
+            localStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
+        } else {
+            localStorage.removeItem(USER_CACHE_KEY);
+        }
+    }, [setStoreUser]);
 
     /**
      * Safely attempt to fetch the current user from backend.
@@ -220,12 +230,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Safety net: clear loading after a generous timeout
                     setTimeout(() => {
                         if (mountedRef.current) {
-                            setLoading(false);
+                            setStoreLoading(false);
                             setAuthReady(true);
                         }
                     }, AUTH_CALLBACK_SAFETY_TIMEOUT_MS);
                 } else {
-                    setLoading(false);
+                    setStoreLoading(false);
                     setAuthReady(true);
                 }
             }
@@ -294,14 +304,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // Always ensure loading is cleared after an event
-            if (mountedRef.current) setLoading(false);
+            if (mountedRef.current) setStoreLoading(false);
         });
 
         return () => {
             mountedRef.current = false;
             subscription.unsubscribe();
         };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [fetchCurrentUser, navigate, setStoreLoading, updateUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        // Optional fast hydration: seed user from cache while revalidating with backend.
+        try {
+            const raw = localStorage.getItem(USER_CACHE_KEY);
+            if (raw && hasValidToken() && !userRef.current) {
+                const parsed = JSON.parse(raw) as User;
+                if (parsed?.email) {
+                    updateUser(parsed);
+                }
+            }
+        } catch {
+            localStorage.removeItem(USER_CACHE_KEY);
+        }
+    }, [updateUser]);
+
+    useEffect(() => {
+        setUnauthorizedHandler(() => {
+            explicitLogoutRef.current = true;
+            localStorage.removeItem(TOKEN_KEY);
+            invalidateCache('auth:');
+            updateUser(null);
+            storeLogout();
+            if (window.location.pathname !== '/login') {
+                navigate('/login', { replace: true });
+            }
+        });
+        return () => setUnauthorizedHandler(null);
+    }, [navigate, storeLogout, updateUser]);
 
     // ── Email + Password Login ──────────────────────────────────
     const login = useCallback(async (data: any) => {
@@ -366,12 +405,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = useCallback(async () => {
         explicitLogoutRef.current = true; // Mark this as an explicit user action
         localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_CACHE_KEY);
         invalidateCache('auth:');
         // Sign out from Supabase too (if applicable)
         await supabase.auth.signOut().catch(() => { });
         updateUser(null);
+        storeLogout();
         navigate('/login', { replace: true });
-    }, [navigate, updateUser]);
+    }, [navigate, storeLogout, updateUser]);
 
     const contextValue = useMemo(() => ({
         user,

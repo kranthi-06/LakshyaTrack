@@ -14,7 +14,7 @@ import time
 import traceback
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -22,6 +22,7 @@ from sqlalchemy import inspect, text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.api import api_router
+from app.api.deps import require_admin
 from app.core.config import settings
 from app.core.logging_utils import configure_logging_json
 from app.core.idempotency import build_idempotency_storage_key
@@ -203,7 +204,7 @@ def initialize_relational_database() -> None:
 # ── CORS configuration ────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -285,7 +286,21 @@ class RequestProtectionMiddleware:
 
     def __init__(self, app):
         self.app = app
-        self._global_limiter = get_rate_limiter("global", max_calls=300, window_seconds=60)
+        self._global_limiter = get_rate_limiter("global", max_calls=1200, window_seconds=60)
+
+    @staticmethod
+    def _extract_client_ip(scope) -> str:
+        headers = {k.lower(): v for (k, v) in (scope.get("headers") or [])}
+        xff = headers.get(b"x-forwarded-for")
+        if xff:
+            try:
+                return xff.decode("utf-8").split(",")[0].strip() or "unknown"
+            except Exception:
+                return "unknown"
+        client = scope.get("client")
+        if client and len(client) > 0:
+            return str(client[0])
+        return "unknown"
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -309,7 +324,9 @@ class RequestProtectionMiddleware:
 
         # Rate limiting (skip health checks and docs)
         if path not in ("/health", "/docs", "/redoc", "/openapi.json"):
-            if not self._global_limiter.allow():
+            client_ip = self._extract_client_ip(scope)
+            ip_limiter = get_rate_limiter(f"ip:{client_ip}", max_calls=240, window_seconds=60)
+            if not self._global_limiter.allow() or not ip_limiter.allow():
                 response = JSONResponse(
                     status_code=429,
                     content={"detail": "Too many requests. Please slow down."},
@@ -598,7 +615,7 @@ async def health_check():
 
 
 @app.get("/health/detailed")
-async def detailed_health():
+async def detailed_health(_: User = Depends(require_admin)):
     """
     Detailed system health with all metrics, circuit breakers, and module status.
     For admin/monitoring use.

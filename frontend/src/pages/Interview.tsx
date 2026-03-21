@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import api from '../services/api';
 import {
     createMultistageSession,
     getScreeningQuestion,
@@ -13,6 +12,7 @@ import {
     getMultistageFinalAnalysis,
     saveProgressSnapshot
 } from '../services/careerPlatform';
+import { getSavedResumes } from '../services/resumeStorage';
 import CodingEnvironment from '../components/CodingEnvironment';
 import {
     Mic2, MessageSquare, Monitor, BarChart3, Users, Send, StopCircle,
@@ -161,8 +161,8 @@ export default function Interview() {
 
     const loadResumeData = async () => {
         try {
-            const res = await api.get('/saved-resumes/');
-            const resumes = res.data?.resumes || [];
+            const data = await getSavedResumes();
+            const resumes = data?.resumes || [];
             if (resumes.length > 0) {
                 const primary = resumes.find((r: any) => r.is_primary) || resumes[0];
                 const rd = primary.resume_data || {};
@@ -899,6 +899,7 @@ export default function Interview() {
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </main>        </div>
+                </main>
+        </div>
     );
 }

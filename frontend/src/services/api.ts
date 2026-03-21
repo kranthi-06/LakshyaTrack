@@ -57,6 +57,7 @@ function recordFailure() {
 
 // ── Auth initialization flag ──────────────────────────────────
 let _authInitializing = true;
+let _unauthorizedHandler: (() => void) | null = null;
 
 export function setAuthInitialized() {
     _authInitializing = false;
@@ -64,6 +65,10 @@ export function setAuthInitialized() {
 
 export function isAuthInitializing() {
     return _authInitializing;
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+    _unauthorizedHandler = handler;
 }
 
 // ── Request Interceptor: attach Bearer token ──────────────────
@@ -193,6 +198,7 @@ api.interceptors.response.use(
             }
 
             localStorage.removeItem('token');
+            _unauthorizedHandler?.();
         }
 
         return Promise.reject(error);

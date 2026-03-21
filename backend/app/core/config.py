@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     
     # Admin System
     BLACK_ADMIN_EMAILS: str = ""  # Comma-separated emails for permanent super-admin access
+    CORS_ORIGINS: str = "*"
 
     # AI caching (MongoDB Atlas)
     AI_CACHE_TTL_SECONDS: int = 60 * 60 * 24 * 7  # 7 days
@@ -57,6 +58,12 @@ class Settings(BaseSettings):
     
     class Config:
         env_file = Path(__file__).resolve().parents[2] / ".env"
+
+    def get_cors_origins(self) -> list[str]:
+        raw = (self.CORS_ORIGINS or "*").strip()
+        if raw == "*":
+            return ["*"]
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 settings = Settings()
 

@@ -227,6 +227,7 @@ export const browseOpportunities = async (params: {
     skill?: string;
     location?: string;
     search?: string;
+    cursor?: string;
     page?: number;
     per_page?: number;
 }) => {
@@ -235,6 +236,7 @@ export const browseOpportunities = async (params: {
     if (params.skill) searchParams.set('skill', params.skill);
     if (params.location) searchParams.set('location', params.location);
     if (params.search) searchParams.set('search', params.search);
+    if (params.cursor) searchParams.set('cursor', params.cursor);
     if (params.page) searchParams.set('page', String(params.page));
     if (params.per_page) searchParams.set('per_page', String(params.per_page));
     const res = await api.get(`/opportunities/browse?${searchParams.toString()}`);

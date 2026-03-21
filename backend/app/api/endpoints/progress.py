@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.api import deps
 from app.services import document_store_service, progress_service, streak_service
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ProgressRequest(BaseModel):
@@ -34,7 +36,8 @@ async def get_current_progress(
         )
         return metrics
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to calculate current progress: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to calculate progress")
 
 
 @router.post("/snapshot")
@@ -62,7 +65,8 @@ async def save_snapshot(
             user_id=str(current_user.id),
             details={"error": str(e)},
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to save progress snapshot: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to save progress snapshot")
 
 
 @router.get("/history")
@@ -109,7 +113,8 @@ async def delete_snapshot(
             user_id=str(current_user.id),
             details={"snapshot_id": snapshot_id, "error": str(e)},
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to delete progress snapshot: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete progress snapshot")
 
 
 @router.get("/streak")

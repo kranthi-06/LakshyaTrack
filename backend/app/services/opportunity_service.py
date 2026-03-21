@@ -5,17 +5,22 @@ NO scraping of protected platforms.
 """
 import json
 import logging
-import hashlib
 import asyncio
 import httpx
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func, text
+from sqlalchemy import or_, func
 from app.services.ai_service import ai_hub
 from app.models.career import Opportunity
+from app.repositories import opportunity_repository
 
 logger = logging.getLogger(__name__)
+
+
+def _existing_titles_by_source(db: Session, source: str, titles: List[str]) -> set[str]:
+    """Fetch existing titles for a source in one query."""
+    return opportunity_repository.get_existing_titles_by_source(db, source, titles)
 
 # ════════════════════════════════════════════════════════════
 # TRUSTED SOURCES CONFIGURATION
@@ -96,19 +101,17 @@ async def fetch_rss_opportunities(db: Session) -> int:
                         continue
 
                     items = _parse_rss_xml(resp.text)
-                    for item in items[:15]:  # Limit per feed
+                    batch_items = items[:15]
+                    titles = [it.get("title", "").strip() for it in batch_items if it.get("title")]
+                    existing_titles = _existing_titles_by_source(db, feed_config["source"], titles)
+
+                    for item in batch_items:  # Limit per feed
                         title = item.get("title", "").strip()
                         url = item.get("link", "").strip()
                         if not title or not url:
                             continue
 
-                        # Dedup check
-                        content_hash = hashlib.md5(f"{title}:{url}".encode()).hexdigest()
-                        existing = db.query(Opportunity).filter(
-                            Opportunity.title == title,
-                            Opportunity.source == feed_config["source"]
-                        ).first()
-                        if existing:
+                        if title in existing_titles:
                             continue
 
                         new_opp = Opportunity(
@@ -124,6 +127,7 @@ async def fetch_rss_opportunities(db: Session) -> int:
                             location="Remote",
                         )
                         db.add(new_opp)
+                        existing_titles.add(title)
                         saved_count += 1
 
                     db.commit()
@@ -186,7 +190,11 @@ async def fetch_public_api_opportunities(db: Session) -> int:
                 data = resp.json()
                 listings = data if isinstance(data, list) else data.get("listings", data.get("results", []))
 
-                for item in listings[:10]:
+                batch = listings[:10]
+                titles = [it.get("title", "").strip() for it in batch if isinstance(it, dict) and it.get("title")]
+                existing_titles = _existing_titles_by_source(db, api_config["source"], titles)
+
+                for item in batch:
                     title = item.get("title", "").strip()
                     url = item.get("url") or item.get("slug", "")
                     if url and not url.startswith("http"):
@@ -194,11 +202,7 @@ async def fetch_public_api_opportunities(db: Session) -> int:
                     if not title or not url:
                         continue
 
-                    existing = db.query(Opportunity).filter(
-                        Opportunity.title == title,
-                        Opportunity.source == api_config["source"]
-                    ).first()
-                    if existing:
+                    if title in existing_titles:
                         continue
 
                     tags = item.get("tag_list", item.get("tags", []))
@@ -218,6 +222,7 @@ async def fetch_public_api_opportunities(db: Session) -> int:
                         location=item.get("location", "Remote"),
                     )
                     db.add(new_opp)
+                    existing_titles.add(title)
                     saved_count += 1
 
                 db.commit()
@@ -322,27 +327,36 @@ that may expire)
 
         # Save to database (deduplicate by title + source)
         saved = []
+        pending_new: list[Opportunity] = []
+        candidate_titles = [opp.get("title") for opp in opportunities if isinstance(opp, dict) and opp.get("title")]
+        source_titles: dict[str, set[str]] = {}
+        for opp in opportunities:
+            src = opp.get("source", "")
+            if src not in source_titles:
+                titles_for_source = [
+                    item.get("title")
+                    for item in opportunities
+                    if isinstance(item, dict) and item.get("title") and item.get("source", "") == src
+                ]
+                source_titles[src] = _existing_titles_by_source(db, src, titles_for_source)
+
         for opp in opportunities:
             if not all(k in opp for k in ["title", "url", "opportunity_type"]):
                 continue
 
             cat = CATEGORY_MAP.get(opp.get("category", opp["opportunity_type"]), opp["opportunity_type"])
 
-            # Check for duplicate
-            existing = db.query(Opportunity).filter(
-                Opportunity.title == opp["title"],
-                Opportunity.source == opp.get("source", "")
-            ).first()
-
-            if existing:
-                saved.append(_opp_to_dict(existing))
+            src = opp.get("source", "")
+            title = opp["title"]
+            existing_for_source = source_titles.setdefault(src, set())
+            if title in existing_for_source:
                 continue
 
             deadline = None
             if opp.get("deadline"):
                 try:
                     deadline = datetime.fromisoformat(opp["deadline"].replace("Z", "+00:00"))
-                except:
+                except Exception:
                     pass
 
             new_opp = Opportunity(
@@ -361,13 +375,18 @@ that may expire)
                 deadline=deadline,
             )
             db.add(new_opp)
+            pending_new.append(new_opp)
+            existing_for_source.add(title)
+
+        if pending_new:
             try:
                 db.commit()
-                db.refresh(new_opp)
-                saved.append(_opp_to_dict(new_opp))
+                for new_opp in pending_new:
+                    db.refresh(new_opp)
+                    saved.append(_opp_to_dict(new_opp))
             except Exception as e:
                 db.rollback()
-                logger.error(f"Failed to save opportunity: {e}")
+                logger.error(f"Failed to save generated opportunities: {e}")
 
         return saved
 
@@ -542,6 +561,8 @@ async def _ai_search_generate(
 
         # Save to DB and return
         saved = []
+        pending_new: list[Opportunity] = []
+        source_titles: dict[str, set[str]] = {}
         for opp in opportunities:
             if not all(k in opp for k in ["title", "url", "opportunity_type"]):
                 continue
@@ -551,21 +572,24 @@ async def _ai_search_generate(
                 opp["opportunity_type"]
             )
 
-            # Check for duplicate in DB
-            existing = db.query(Opportunity).filter(
-                Opportunity.title == opp["title"],
-                Opportunity.source == opp.get("source", "")
-            ).first()
-
-            if existing:
-                saved.append(_opp_to_dict(existing))
+            src = opp.get("source", "")
+            title = opp["title"]
+            if src not in source_titles:
+                titles_for_source = [
+                    item.get("title")
+                    for item in opportunities
+                    if isinstance(item, dict) and item.get("title") and item.get("source", "") == src
+                ]
+                source_titles[src] = _existing_titles_by_source(db, src, titles_for_source)
+            existing_for_source = source_titles[src]
+            if title in existing_for_source:
                 continue
 
             deadline = None
             if opp.get("deadline"):
                 try:
                     deadline = datetime.fromisoformat(opp["deadline"].replace("Z", "+00:00"))
-                except:
+                except Exception:
                     pass
 
             new_opp = Opportunity(
@@ -584,13 +608,18 @@ async def _ai_search_generate(
                 deadline=deadline,
             )
             db.add(new_opp)
+            pending_new.append(new_opp)
+            existing_for_source.add(title)
+
+        if pending_new:
             try:
                 db.commit()
-                db.refresh(new_opp)
-                saved.append(_opp_to_dict(new_opp))
+                for new_opp in pending_new:
+                    db.refresh(new_opp)
+                    saved.append(_opp_to_dict(new_opp))
             except Exception as e:
                 db.rollback()
-                logger.error(f"Failed to save AI-searched opportunity: {e}")
+                logger.error(f"Failed to save AI-searched opportunities: {e}")
 
         return saved
 
@@ -614,51 +643,44 @@ def browse_opportunities(
     search_query: Optional[str] = None,
     page: int = 1,
     per_page: int = 20,
+    cursor_created_at: Optional[datetime] = None,
+    cursor_id: Optional[str] = None,
 ) -> dict:
     """Browse opportunities with filters and pagination."""
-    query = db.query(Opportunity).filter(Opportunity.is_expired == False)
-
-    # Category filter
-    if category and category != "all":
-        cat = CATEGORY_MAP.get(category.lower(), category.lower())
-        query = query.filter(
-            or_(Opportunity.category == cat, Opportunity.opportunity_type == cat)
-        )
-
-    # Location filter
-    if location and location.lower() not in ("all", "nationwide"):
-        query = query.filter(
-            Opportunity.location.ilike(f"%{location}%")
-        )
-
-    # Skill tag filter
-    if skill:
-        # JSONB contains check
-        query = query.filter(
-            Opportunity.skill_tags.cast(text("TEXT")).ilike(f"%{skill}%")
-        )
-
-    # Text search across title, description, company
-    if search_query:
-        search = f"%{search_query}%"
-        query = query.filter(
-            or_(
-                Opportunity.title.ilike(search),
-                Opportunity.description.ilike(search),
-                Opportunity.company.ilike(search),
-                Opportunity.provider.ilike(search),
-                Opportunity.skill_tags.cast(text("TEXT")).ilike(search),
-            )
-        )
+    query = opportunity_repository.build_browse_query(
+        db=db,
+        category=category,
+        skill=skill,
+        location=location,
+        search_query=search_query,
+        category_map=CATEGORY_MAP,
+    )
 
     total = query.count()
-    opportunities = (
-        query
-        .order_by(Opportunity.created_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all()
+    ordered_query = query.order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
+
+    ordered_query = opportunity_repository.apply_cursor_filter(
+        ordered_query, cursor_created_at, cursor_id
     )
+
+    if cursor_created_at and cursor_id:
+        opportunities = ordered_query.limit(per_page).all()
+    else:
+        opportunities = (
+            ordered_query
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+
+    next_cursor = None
+    if opportunities:
+        last_item = opportunities[-1]
+        if last_item.created_at:
+            next_cursor = {
+                "created_at": last_item.created_at.isoformat(),
+                "id": str(last_item.id),
+            }
 
     return {
         "opportunities": [_opp_to_dict(o) for o in opportunities],
@@ -666,6 +688,7 @@ def browse_opportunities(
         "page": page,
         "per_page": per_page,
         "total_pages": max(1, (total + per_page - 1) // per_page),
+        "next_cursor": next_cursor,
     }
 
 

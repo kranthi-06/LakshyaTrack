@@ -25,6 +25,7 @@ from sqlalchemy import func as sql_func
 
 from app.api import deps
 from app.models.user import User, Profile, Blacklist
+from app.repositories import admin_repository
 from app.schemas.user import (
     AdminUserView, BlacklistRequest, UnblacklistRequest,
     PromoteRequest, DemoteRequest, DeleteUserRequest, BlacklistRecord
@@ -139,19 +140,19 @@ def view_all_progress(
     current_user: User = Depends(deps.require_admin),
 ) -> Any:
     """View all user progress. Accessible by admin + black_admin."""
-    users = db.query(User).order_by(User.created_at.desc()).all()
-    
+    users = admin_repository.get_users_with_profiles(db)
+    if not users:
+        return {"progress": []}
+
+    user_ids = [u.id for u in users]
+    quiz_counts = admin_repository.get_quiz_counts_by_user(db, user_ids)
+    snapshot_map = admin_repository.get_latest_snapshots_by_user(db, user_ids)
+
     result = []
     for u in users:
-        # Gather quiz attempts count
-        from app.models.career import QuizAttempt, ProgressSnapshot
-        quiz_count = db.query(QuizAttempt).filter(QuizAttempt.user_id == u.id).count()
-        
-        # Gather progress snapshot
-        progress = db.query(ProgressSnapshot).filter(
-            ProgressSnapshot.user_id == u.id
-        ).order_by(ProgressSnapshot.snapshot_date.desc()).first()
-        
+        quiz_count = quiz_counts.get(u.id, 0)
+        progress = snapshot_map.get(u.id)
+
         result.append({
             "id": str(u.id),
             "email": u.email,

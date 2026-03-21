@@ -185,7 +185,8 @@ def create_checkout_session(
             demo_payment_url=f"/subscription/verify-payment?txn={txn.id}",
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("Checkout validation failed: %s", str(e))
+        raise HTTPException(status_code=400, detail="Invalid checkout request")
 
 
 @router.post("/verify-payment", response_model=VerifyPaymentResponse)

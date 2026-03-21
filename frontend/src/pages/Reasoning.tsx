@@ -7,7 +7,14 @@ import {
   ChevronDown, Award, AlertCircle, ArrowRight, FileText,
   Star, MessageSquareText
 } from 'lucide-react';
-import api from '../services/api';
+import {
+  generateReasoningQuestions,
+  getCompanyQuestions,
+  getReasoningCompanies,
+  getReasoningTopics,
+  getTopicQuestions,
+  submitReasoningTest,
+} from '../services/reasoning';
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES
@@ -159,7 +166,7 @@ function LearnCard({ question, index }: { question: Question; index: number }) {
     if (aiExplanation) { setAiExplaining(false); return; }
     setAiExplaining(true);
     try {
-      const { data } = await api.post('/reasoning/generate', {
+      const data = await generateReasoningQuestions({
         topic: question.topic || 'general',
         difficulty: question.difficulty || 'medium',
         count: 1,
@@ -493,7 +500,7 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
   const fetchQuestions = useCallback(async (mode: string) => {
     setLoading(true);
     try {
-      const { data } = await api.get(`/reasoning/questions/topic/${topic}?mode=${mode}&limit=36`);
+      const data = await getTopicQuestions(topic, mode, 36);
       return data.questions || [];
     } catch {
       return [];
@@ -507,7 +514,7 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
   const generateNew = async () => {
     setLoading(true);
     try {
-      const { data } = await api.post('/reasoning/generate', { topic, difficulty: 'medium', count: 10 });
+      const data = await generateReasoningQuestions({ topic, difficulty: 'medium', count: 10 });
       setQuestions(data.questions || []);
     } catch { /* keep existing */ }
     setLoading(false);
@@ -516,7 +523,7 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
   const startTest = async () => {
     setLoading(true);
     try {
-      const { data } = await api.post('/reasoning/generate', { topic, difficulty: 'medium', count: 10 });
+      const data = await generateReasoningQuestions({ topic, difficulty: 'medium', count: 10 });
       setTestQuestions(data.questions || []);
       setTestStarted(true);
       setTestResults(null);
@@ -528,7 +535,7 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
     setTestResults({ score, total: testQuestions.length, answers });
     setTestStarted(false);
     // Save result
-    api.post('/reasoning/submit-test', {
+    submitReasoningTest({
       user_id: 'anonymous', test_type: 'topic_test', category: topic, score, total: testQuestions.length, answers,
     }).catch(() => {});
   };
@@ -657,8 +664,8 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
 
   useEffect(() => {
     setLoading(true);
-    api.get(`/reasoning/questions/company/${company}?limit=30`)
-      .then(({ data }) => setQuestions(data.questions || []))
+    getCompanyQuestions(company, 30)
+      .then((data) => setQuestions(data.questions || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [company]);
@@ -666,7 +673,7 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
   const generateAITest = async () => {
     setLoading(true);
     try {
-      const { data } = await api.post('/reasoning/generate', { topic: 'coding-decoding', difficulty: 'medium', count: 10, company });
+      const data = await generateReasoningQuestions({ topic: 'coding-decoding', difficulty: 'medium', count: 10, company });
       setTestQuestions(data.questions || []);
       setTestStarted(true);
       setTestResults(null);
@@ -685,7 +692,7 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
   const handleFinish = (score: number, answers: any[]) => {
     setTestResults({ score, total: testQuestions.length, answers });
     setTestStarted(false);
-    api.post('/reasoning/submit-test', {
+    submitReasoningTest({
       user_id: 'anonymous', test_type: 'company_test', category: company, score, total: testQuestions.length, answers,
     }).catch(() => {});
   };
@@ -786,8 +793,8 @@ function TopicsListPage({ onSelect }: { onSelect: (topic: string, label: string)
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/reasoning/topics')
-      .then(({ data }) => setTopics(data.topics || []))
+    getReasoningTopics()
+      .then((data) => setTopics(data.topics || []))
       .catch(() => {
         // Fallback topics
         setTopics([
@@ -848,8 +855,8 @@ function CompaniesListPage({ onSelect }: { onSelect: (company: string, label: st
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/reasoning/companies')
-      .then(({ data }) => setCompanies(data.companies || []))
+    getReasoningCompanies()
+      .then((data) => setCompanies(data.companies || []))
       .catch(() => {
         setCompanies([
           { key: 'tcs', label: 'TCS', icon: '🏢', question_count: 0 },

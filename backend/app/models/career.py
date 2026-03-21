@@ -23,8 +23,8 @@ class Roadmap(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     target_role = Column(String, nullable=False)
     topic_name = Column(String, nullable=True)        # User-entered topic/skill (for custom roadmaps)
-    current_skills = Column(JSONB, default=[])       # ["Python", "React", ...]
-    skill_gaps = Column(JSONB, default=[])            # ["Docker", "K8s", ...]
+    current_skills = Column(JSONB, default=list)       # ["Python", "React", ...]
+    skill_gaps = Column(JSONB, default=list)            # ["Docker", "K8s", ...]
     roadmap_data = Column(JSONB, nullable=False)      # Full roadmap structure (see below)
     # roadmap_data schema:
     # {
@@ -68,7 +68,7 @@ class QuizAttempt(Base):
     passed = Column(Boolean, nullable=False)
     total_questions = Column(Integer, nullable=False)
     correct_answers = Column(Integer, nullable=False)
-    questions_data = Column(JSONB, default=[])          # Full Q&A for review
+    questions_data = Column(JSONB, default=list)          # Full Q&A for review
     violation_flag = Column(Boolean, default=False)      # True if exam was terminated due to violations
     terminated = Column(Boolean, default=False)          # True if exam was force-terminated
     attempted_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -104,8 +104,8 @@ class InterviewSession(Base):
     level = Column(String, nullable=True)              # Which level triggered this interview
     position = Column(String, nullable=False)
     round_type = Column(String, nullable=False)
-    responses = Column(JSONB, default=[])               # [{question, answer}, ...]
-    analysis = Column(JSONB, default={})                # AI feedback result
+    responses = Column(JSONB, default=list)               # [{question, answer}, ...]
+    analysis = Column(JSONB, default=dict)                # AI feedback result
     technical_score = Column(Float, nullable=True)
     communication_score = Column(Float, nullable=True)
     confidence_score = Column(Float, nullable=True)
@@ -134,14 +134,14 @@ class MultiStageInterview(Base):
     overall_score = Column(Float, nullable=True)
 
     # Stage data (questions, answers, feedback per stage)
-    screening_data = Column(JSONB, default={})
-    technical_data = Column(JSONB, default={})
-    coding_data = Column(JSONB, default={})
-    hr_data = Column(JSONB, default={})
+    screening_data = Column(JSONB, default=dict)
+    technical_data = Column(JSONB, default=dict)
+    coding_data = Column(JSONB, default=dict)
+    hr_data = Column(JSONB, default=dict)
 
     # AI summary feedback
-    strengths = Column(JSONB, default=[])
-    weaknesses = Column(JSONB, default=[])
+    strengths = Column(JSONB, default=list)
+    weaknesses = Column(JSONB, default=list)
     overall_feedback = Column(Text, nullable=True)
     verdict = Column(String, nullable=True)
 
@@ -169,7 +169,7 @@ class Opportunity(Base):
     description = Column(Text, nullable=True)
     url = Column(String, nullable=False)
     source = Column(String, nullable=True)               # "coursera", "udemy", "github_jobs", etc.
-    skill_tags = Column(JSONB, default=[])               # ["Python", "React", ...]
+    skill_tags = Column(JSONB, default=list)               # ["Python", "React", ...]
     level = Column(String, nullable=True)                # "Beginner", "Intermediate", "Advanced"
     deadline = Column(DateTime(timezone=True), nullable=True)
     is_expired = Column(Boolean, default=False)
@@ -197,7 +197,7 @@ class ProgressSnapshot(Base):
     total_skills_completed = Column(Integer, default=0)
     total_quizzes_passed = Column(Integer, default=0)
     total_interviews_done = Column(Integer, default=0)
-    breakdown = Column(JSONB, default={})                # Detailed per-skill breakdown
+    breakdown = Column(JSONB, default=dict)                # Detailed per-skill breakdown
     snapshot_date = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -210,7 +210,7 @@ class LearningCache(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     skill_name = Column(String, nullable=False, index=True)
     level = Column(String, nullable=True)
-    resources = Column(JSONB, default=[])               # [{title, url, type, order}, ...]
+    resources = Column(JSONB, default=list)               # [{title, url, type, order}, ...]
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.api import deps
 from app.services import learning_content_service
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class LearningRequest(BaseModel):
@@ -39,7 +41,8 @@ async def get_skill_resources(
             "resources": resources
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to fetch learning resources: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch learning resources")
 
 
 @router.post("/refresh")
@@ -65,4 +68,5 @@ async def refresh_skill_resources(
             "refreshed": True
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to refresh learning resources: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to refresh learning resources")

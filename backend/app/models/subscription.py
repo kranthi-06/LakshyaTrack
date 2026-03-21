@@ -23,7 +23,7 @@ class SubscriptionPlan(Base):
     billing_cycle = Column(String, nullable=False)             # "monthly" | "yearly"
     price = Column(Float, nullable=False)                      # in INR
     currency = Column(String, default="INR")
-    features = Column(JSONB, default=[])                       # list of feature descriptions
+    features = Column(JSONB, default=list)                       # list of feature descriptions
     resume_limit = Column(Integer, default=1)                  # max resumes allowed
     roadmap_limit = Column(Integer, default=1)                 # max roadmaps allowed
     is_recommended = Column(Boolean, default=False)

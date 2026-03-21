@@ -4,32 +4,37 @@ Supports browsing, searching, filtering, and AI-powered recommendations
 across courses, internships, certifications, and jobs.
 """
 from typing import Any, List, Optional
+import base64
+import json
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import opportunity_service
 
 router = APIRouter()
+import logging
+logger = logging.getLogger(__name__)
 
 
 # ── Request Schemas ────────────────────────────────────────
 
 class OpportunitySearchRequest(BaseModel):
     target_role: str
-    skills: List[str] = []
+    skills: List[str] = Field(default_factory=list)
     level: str = "Beginner"
 
 
 class OpportunityFilterRequest(BaseModel):
-    skills: List[str] = []
+    skills: List[str] = Field(default_factory=list)
     level: Optional[str] = None
     opportunity_type: Optional[str] = None  # "job", "internship", "course", "certification"
     limit: int = 20
 
 
 class OpportunityRecommendRequest(BaseModel):
-    skills: List[str] = []
+    skills: List[str] = Field(default_factory=list)
     target_role: str = "Software Engineer"
     limit: int = 12
 
@@ -47,6 +52,7 @@ async def browse_opportunities(
     skill: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    cursor: Optional[str] = Query(None, description="Base64 cursor for keyset pagination"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=50),
     db: Session = Depends(deps.get_db),
@@ -56,6 +62,17 @@ async def browse_opportunities(
     Browse opportunities with optional filters and pagination.
     Supports filtering by category, skill, location, and text search.
     """
+    cursor_created_at = None
+    cursor_id = None
+    if cursor:
+        try:
+            decoded = base64.urlsafe_b64decode(cursor.encode("utf-8")).decode("utf-8")
+            payload = json.loads(decoded)
+            cursor_created_at = datetime.fromisoformat(payload["created_at"])
+            cursor_id = payload["id"]
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid cursor")
+
     result = opportunity_service.browse_opportunities(
         db=db,
         category=category,
@@ -64,7 +81,13 @@ async def browse_opportunities(
         search_query=search,
         page=page,
         per_page=per_page,
+        cursor_created_at=cursor_created_at,
+        cursor_id=cursor_id,
     )
+    if result.get("next_cursor"):
+        result["next_cursor"] = base64.urlsafe_b64encode(
+            json.dumps(result["next_cursor"]).encode("utf-8")
+        ).decode("utf-8")
     return result
 
 
@@ -96,7 +119,8 @@ async def discover_opportunities(
         )
         return {"opportunities": opportunities, "count": len(opportunities)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to discover opportunities: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to discover opportunities")
 
 
 @router.post("/matched")
@@ -138,7 +162,8 @@ async def get_recommendations(
         )
         return {"opportunities": recommendations, "count": len(recommendations)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to fetch recommendations: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch recommendations")
 
 
 @router.post("/live-search")
@@ -191,7 +216,8 @@ async def fetch_external_sources(
             "total_new": rss_count + api_count,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to fetch external opportunities: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch external opportunities")
 
 
 @router.post("/cleanup")

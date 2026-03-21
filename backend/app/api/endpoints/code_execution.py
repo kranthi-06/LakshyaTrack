@@ -4,7 +4,7 @@ Provides /run-code and /submit-code endpoints for the coding environment.
 """
 from typing import Any, List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import code_execution_service
 
@@ -16,13 +16,13 @@ router = APIRouter()
 class RunCodeRequest(BaseModel):
     code: str
     language: str = "python"
-    test_cases: List[Dict[str, Any]] = []
+    test_cases: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class SubmitCodeRequest(BaseModel):
     code: str
     language: str = "python"
-    test_cases: List[Dict[str, Any]] = []
+    test_cases: List[Dict[str, Any]] = Field(default_factory=list)
     session_id: Optional[str] = None
     problem_title: Optional[str] = None
 

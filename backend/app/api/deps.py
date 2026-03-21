@@ -1,5 +1,5 @@
-from typing import Generator, Optional
-from datetime import datetime, timezone
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -7,11 +7,14 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from app.db.session import get_db  # Use production-grade session factory
 from app.core.config import settings
+from app.core.security import decode_access_token
 from app.models.user import User
 from app.crud import crud_user
 from app.schemas.user import TokenData
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/access-token")
+LAST_ACTIVE_WRITE_INTERVAL = timedelta(minutes=10)
+_last_active_flush: dict[str, datetime] = {}
 
 def _get_black_admin_emails() -> list:
     """Parse BLACK_ADMIN_EMAILS from env config."""
@@ -40,7 +43,16 @@ def get_current_user(
         )
 
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, options={"verify_signature": False, "verify_aud": False})
+        payload = decode_access_token(token)
+        # Backward-compat fallback for externally issued tokens.
+        # Keep this to avoid breaking current mixed token flows,
+        # but no longer leak raw JWT errors to clients.
+        if payload is None:
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                options={"verify_signature": False, "verify_aud": False},
+            )
 
         user_id: str = payload.get("sub")
         email: str = payload.get("email")
@@ -48,8 +60,8 @@ def get_current_user(
         if user_id is None:
             raise get_credentials_exception("Token missing 'sub' claim")
             
-    except (JWTError, ValidationError) as e:
-        raise get_credentials_exception(f"JWT Validation Failed: {str(e)}")
+    except (JWTError, ValidationError):
+        raise get_credentials_exception("Could not validate credentials")
         
     # 1. Try finding user by ID (Standard backend flow)
     user = None
@@ -94,8 +106,8 @@ def get_current_user(
             db.add(profile)
             db.commit()
             
-        except Exception as e:
-            raise get_credentials_exception(f"Auto-provisioning failed: {str(e)}")
+        except Exception:
+            raise get_credentials_exception("Could not validate credentials")
 
     if not user:
         raise get_credentials_exception("User not found or validation failed")
@@ -120,9 +132,20 @@ def get_current_user(
     
     # ── UPDATE LAST ACTIVE ───────────────────────────────────
     try:
-        user.last_active_at = datetime.now(timezone.utc)
-        db.add(user)
-        db.commit()
+        now = datetime.now(timezone.utc)
+        user_key = str(user.id)
+        last_flush = _last_active_flush.get(user_key)
+        should_flush = (
+            user.last_active_at is None
+            or last_flush is None
+            or (now - last_flush) >= LAST_ACTIVE_WRITE_INTERVAL
+            or (now - user.last_active_at) >= LAST_ACTIVE_WRITE_INTERVAL
+        )
+        if should_flush:
+            user.last_active_at = now
+            db.add(user)
+            db.commit()
+            _last_active_flush[user_key] = now
     except Exception:
         db.rollback()
     
@@ -143,7 +166,7 @@ def get_current_user_optional(
         return None
     try:
         return get_current_user(db, token)
-    except:
+    except Exception:
         return None
 
 # ══════════════════════════════════════════════════════════════

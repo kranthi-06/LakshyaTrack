@@ -7,7 +7,7 @@ import {
   Square, RefreshCw, Loader2, FileText, Zap, Star,
   ArrowRight, CircleAlert
 } from 'lucide-react';
-import api from '../services/api';
+import { analyzeEnglishSpeaking, generateEnglishPassage, generateEnglishTopic } from '../services/englishSpeaking';
 
 /* ═══════════════════════════════════════════════════════════════
    CONSTANTS
@@ -363,7 +363,7 @@ function ReadSpeakModule({ onNewTips }: { onNewTips: (tips: string[]) => void })
     setAnalysis(null);
     setPassageKey(k => k + 1);
     try {
-      const { data } = await api.post('/english/generate-passage', { category, difficulty });
+      const data = await generateEnglishPassage({ category, difficulty });
       setPassage(data.passage);
     } catch {
       setPassage("I am preparing for my placement interview. Good communication skills are essential for success. I have worked on several team projects during my college years. I believe continuous learning is important for career growth. I am confident that I can contribute positively to any organization.");
@@ -393,7 +393,7 @@ function ReadSpeakModule({ onNewTips }: { onNewTips: (tips: string[]) => void })
     setLoading(true);
     setAnalysis(null);
     try {
-      const { data } = await api.post('/english/analyze-speaking', {
+      const data = await analyzeEnglishSpeaking({
         type: 'sentence',
         original_text: passage,
         user_text: spokenText,
@@ -552,7 +552,7 @@ function PracticeModule({ onNewTips }: { onNewTips: (tips: string[]) => void }) 
     setShowSample(false);
     setTopicKey(k => k + 1);
     try {
-      const { data } = await api.post('/english/generate-topic');
+      const data = await generateEnglishTopic();
       setTopic(data.topic);
       setSamplePassage(data.sample_passage);
     } catch {
@@ -567,7 +567,7 @@ function PracticeModule({ onNewTips }: { onNewTips: (tips: string[]) => void }) 
     setLoading(true);
     setAnalysis(null);
     try {
-      const { data } = await api.post('/english/analyze-speaking', {
+      const data = await analyzeEnglishSpeaking({
         type: 'topic',
         original_text: topic,
         user_text: spokenText,
@@ -657,7 +657,7 @@ function InterviewModule({ onNewTips }: { onNewTips: (tips: string[]) => void })
     setLoading(true);
     setAnalysis(null);
     try {
-      const { data } = await api.post('/english/analyze-speaking', {
+      const data = await analyzeEnglishSpeaking({
         type: 'interview',
         original_text: currentQuestion,
         user_text: spokenText,

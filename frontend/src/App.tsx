@@ -7,6 +7,7 @@ import { AdminRoute } from './components/AdminRoute';
 import { AppLayout } from './components/AppLayout';
 import { Suspense, lazy, memo, useEffect } from 'react';
 import AuthLoadingScreen from './components/AuthLoadingScreen';
+import AuthHydrationGate from './components/AuthHydrationGate';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   getPageImporter,
@@ -169,6 +170,7 @@ function App() {
     <Router>
       <RouteFaviconSync />
       <AuthProvider>
+        <AuthHydrationGate>
         <SubscriptionProvider>
         <Suspense fallback={<AuthLoadingScreen />}>
           <OAuthCodeInterceptor>
@@ -217,6 +219,7 @@ function App() {
           </OAuthCodeInterceptor>
         </Suspense>
         </SubscriptionProvider>
+        </AuthHydrationGate>
       </AuthProvider>
     </Router>
     </ThemeProvider>

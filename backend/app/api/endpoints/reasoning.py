@@ -6,8 +6,10 @@ import json
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel, Field
+from app.api.deps import get_current_user_optional, require_admin
+from app.models.user import User
 
 from app.services.reasoning_service import (
     TOPICS, COMPANIES,
@@ -43,7 +45,7 @@ class SubmitTestRequest(BaseModel):
     user_id: str = "anonymous"
     test_type: str = Field(..., description="topic_test | company_test | ai_test")
     category: str
-    answers: list  # [{question_id, selected, correct, is_correct}]
+    answers: list = Field(default_factory=list)  # [{question_id, selected, correct, is_correct}]
     score: int
     total: int
 
@@ -56,7 +58,7 @@ class SubmitAnswerRequest(BaseModel):
 
 
 class BulkInsertRequest(BaseModel):
-    questions: list
+    questions: list = Field(default_factory=list)
     topic: str = ""
     company: str = ""
 
@@ -163,18 +165,18 @@ async def get_stats():
 
 
 @router.post("/admin/populate-all")
-async def admin_populate_all():
+async def admin_populate_all(_: User = Depends(require_admin)):
     """Admin: Trigger manual population of all topics and companies in the background."""
     try:
         job = start_auto_populate_job()
         status = "running" if job.get("running") else job.get("status", "queued")
         return {"status": status, "job": job}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Population failed: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Population failed")
 
 
 @router.get("/admin/populate-status")
-async def admin_populate_status():
+async def admin_populate_status(_: User = Depends(require_admin)):
     """Admin: Get current status for the manual reasoning population job."""
     return get_auto_populate_status()
 
@@ -202,10 +204,13 @@ async def generate_questions(request: GenerateQuestionsRequest):
 
 
 @router.post("/submit-test")
-async def submit_test(request: SubmitTestRequest):
+async def submit_test(
+    request: SubmitTestRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Submit a completed test and save results."""
     test_id = save_test_result(
-        user_id=request.user_id,
+        user_id=str(current_user.id) if current_user else request.user_id,
         test_type=request.test_type,
         topic_or_company=request.category,
         score=request.score,
@@ -224,10 +229,13 @@ async def submit_test(request: SubmitTestRequest):
 
 
 @router.post("/submit-answer")
-async def submit_answer(request: SubmitAnswerRequest):
+async def submit_answer(
+    request: SubmitAnswerRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Record a single answer for progress tracking."""
     record_user_answer(
-        user_id=request.user_id,
+        user_id=str(current_user.id) if current_user else request.user_id,
         question_id=request.question_id,
         topic=request.topic,
         is_correct=request.is_correct,
@@ -243,7 +251,7 @@ async def user_progress(user_id: str):
 
 
 @router.post("/bulk-insert")
-async def bulk_insert(request: BulkInsertRequest):
+async def bulk_insert(request: BulkInsertRequest, _: User = Depends(require_admin)):
     """Admin: Bulk insert questions into the database."""
     questions = request.questions
     for q in questions:
@@ -262,6 +270,7 @@ async def upload_and_extract(
     text_content: str = Form(""),
     topic: str = Form(""),
     company: str = Form(""),
+    _: User = Depends(require_admin),
 ):
     """
     Admin: Upload a PDF or text and extract structured questions using AI.

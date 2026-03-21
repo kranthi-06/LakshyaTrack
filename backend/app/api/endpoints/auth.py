@@ -11,8 +11,10 @@ from app.api.deps import _get_black_admin_emails
 from app.core import security
 from app.core.config import settings
 from app.services.email_service import send_email_otp
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/signup")
 def signup(
@@ -62,14 +64,12 @@ def signup(
     try:
         email_sent = send_email_otp(email, otp_code)
     except Exception as e:
-        print(f"Error sending email in signup: {e}")
+        logger.exception("Error sending signup OTP email: %s", str(e))
         email_sent = False
     
     if not email_sent:
          # Log the OTP so developer can see it
-         print("==================================================")
-         print(f"FAILED TO SEND EMAIL. OTP IS: {otp_code}")
-         print("==================================================")
+         logger.warning("OTP email failed during signup for %s", email)
          return {
              "message": "Account created. Email sending failed (check server logs/console for OTP).",
              "warning": "Email failed"
@@ -128,7 +128,7 @@ def send_otp(
     otp_code = "".join([str(random.randint(0, 9)) for _ in range(6)])
     expires_at = now + timedelta(minutes=5)
     
-    print(f"DEBUG: OTP for {email} is {otp_code}")
+    logger.info("Generated OTP for resend flow: %s", email)
 
     # Store OTP
     # If we have pending_user_data, pass it along so the new OTP can also create the user
@@ -138,16 +138,14 @@ def send_otp(
     try:
         email_sent = send_email_otp(email, otp_code)
     except Exception as e:
-        print(f"Error sending email in send-otp: {e}")
+        logger.exception("Error sending OTP email: %s", str(e))
         email_sent = False
     
     if email_sent:
         return {"message": "OTP sent successfully."}
     else:
         # Log the OTP so developer can see it
-         print("==================================================")
-         print(f"FAILED TO SEND EMAIL. OTP IS: {otp_code}")
-         print("==================================================")
+         logger.warning("OTP email failed in send-otp flow for %s", email)
          # Don't raise 500, return success so frontend flow continues
          return {
              "message": "OTP generated but email failed. Check server logs/console for code.",
@@ -406,7 +404,8 @@ def google_login(
 
     except ValueError as e:
         # Invalid token
-        raise HTTPException(status_code=400, detail=f"Invalid Google Token: {str(e)}")
+        logger.warning("Invalid Google token: %s", str(e))
+        raise HTTPException(status_code=400, detail="Invalid Google token")
     except Exception as e:
-        print(f"Google Login Error: {e}")
+        logger.exception("Google login failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Google Login failed")

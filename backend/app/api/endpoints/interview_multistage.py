@@ -5,7 +5,7 @@ Provides routes for the 4-stage hiring simulation.
 from typing import Any, List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import interview_multistage_service
 
@@ -23,40 +23,40 @@ class CreateSessionRequest(BaseModel):
 class ScreeningQuestionRequest(BaseModel):
     session_id: str
     resume_summary: str = ""
-    skills: List[str] = []
-    projects: List[str] = []
-    history: List[Dict[str, Any]] = []
+    skills: List[str] = Field(default_factory=list)
+    projects: List[str] = Field(default_factory=list)
+    history: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TechnicalQuestionRequest(BaseModel):
     session_id: str
-    skills: List[str] = []
-    history: List[Dict[str, Any]] = []
+    skills: List[str] = Field(default_factory=list)
+    history: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CodingProblemRequest(BaseModel):
     session_id: str
-    skills: List[str] = []
+    skills: List[str] = Field(default_factory=list)
     difficulty: str = "intermediate"
 
 
 class HRQuestionRequest(BaseModel):
     session_id: str
-    history: List[Dict[str, Any]] = []
+    history: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class EvaluateStageRequest(BaseModel):
     session_id: str
     stage: str  # screening | technical | coding | hr
-    responses: List[Dict[str, Any]] = []
+    responses: List[Dict[str, Any]] = Field(default_factory=list)
     # For screening
     resume_summary: str = ""
     # For technical
-    skills: List[str] = []
+    skills: List[str] = Field(default_factory=list)
     # For coding
     code: str = ""
     language: str = "python"
-    problem: Dict[str, Any] = {}
+    problem: Dict[str, Any] = Field(default_factory=dict)
     passed_tests: int = 0
     total_tests: int = 0
     attempts: int = 1
@@ -64,10 +64,10 @@ class EvaluateStageRequest(BaseModel):
 
 class FinalAnalysisRequest(BaseModel):
     session_id: str
-    screening_eval: Dict[str, Any] = {}
-    technical_eval: Dict[str, Any] = {}
-    coding_eval: Dict[str, Any] = {}
-    hr_eval: Dict[str, Any] = {}
+    screening_eval: Dict[str, Any] = Field(default_factory=dict)
+    technical_eval: Dict[str, Any] = Field(default_factory=dict)
+    coding_eval: Dict[str, Any] = Field(default_factory=dict)
+    hr_eval: Dict[str, Any] = Field(default_factory=dict)
 
 
 # ─── Endpoints ──────────────────────────────────────────

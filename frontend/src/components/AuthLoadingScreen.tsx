@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { GraduationCap } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 
 const statusMessages = [
@@ -10,7 +9,7 @@ const statusMessages = [
     'Almost there...',
 ];
 
-export default function AuthLoadingScreen() {
+export default function AuthLoadingScreen({ message }: { message?: string }) {
     const [messageIndex, setMessageIndex] = useState(0);
     const [progress, setProgress] = useState(0);
 
@@ -57,7 +56,7 @@ export default function AuthLoadingScreen() {
                 </div>
 
                 {/* Brand name */}
-                <h1 className="auth-loading-brand">LakshyaTrack</h1>
+                <h1 className="auth-loading-brand">FluxaTrap</h1>
 
                 {/* Status message with fade */}
                 <div className="auth-loading-message-container">
@@ -65,7 +64,7 @@ export default function AuthLoadingScreen() {
                         className="auth-loading-message"
                         key={messageIndex}
                     >
-                        {statusMessages[messageIndex]}
+                        {message || statusMessages[messageIndex]}
                     </p>
                 </div>
 

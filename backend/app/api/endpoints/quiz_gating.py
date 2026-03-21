@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.api import deps
 from app.services import quiz_gating_service
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class SkillQuizRequest(BaseModel):
@@ -48,7 +50,8 @@ async def generate_skill_quiz(
         return {"questions": questions, "threshold": quiz_gating_service.PASS_THRESHOLDS.get(request.level, 70)}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to generate skill quiz: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to generate skill quiz")
 
 
 @router.post("/submit")
@@ -70,7 +73,8 @@ async def submit_quiz(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to submit quiz attempt: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to submit quiz attempt")
 
 
 @router.get("/history")

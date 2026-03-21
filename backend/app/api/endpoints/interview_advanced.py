@@ -5,11 +5,13 @@ Extends the existing Interview page with roadmap-gated interviews.
 from typing import Any, List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import interview_advanced_service
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class InterviewUnlockCheck(BaseModel):
@@ -20,7 +22,7 @@ class InterviewUnlockCheck(BaseModel):
 class AdvancedQuestionRequest(BaseModel):
     position: str = "Software Engineer"
     round_type: str = "technical"
-    history: List[Dict[str, Any]] = []
+    history: List[Dict[str, Any]] = Field(default_factory=list)
     resume_summary: Optional[str] = None
     target_skills: Optional[List[str]] = None
 
@@ -98,7 +100,8 @@ async def finish_interview(
 
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Advanced interview finalize failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to finalize interview")
 
 
 @router.get("/history-advanced")

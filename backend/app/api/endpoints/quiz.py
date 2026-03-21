@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.api import deps
 from app.services import quiz_service
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class QuizRequest(BaseModel):
     topic: str
@@ -39,4 +41,5 @@ async def generate_quiz(
             
         return questions
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Quiz generation failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to generate quiz questions")

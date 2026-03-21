@@ -5,11 +5,6 @@ import AuthLoadingScreen from './AuthLoadingScreen';
 
 const MAX_LOADING_MS = 15000;
 
-function hasValidToken(): boolean {
-    const token = localStorage.getItem('token');
-    return !!token && token !== 'undefined' && token !== 'null';
-}
-
 interface AdminRouteProps {
     children: React.ReactElement;
     requireBlackAdmin?: boolean;
@@ -31,7 +26,7 @@ export const AdminRoute = ({ children, requireBlackAdmin = false }: AdminRoutePr
     }
 
     // Wait for full auth pipeline before redirecting
-    if (!authReady && !timedOut && hasValidToken()) {
+    if (!authReady && !timedOut) {
         return <AuthLoadingScreen />;
     }
 
@@ -49,11 +44,6 @@ export const AdminRoute = ({ children, requireBlackAdmin = false }: AdminRoutePr
             return <Navigate to="/dashboard" replace />;
         }
 
-        return children;
-    }
-
-    // No user but token exists → network issue, render children to avoid logout
-    if (hasValidToken()) {
         return children;
     }
 

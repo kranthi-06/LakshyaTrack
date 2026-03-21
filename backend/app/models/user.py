@@ -37,9 +37,9 @@ class Profile(Base):
     project_image_url = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
-    links = Column(JSONB, default={})
-    skills = Column(JSONB, default=[]) # Array of extracted/manual skills
-    activity_log = Column(JSONB, default=[])
+    links = Column(JSONB, default=dict)
+    skills = Column(JSONB, default=list) # Array of extracted/manual skills
+    activity_log = Column(JSONB, default=list)
     
     # Mirror admin fields for easy profile queries
     role = Column(String, default='user', nullable=True)

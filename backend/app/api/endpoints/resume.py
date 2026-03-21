@@ -54,7 +54,7 @@ async def analyze_resume(
             text = await resume_service.extract_text_from_pdf(content)
         except Exception as e:
             logger.error(f"Text extraction failed: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Failed to parse PDF content: {str(e)}")
+            raise HTTPException(status_code=400, detail="Failed to parse PDF content")
         
         if not text.strip():
             logger.warning(f"No text extracted from PDF: {filename}")
@@ -126,7 +126,7 @@ async def analyze_resume(
             user_id=str(current_user.id) if current_user else None,
             details={"filename": file.filename or "resume.pdf", "error": str(e)},
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Media storage is not configured correctly")
     except ValueError as e:
         document_store_service.record_task_log(
             task_name="resume_analysis",
@@ -135,7 +135,7 @@ async def analyze_resume(
             user_id=str(current_user.id) if current_user else None,
             details={"filename": file.filename or "resume.pdf", "error": str(e)},
         )
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Invalid resume input")
     except Exception as e:
         logger.error(f"Unexpected error during resume analysis: {str(e)}", exc_info=True)
         document_store_service.record_task_log(
@@ -145,8 +145,7 @@ async def analyze_resume(
             user_id=str(current_user.id) if current_user else None,
             details={"filename": file.filename or "resume.pdf", "error": str(e)},
         )
-        # Exposing error for user debugging
-        raise HTTPException(status_code=500, detail=f"AI Engine Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Resume analysis failed")
 
 @router.post("/analyze-text")
 async def analyze_resume_text(
@@ -228,4 +227,4 @@ async def analyze_resume_text(
             user_id=str(current_user.id) if current_user else None,
             details={"filename": filename, "error": str(e)},
         )
-        raise HTTPException(status_code=500, detail=f"AI Engine Error (Text): {str(e)}")
+        raise HTTPException(status_code=500, detail="Resume text analysis failed")

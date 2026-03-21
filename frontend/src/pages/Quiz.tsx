@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import api from '../services/api';
 import {
     generateSkillQuiz,
     submitSkillQuiz,
@@ -11,6 +10,7 @@ import {
     checkExamEligibility,
     checkExamCooldown,
 } from '../services/careerPlatform';
+import { generateQuizQuestions } from '../services/quiz';
 import {
     BrainCircuit,
     Timer,
@@ -307,14 +307,14 @@ export default function Quiz() {
                 }
             } else {
                 const count = parseInt(numQuestions);
-                const res = await api.post('/quiz/generate', {
+                const data = await generateQuizQuestions({
                     topic,
                     difficulty,
                     count
                 });
 
-                if (res.data && res.data.length > 0) {
-                    setQuizQuestions(res.data);
+                if (data && data.length > 0) {
+                    setQuizQuestions(data);
                 } else {
                     console.warn("API returned empty questions, using fallback.");
                     setQuizQuestions(questionsByTopic[topic] || questionsByTopic['JavaScript']);
@@ -842,7 +842,7 @@ export default function Quiz() {
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </main>
+                </main>
             {/* ═══════════════════════════════════════════════════════════ */}
             {/* EXAM MODE OVERLAYS (Popups) — rendered on top of everything */}
             {/* ═══════════════════════════════════════════════════════════ */}

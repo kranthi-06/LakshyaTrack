@@ -4,8 +4,10 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 from app.api import deps
 from app.services import resume_builder_service
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class PersonalInfoRequest(BaseModel):
@@ -79,7 +81,8 @@ async def enhance_personal_info(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder personal info enhancement failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="AI enhancement failed")
 
 
 @router.post("/enhance/education")
@@ -93,7 +96,8 @@ async def enhance_education(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder education enhancement failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="AI enhancement failed")
 
 
 @router.post("/enhance/experience")
@@ -107,7 +111,8 @@ async def enhance_experience(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder experience enhancement failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="AI enhancement failed")
 
 
 @router.post("/enhance/projects")
@@ -121,7 +126,8 @@ async def enhance_projects(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder projects enhancement failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="AI enhancement failed")
 
 
 @router.post("/enhance/skills")
@@ -135,7 +141,8 @@ async def enhance_skills(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder skills enhancement failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="AI enhancement failed")
 
 
 @router.post("/ats-check")
@@ -149,7 +156,8 @@ async def ats_check(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder ATS check failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="ATS check failed")
 
 
 @router.post("/regenerate")
@@ -163,7 +171,8 @@ async def regenerate_section(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder regenerate failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="Section regeneration failed")
 
 
 class OptimizeRequest(BaseModel):
@@ -183,5 +192,6 @@ async def optimize_resume(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        logger.exception("Resume builder optimize failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="Resume optimization failed")
 

@@ -5,7 +5,12 @@ import {
   Sparkles, Database, RefreshCw, Trash2, ChevronDown, ArrowLeft
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import api from '../services/api';
+import {
+  getReasoningPopulateStatus,
+  getReasoningStats,
+  startReasoningPopulate,
+  uploadAndExtractReasoningQuestions,
+} from '../services/reasoningAdmin';
 
 interface ExtractedQuestion {
   question: string;
@@ -131,9 +136,7 @@ export default function AdminQuestionUpload() {
       formData.append('topic', topic);
       formData.append('company', company);
 
-      const { data } = await api.post('/reasoning/upload-extract', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const data = await uploadAndExtractReasoningQuestions(formData);
       setResult(data);
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Upload failed');
@@ -145,7 +148,7 @@ export default function AdminQuestionUpload() {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.get('/reasoning/stats');
+      const data = await getReasoningStats();
       setStats(data);
     } catch (e: any) {
       setStats(null);
@@ -163,7 +166,7 @@ export default function AdminQuestionUpload() {
 
   const fetchPopulateStatus = useCallback(async (showErrors = false) => {
     try {
-      const { data } = await api.get('/reasoning/admin/populate-status');
+      const data = await getReasoningPopulateStatus();
       if (data.status === 'idle') {
         const storedSnapshot = readStoredPopulateSnapshot();
         if (storedSnapshot?.status && storedSnapshot.status.status !== 'idle') {
@@ -210,7 +213,7 @@ export default function AdminQuestionUpload() {
     setError('');
     setPopulateResult(null);
     try {
-      const { data } = await api.post('/reasoning/admin/populate-all');
+      const data = await startReasoningPopulate();
       setPopulateStatus(data.job);
       startPopulatePolling();
       await fetchPopulateStatus(false);
