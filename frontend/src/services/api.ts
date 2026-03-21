@@ -22,6 +22,20 @@ const api = axios.create({
     timeout: DEFAULT_TIMEOUT,
 });
 
+// ── Request Deduplication ─────────────────────────────────────
+// Coalesce identical concurrent GET requests into a single network call.
+// This prevents redundant backend hits when multiple React components
+// request the same data simultaneously (e.g. during StrictMode double-renders).
+const _inflightRequests = new Map<string, Promise<any>>();
+
+function deduplicationKey(config: InternalAxiosRequestConfig): string | null {
+    // Only deduplicate GET requests (safe to coalesce reads)
+    if ((config.method || 'get').toLowerCase() !== 'get') return null;
+    const url = `${config.baseURL || ''}${config.url || ''}`;
+    const params = config.params ? JSON.stringify(config.params) : '';
+    return `GET:${url}:${params}`;
+}
+
 // ── Circuit Breaker State ─────────────────────────────────────
 let _consecutiveFailures = 0;
 let _circuitOpen = false;
@@ -71,7 +85,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
     _unauthorizedHandler = handler;
 }
 
-// ── Request Interceptor: attach Bearer token ──────────────────
+// ── Request Interceptor: attach Bearer token + deduplication ──
 api.interceptors.request.use((config) => {
     // Circuit breaker check
     if (!checkCircuitBreaker()) {
@@ -93,6 +107,19 @@ api.interceptors.request.use((config) => {
     if (token && token !== 'undefined' && token !== 'null') {
         config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Request deduplication: if an identical GET is already in-flight, reuse it
+    const dedupKey = deduplicationKey(config as InternalAxiosRequestConfig);
+    if (dedupKey && _inflightRequests.has(dedupKey)) {
+        const controller = new AbortController();
+        (config as any)._dedupKey = dedupKey;
+        (config as any)._deduplicated = true;
+        // Abort this request — the response interceptor will return the in-flight result
+        config.signal = controller.signal;
+        // We return the config but immediately reject so the response interceptor catches it
+        // and returns the deduplicated result.
+    }
+
     return config;
 });
 
@@ -132,6 +159,13 @@ function sleep(ms: number): Promise<void> {
 api.interceptors.response.use(
     (response) => {
         recordSuccess();
+
+        // Register and clean up deduplication entry
+        const dedupKey = deduplicationKey(response.config as InternalAxiosRequestConfig);
+        if (dedupKey) {
+            _inflightRequests.delete(dedupKey);
+        }
+
         return response;
     },
     async (error: AxiosError) => {

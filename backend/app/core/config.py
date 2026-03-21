@@ -55,6 +55,27 @@ class Settings(BaseSettings):
     # Idempotency (MongoDB Atlas)
     IDEMPOTENCY_TTL_SECONDS: int = 60 * 60 * 24  # 24 hours
     IDEMPOTENCY_MAX_RESPONSE_BYTES: int = 1024 * 1024  # 1MB
+
+    # Request protection and load tuning
+    RATE_LIMIT_ENABLED: bool = False
+    RATE_LIMIT_BACKEND: str = "auto"  # auto | memory | redis
+    RATE_LIMIT_GLOBAL_PER_MINUTE: int = 12000
+    RATE_LIMIT_IP_PER_MINUTE: int = 2400
+    REDIS_URL: str = ""
+
+    # Health endpoint optimization
+    HEALTH_CACHE_TTL_SECONDS: int = 10
+
+    # Async job queue backend
+    JOB_QUEUE_BACKEND: str = "auto"  # auto | memory | redis
+    JOB_QUEUE_TTL_SECONDS: int = 60 * 60  # 1 hour
+    JOB_QUEUE_REDIS_LIST_KEY: str = "jobs:queue"
+
+    # SQLAlchemy pool tuning (PostgreSQL)
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 40
+    DB_POOL_TIMEOUT_SECONDS: int = 30
+    DB_POOL_RECYCLE_SECONDS: int = 1800
     
     class Config:
         env_file = Path(__file__).resolve().parents[2] / ".env"

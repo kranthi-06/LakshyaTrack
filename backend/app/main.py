@@ -4,8 +4,9 @@ LakshyaTrack API — Production-grade FastAPI application with:
 - Request timing and slow-request detection
 - Rate limiting middleware
 - System health monitoring endpoints
-- Graceful shutdown and startup
+- Graceful shutdown and startup (modern lifespan protocol)
 - Module isolation (failures contained per-request)
+- Connection pool pre-warming for zero cold-start latency
 """
 import logging
 import os
@@ -13,6 +14,8 @@ import sys
 import time
 import traceback
 import uuid
+import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +31,7 @@ from app.core.logging_utils import configure_logging_json
 from app.core.idempotency import build_idempotency_storage_key
 from app.core.request_context import set_request_id
 from app.core.resilience import (
-    get_rate_limiter,
+    allow_rate_limit,
     health_metrics,
     safe_execute,
 )
@@ -58,12 +61,103 @@ from app.services import document_store_service
 configure_logging_json(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_background_scheduler = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Modern lifespan handler — replaces deprecated on_event('startup'/'shutdown')."""
+    global _background_scheduler
+    logger.info("=== LakshyaTrack API Starting ===")
+
+    # ── Startup ────────────────────────────────────────────────
+
+    # 1. Initialize relational database + pre-warm connection pool
+    try:
+        initialize_relational_database()
+        logger.info("PostgreSQL: OK")
+
+        # Pre-warm pool so first real requests don't suffer cold-start latency
+        try:
+            from app.db.session import prewarm_pool
+            prewarm_pool(min_connections=3)
+        except Exception:
+            logger.warning("Pool pre-warm failed (non-fatal).")
+
+        # Seed default subscription plans
+        try:
+            from app.services.subscription_service import seed_default_plans
+            from app.db.session import SessionLocal
+            seed_db = SessionLocal()
+            try:
+                seed_default_plans(seed_db)
+            finally:
+                seed_db.close()
+            logger.info("Subscription plans: seeded")
+        except Exception:
+            logger.exception("Subscription plan seeding failed (non-fatal).")
+    except Exception:
+        logger.exception("Relational DB startup failed (non-fatal).")
+
+    # 2. Initialize MongoDB
+    try:
+        init_mongodb()
+        logger.info("MongoDB: OK")
+    except Exception:
+        logger.exception("MongoDB startup failed (non-fatal).")
+
+    # 3. Background scheduler (skip in Vercel serverless)
+    if not _is_vercel_runtime():
+        try:
+            from app.core.background_jobs import setup_background_jobs
+            _background_scheduler = setup_background_jobs()
+            logger.info("Background scheduler: OK")
+        except Exception:
+            logger.exception("Background scheduler failed to start.")
+    else:
+        logger.info("Skipping background scheduler in Vercel serverless runtime.")
+
+    logger.info("=== LakshyaTrack API Ready ===")
+
+    yield  # ── Application runs here ──
+
+    # ── Shutdown ───────────────────────────────────────────────
+    logger.info("=== LakshyaTrack API Shutting Down ===")
+
+    # Gracefully stop background scheduler
+    if _background_scheduler is not None:
+        try:
+            _background_scheduler.shutdown(wait=False)
+            logger.info("Background scheduler stopped.")
+        except Exception:
+            pass
+
+    # Close MongoDB
+    try:
+        close_mongodb()
+    except Exception:
+        pass
+
+    logger.info("=== LakshyaTrack API Shutdown Complete ===")
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
+
+# Lock-free caches — use monotonic timestamps for expiration.
+# asyncio.Lock was causing serialization bottleneck under load.
+_HEALTH_CACHE: dict = {"expires_at": 0.0, "payload": None}
+_HEALTH_REFRESHING = False  # Simple flag to prevent thundering herd
+_READY_CACHE: dict = {"expires_at": 0.0, "payload": None, "status_code": 200}
+_READY_REFRESHING = False
+
+# Ultra-fast endpoints that should skip heavy middleware processing
+_FAST_PATHS = frozenset({"/", "/health/live", "/docs", "/redoc", "/openapi.json"})
 
 
 def _is_vercel_runtime() -> bool:
@@ -214,60 +308,7 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
-# ── Lifecycle events ──────────────────────────────────────────
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("=== LakshyaTrack API Starting ===")
-
-    # Initialize databases safely
-    try:
-        initialize_relational_database()
-        logger.info("PostgreSQL: OK")
-
-        # Seed default subscription plans
-        try:
-            from app.services.subscription_service import seed_default_plans
-            from app.db.session import SessionLocal
-            seed_db = SessionLocal()
-            try:
-                seed_default_plans(seed_db)
-            finally:
-                seed_db.close()
-            logger.info("Subscription plans: seeded")
-        except Exception:
-            logger.exception("Subscription plan seeding failed (non-fatal).")
-    except Exception:
-        logger.exception("Relational DB startup failed (non-fatal).")
-
-    try:
-        init_mongodb()
-        logger.info("MongoDB: OK")
-    except Exception:
-        logger.exception("MongoDB startup failed (non-fatal).")
-
-    # Background scheduler (skip in Vercel)
-    if _is_vercel_runtime():
-        logger.info("Skipping background scheduler in Vercel serverless runtime.")
-        return
-
-    try:
-        from app.core.background_jobs import setup_background_jobs
-        setup_background_jobs()
-        logger.info("Background scheduler: OK")
-    except Exception:
-        logger.exception("Background scheduler failed to start.")
-
-    logger.info("=== LakshyaTrack API Ready ===")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("=== LakshyaTrack API Shutting Down ===")
-    try:
-        close_mongodb()
-    except Exception:
-        pass
+# ── Lifecycle managed by lifespan() context manager above ─────
 
 
 # ── ASGI timing + rate limiting middleware ─────────────────────
@@ -286,7 +327,6 @@ class RequestProtectionMiddleware:
 
     def __init__(self, app):
         self.app = app
-        self._global_limiter = get_rate_limiter("global", max_calls=1200, window_seconds=60)
 
     @staticmethod
     def _extract_client_ip(scope) -> str:
@@ -322,17 +362,40 @@ class RequestProtectionMiddleware:
             request_id = str(uuid.uuid4())
         set_request_id(request_id)
 
-        # Rate limiting (skip health checks and docs)
-        if path not in ("/health", "/docs", "/redoc", "/openapi.json"):
+        # Fast-path: skip rate limiting + heavy metric tracking for lightweight endpoints
+        is_fast_path = path in _FAST_PATHS
+
+        # Rate limiting (skip low-cost infra endpoints)
+        if (
+            settings.RATE_LIMIT_ENABLED
+            and not is_fast_path
+            and path != "/health"
+        ):
             client_ip = self._extract_client_ip(scope)
-            ip_limiter = get_rate_limiter(f"ip:{client_ip}", max_calls=240, window_seconds=60)
-            if not self._global_limiter.allow() or not ip_limiter.allow():
+            global_allowed = await allow_rate_limit(
+                name="global",
+                max_calls=settings.RATE_LIMIT_GLOBAL_PER_MINUTE,
+                window_seconds=60,
+                backend=settings.RATE_LIMIT_BACKEND,
+                redis_url=settings.REDIS_URL,
+            )
+            ip_allowed = await allow_rate_limit(
+                name=f"ip:{client_ip}",
+                max_calls=settings.RATE_LIMIT_IP_PER_MINUTE,
+                window_seconds=60,
+                backend=settings.RATE_LIMIT_BACKEND,
+                redis_url=settings.REDIS_URL,
+            )
+            if not global_allowed or not ip_allowed:
                 response = JSONResponse(
                     status_code=429,
                     content={"detail": "Too many requests. Please slow down."},
                 )
                 await response(scope, receive, send)
                 return
+
+        # Pre-compute request ID bytes once
+        request_id_bytes = request_id.encode()
 
         async def timed_send(message):
             if message["type"] == "http.response.start":
@@ -341,28 +404,32 @@ class RequestProtectionMiddleware:
                 headers.append(
                     (b"x-response-time", f"{duration_ms:.1f}ms".encode())
                 )
-                headers.append((b"x-request-id", request_id.encode()))
+                headers.append((b"x-request-id", request_id_bytes))
                 message = {**message, "headers": headers}
 
-                # Record metrics
-                status_code = message.get("status", 200)
-                success = 200 <= status_code < 500
-                module = path.split("/")[3] if len(path.split("/")) > 3 else "root"
-                health_metrics.record_request(module, duration_ms, success)
+                # Only record metrics for non-fast-path endpoints (skip for / and /health/live)
+                if not is_fast_path:
+                    status_code = message.get("status", 200)
+                    success = 200 <= status_code < 500
+                    parts = path.split("/")
+                    module = parts[3] if len(parts) > 3 else "root"
+                    health_metrics.record_request(module, duration_ms, success)
 
-                # Slow request warning
-                if duration_ms > self.SLOW_REQUEST_THRESHOLD_MS:
-                    logger.warning(
-                        "SLOW REQUEST [%s]: %s %s took %.0fms (status %d)",
-                        request_id, method, path, duration_ms, status_code,
-                    )
+                    # Slow request warning
+                    if duration_ms > self.SLOW_REQUEST_THRESHOLD_MS:
+                        logger.warning(
+                            "SLOW REQUEST [%s]: %s %s took %.0fms (status %d)",
+                            request_id, method, path, duration_ms,
+                            message.get("status", 200),
+                        )
             await send(message)
 
         try:
             await self.app(scope, receive, timed_send)
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
-            health_metrics.record_request("unhandled", duration_ms, success=False)
+            if not is_fast_path:
+                health_metrics.record_request("unhandled", duration_ms, success=False)
             logger.error("Unhandled middleware exception [%s] on %s %s: %s", request_id, method, path, str(e))
             # Return 500 instead of crashing
             response = JSONResponse(
@@ -592,26 +659,110 @@ async def root():
 async def health_check():
     """
     Comprehensive health check — verifies all subsystems.
+    Uses lock-free caching to prevent serialization bottleneck under load.
+    DB check runs in a thread pool to avoid blocking the async event loop.
     """
+    global _HEALTH_REFRESHING
     from app.db.mongodb import get_mongodb
     from app.services.ai_service import ai_hub
 
-    db_status = check_db_health()
-    mongo_status = "connected" if get_mongodb() is not None else "disconnected"
+    now = time.monotonic()
+    cached_payload = _HEALTH_CACHE.get("payload")
+    expires_at = float(_HEALTH_CACHE.get("expires_at", 0.0))
 
-    overall = "healthy"
-    if db_status.get("status") != "healthy":
-        overall = "degraded"
-    if db_status.get("status") == "unhealthy" and mongo_status == "disconnected":
-        overall = "critical"
+    # Fast path: return cached payload if still valid
+    if cached_payload is not None and now < expires_at:
+        return cached_payload
 
-    return {
-        "status": overall,
-        "database": db_status,
-        "mongodb": {"status": mongo_status},
-        "ai_providers": ai_hub.get_provider_status(),
-        "system_metrics": health_metrics.get_summary(),
-    }
+    # Prevent thundering herd: only one coroutine refreshes at a time.
+    # Others get the stale (but valid) cached response instead of blocking.
+    if _HEALTH_REFRESHING:
+        if cached_payload is not None:
+            return cached_payload
+        return {"status": "starting", "database": {"status": "checking"}}
+
+    _HEALTH_REFRESHING = True
+    try:
+        # Run synchronous DB health check in thread pool to avoid blocking event loop
+        db_status = await asyncio.to_thread(check_db_health)
+        mongo_status = "connected" if get_mongodb() is not None else "disconnected"
+
+        overall = "healthy"
+        if db_status.get("status") != "healthy":
+            overall = "degraded"
+        if db_status.get("status") == "unhealthy" and mongo_status == "disconnected":
+            overall = "critical"
+
+        payload = {
+            "status": overall,
+            "database": db_status,
+            "mongodb": {"status": mongo_status},
+            "ai_providers": ai_hub.get_provider_status(),
+            "system_metrics": health_metrics.get_summary(),
+        }
+        ttl_seconds = max(1, int(settings.HEALTH_CACHE_TTL_SECONDS))
+        _HEALTH_CACHE["payload"] = payload
+        _HEALTH_CACHE["expires_at"] = time.monotonic() + ttl_seconds
+        return payload
+    except Exception as e:
+        logger.warning("Health check refresh failed: %s", str(e))
+        if cached_payload is not None:
+            return cached_payload
+        return {"status": "degraded", "error": "health check temporarily unavailable"}
+    finally:
+        _HEALTH_REFRESHING = False
+
+
+@app.get("/health/live")
+async def health_live():
+    """
+    Ultra-light liveness endpoint.
+    Does not touch DB/network dependencies and is safe under very high QPS.
+    """
+    return {"status": "alive"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """
+    Readiness endpoint for load balancers/orchestrators.
+    Returns 200 when critical dependencies are ready, 503 otherwise.
+    Lock-free with thundering-herd protection.
+    """
+    global _READY_REFRESHING
+    now = time.monotonic()
+    cached_payload = _READY_CACHE.get("payload")
+    cached_status = int(_READY_CACHE.get("status_code", 200))
+    if cached_payload is not None and now < float(_READY_CACHE.get("expires_at", 0.0)):
+        return JSONResponse(status_code=cached_status, content=cached_payload)
+
+    if _READY_REFRESHING:
+        if cached_payload is not None:
+            return JSONResponse(status_code=cached_status, content=cached_payload)
+        return JSONResponse(status_code=200, content={"status": "checking"})
+
+    _READY_REFRESHING = True
+    try:
+        db_status = await asyncio.to_thread(check_db_health)
+        db_healthy = db_status.get("status") == "healthy"
+        status_code = 200 if db_healthy else 503
+        payload = {
+            "status": "ready" if db_healthy else "not_ready",
+            "database": {"status": db_status.get("status", "unknown")},
+        }
+
+        ttl_seconds = max(1, min(int(settings.HEALTH_CACHE_TTL_SECONDS), 10))
+        _READY_CACHE["payload"] = payload
+        _READY_CACHE["status_code"] = status_code
+        _READY_CACHE["expires_at"] = time.monotonic() + ttl_seconds
+        return JSONResponse(status_code=status_code, content=payload)
+    except Exception as e:
+        logger.warning("Ready check failed: %s", str(e))
+        if cached_payload is not None:
+            return JSONResponse(status_code=cached_status, content=cached_payload)
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
+    finally:
+        _READY_REFRESHING = False
 
 
 @app.get("/health/detailed")

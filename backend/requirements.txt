@@ -21,3 +21,5 @@ apscheduler
 cloudinary
 pymongo
 dnspython
+redis
+gunicorn

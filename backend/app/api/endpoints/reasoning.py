@@ -6,7 +6,8 @@ import json
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from app.api.deps import get_current_user_optional, require_admin
 from app.models.user import User
@@ -25,9 +26,15 @@ from app.services.reasoning_service import (
     MIN_QUESTIONS_PER_TOPIC,
     MIN_QUESTIONS_PER_COMPANY,
 )
+from app.core.response_cache import cache_delete_prefix, cache_get_json, cache_set_json
+from app.services.job_queue import get_job, submit_job
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _invalidate_reasoning_read_cache() -> None:
+    await cache_delete_prefix("resp:reasoning:")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -70,13 +77,25 @@ class BulkInsertRequest(BaseModel):
 @router.get("/topics")
 async def list_topics():
     """List all available reasoning topics with question counts."""
-    return {"topics": get_topics()}
+    cache_key = "resp:reasoning:topics"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+    payload = {"topics": get_topics()}
+    await cache_set_json(cache_key, payload, ttl_seconds=30)
+    return payload
 
 
 @router.get("/companies")
 async def list_companies():
     """List all companies with question counts."""
-    return {"companies": get_companies()}
+    cache_key = "resp:reasoning:companies"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+    payload = {"companies": get_companies()}
+    await cache_set_json(cache_key, payload, ttl_seconds=30)
+    return payload
 
 
 @router.get("/questions/topic/{topic}")
@@ -93,6 +112,11 @@ async def get_topic_questions(
     2. If empty → on-demand populate (AI generate + persist)
     3. Fallback to static pool
     """
+    cache_key = f"resp:reasoning:topic:{topic}:difficulty={difficulty or ''}:limit={limit}:skip={skip}:mode={mode}"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     db_questions = get_questions_by_topic(topic, difficulty, limit, skip)
 
     if not db_questions:
@@ -110,12 +134,14 @@ async def get_topic_questions(
         if "id" not in q:
             q["id"] = f"{topic}-{i}-{hash(q.get('question', '')) % 100000}"
 
-    return {
+    payload = {
         "topic": topic,
         "mode": mode,
         "questions": db_questions,
         "total": len(db_questions),
     }
+    await cache_set_json(cache_key, payload, ttl_seconds=15)
+    return payload
 
 
 @router.get("/questions/company/{company}")
@@ -125,6 +151,11 @@ async def get_company_questions(
     skip: int = 0,
 ):
     """Get questions for a specific company (DB → on-demand populate → fallback)."""
+    cache_key = f"resp:reasoning:company:{company}:limit={limit}:skip={skip}"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     db_questions = get_questions_by_company(company, limit, skip)
 
     if not db_questions:
@@ -140,11 +171,13 @@ async def get_company_questions(
         if "id" not in q:
             q["id"] = f"{company}-{i}-{hash(q.get('question', '')) % 100000}"
 
-    return {
+    payload = {
         "company": company,
         "questions": db_questions,
         "total": len(db_questions),
     }
+    await cache_set_json(cache_key, payload, ttl_seconds=15)
+    return payload
 
 
 @router.get("/stats")
@@ -164,11 +197,20 @@ async def get_stats():
     }
 
 
+@router.get("/jobs/{job_id}")
+async def get_reasoning_job_status(job_id: str, _: User = Depends(require_admin)):
+    job = await get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 @router.post("/admin/populate-all")
 async def admin_populate_all(_: User = Depends(require_admin)):
     """Admin: Trigger manual population of all topics and companies in the background."""
     try:
         job = start_auto_populate_job()
+        await _invalidate_reasoning_read_cache()
         status = "running" if job.get("running") else job.get("status", "queued")
         return {"status": status, "job": job}
     except Exception:
@@ -182,8 +224,41 @@ async def admin_populate_status(_: User = Depends(require_admin)):
 
 
 @router.post("/generate")
-async def generate_questions(request: GenerateQuestionsRequest):
+async def generate_questions(
+    request: GenerateQuestionsRequest,
+    async_mode: bool = Query(False, description="If true, execute in background and return job_id"),
+):
     """Generate new AI questions for a topic."""
+    if async_mode:
+        async def _work():
+            questions = await generate_questions_ai(
+                topic=request.topic,
+                difficulty=request.difficulty,
+                count=request.count,
+                company=request.company,
+            )
+            for i, q in enumerate(questions):
+                if "id" not in q:
+                    q["id"] = f"ai-{request.topic}-{i}-{hash(q.get('question', '')) % 100000}"
+            return {
+                "questions": questions,
+                "count": len(questions),
+                "topic": request.topic,
+                "difficulty": request.difficulty,
+            }
+
+        job_id = await submit_job(
+            "reasoning.generate",
+            factory=_work,
+            payload={
+                "topic": request.topic,
+                "difficulty": request.difficulty,
+                "count": request.count,
+                "company": request.company,
+            },
+        )
+        return JSONResponse(status_code=202, content={"job_id": job_id, "status": "queued"})
+
     questions = await generate_questions_ai(
         topic=request.topic,
         difficulty=request.difficulty,
@@ -261,6 +336,7 @@ async def bulk_insert(request: BulkInsertRequest, _: User = Depends(require_admi
             q["company"] = request.company
 
     count = insert_questions(questions)
+    await _invalidate_reasoning_read_cache()
     return {"inserted": count, "message": f"Successfully inserted {count} questions"}
 
 
@@ -316,6 +392,7 @@ async def upload_and_extract(
     inserted = 0
     if questions:
         inserted = insert_questions(questions)
+        await _invalidate_reasoning_read_cache()
 
     return {
         "extracted": len(questions),

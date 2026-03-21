@@ -13,15 +13,20 @@ import asyncio
 import functools
 import logging
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, TypeVar
+from typing import Any, Callable, Deque, Dict, List, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+try:
+    import redis.asyncio as redis_async
+except Exception:  # pragma: no cover - optional dependency at runtime
+    redis_async = None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -238,12 +243,17 @@ class RateLimiter:
     name: str
     max_calls: int = 60
     window_seconds: float = 60.0
-    _call_timestamps: List[float] = field(default_factory=list, init=False)
+    _call_timestamps: Deque[float] = field(default_factory=deque, init=False)
+
+    def _evict_expired(self, cutoff: float) -> None:
+        # Use deque popleft for amortized O(1) eviction under high request rates.
+        while self._call_timestamps and self._call_timestamps[0] <= cutoff:
+            self._call_timestamps.popleft()
 
     def allow(self) -> bool:
         now = time.monotonic()
         cutoff = now - self.window_seconds
-        self._call_timestamps = [t for t in self._call_timestamps if t > cutoff]
+        self._evict_expired(cutoff)
         if len(self._call_timestamps) >= self.max_calls:
             return False
         self._call_timestamps.append(now)
@@ -252,11 +262,16 @@ class RateLimiter:
     def remaining(self) -> int:
         now = time.monotonic()
         cutoff = now - self.window_seconds
-        active = sum(1 for t in self._call_timestamps if t > cutoff)
-        return max(0, self.max_calls - active)
+        self._evict_expired(cutoff)
+        return max(0, self.max_calls - len(self._call_timestamps))
 
 
 _rate_limiters: Dict[str, RateLimiter] = {}
+_rate_limiters_last_seen: Dict[str, float] = {}
+_RATE_LIMITER_IDLE_EVICT_SECONDS = 5 * 60
+_RATE_LIMITER_MAX_KEYS = 50000
+_redis_rate_client = None
+_redis_rate_url: Optional[str] = None
 
 
 def get_rate_limiter(
@@ -264,11 +279,82 @@ def get_rate_limiter(
     max_calls: int = 60,
     window_seconds: float = 60.0,
 ) -> RateLimiter:
+    now = time.monotonic()
+    # Bound memory growth when many unique limiter keys are seen (e.g. many unique IPs).
+    if len(_rate_limiters) > _RATE_LIMITER_MAX_KEYS:
+        stale_cutoff = now - _RATE_LIMITER_IDLE_EVICT_SECONDS
+        stale_keys = [k for k, ts in _rate_limiters_last_seen.items() if ts < stale_cutoff]
+        for k in stale_keys:
+            _rate_limiters.pop(k, None)
+            _rate_limiters_last_seen.pop(k, None)
     if name not in _rate_limiters:
         _rate_limiters[name] = RateLimiter(
             name=name, max_calls=max_calls, window_seconds=window_seconds
         )
+    _rate_limiters_last_seen[name] = now
     return _rate_limiters[name]
+
+
+async def _get_redis_rate_client(redis_url: str):
+    global _redis_rate_client, _redis_rate_url
+    if not redis_url or redis_async is None:
+        return None
+    if _redis_rate_client is not None and _redis_rate_url == redis_url:
+        return _redis_rate_client
+    try:
+        client = redis_async.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+            socket_connect_timeout=1,
+            socket_timeout=1,
+        )
+        await client.ping()
+        _redis_rate_client = client
+        _redis_rate_url = redis_url
+        return _redis_rate_client
+    except Exception:
+        logger.warning("Redis rate limiter unavailable; falling back to in-memory limiter.")
+        _redis_rate_client = None
+        _redis_rate_url = redis_url
+        return None
+
+
+async def allow_rate_limit(
+    name: str,
+    max_calls: int,
+    window_seconds: float,
+    backend: str = "auto",
+    redis_url: str = "",
+) -> bool:
+    """
+    Check rate-limit allowance using configured backend.
+    - redis: distributed fixed-window counter in Redis
+    - memory: per-process in-memory limiter
+    - auto: try redis, fallback to memory
+    """
+    backend_mode = (backend or "auto").strip().lower()
+    use_redis = backend_mode in ("redis", "auto")
+
+    if use_redis:
+        client = await _get_redis_rate_client(redis_url)
+        if client is not None:
+            try:
+                # Fixed-window bucket for stable distributed throttling.
+                window = max(1, int(window_seconds))
+                bucket = int(time.time() // window)
+                key = f"rl:{name}:{bucket}"
+                current = await client.incr(key)
+                if current == 1:
+                    await client.expire(key, window + 2)
+                return int(current) <= int(max_calls)
+            except Exception:
+                if backend_mode == "redis":
+                    return True  # fail-open for availability
+
+    # Memory backend (or fallback from auto/redis)
+    limiter = get_rate_limiter(name, max_calls=max_calls, window_seconds=window_seconds)
+    return limiter.allow()
 
 
 # ═══════════════════════════════════════════════════════════════

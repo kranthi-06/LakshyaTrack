@@ -1,20 +1,103 @@
 version: '3.8'
 
 services:
+  # ── Redis (required for distributed rate limiting, caching, job queue) ──
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # ── Backend (FastAPI + Gunicorn + Uvicorn workers) ──
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      target: production
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
-    volumes:
-      - ./backend:/app
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_BACKEND=redis
+      - JOB_QUEUE_BACKEND=redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health/live"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
 
+  # ── Frontend (Vite dev server — production should serve static build via Nginx) ──
   frontend:
     image: node:18-alpine
     working_dir: /app
+    restart: unless-stopped
     volumes:
       - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
     ports:
       - "5173:5173"
+    environment:
+      - VITE_API_URL=http://backend:8000/api/v1
     command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  # ── Nginx Reverse Proxy (production-grade load balancing) ──
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    profiles:
+      - production
+
+volumes:
+  redis_data:
+  frontend_node_modules:

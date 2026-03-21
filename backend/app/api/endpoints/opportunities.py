@@ -8,14 +8,22 @@ import base64
 import json
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import opportunity_service
+from app.services.job_queue import get_job, submit_job
+from app.core.response_cache import cache_delete_prefix, cache_get_json, cache_set_json
+from app.db.session import SessionLocal
 
 router = APIRouter()
 import logging
 logger = logging.getLogger(__name__)
+
+
+async def _invalidate_opportunities_read_cache() -> None:
+    await cache_delete_prefix("resp:opps:")
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -62,6 +70,15 @@ async def browse_opportunities(
     Browse opportunities with optional filters and pagination.
     Supports filtering by category, skill, location, and text search.
     """
+    cache_key = (
+        f"resp:opps:browse:"
+        f"cat={category or ''}|skill={skill or ''}|loc={location or ''}|search={search or ''}|"
+        f"cursor={cursor or ''}|page={page}|per={per_page}"
+    )
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     cursor_created_at = None
     cursor_id = None
     if cursor:
@@ -88,7 +105,19 @@ async def browse_opportunities(
         result["next_cursor"] = base64.urlsafe_b64encode(
             json.dumps(result["next_cursor"]).encode("utf-8")
         ).decode("utf-8")
+    await cache_set_json(cache_key, result, ttl_seconds=20)
     return result
+
+
+@router.get("/jobs/{job_id}")
+async def get_opportunity_job_status(
+    job_id: str,
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    job = await get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @router.get("/filters")
@@ -97,12 +126,19 @@ async def get_filter_options(
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     """Get available filter options (locations, categories, top skills)."""
-    return opportunity_service.get_filter_options(db)
+    cache_key = "resp:opps:filters"
+    cached = await cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+    payload = opportunity_service.get_filter_options(db)
+    await cache_set_json(cache_key, payload, ttl_seconds=60)
+    return payload
 
 
 @router.post("/discover")
 async def discover_opportunities(
     request: OpportunitySearchRequest,
+    async_mode: bool = Query(False, description="If true, execute in background and return job_id"),
     db: Session = Depends(deps.get_db),
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
@@ -111,12 +147,39 @@ async def discover_opportunities(
     Generates and saves opportunities matched to user's roadmap/skills.
     """
     try:
+        if async_mode:
+            async def _work():
+                async_db = SessionLocal()
+                try:
+                    opportunities = await opportunity_service.generate_opportunities(
+                        target_role=request.target_role,
+                        skills=request.skills,
+                        level=request.level,
+                        db=async_db,
+                    )
+                finally:
+                    async_db.close()
+                await _invalidate_opportunities_read_cache()
+                return {"opportunities": opportunities, "count": len(opportunities)}
+
+            job_id = await submit_job(
+                "opportunities.discover",
+                factory=_work,
+                payload={
+                    "target_role": request.target_role,
+                    "skills": request.skills,
+                    "level": request.level,
+                },
+            )
+            return JSONResponse(status_code=202, content={"job_id": job_id, "status": "queued"})
+
         opportunities = await opportunity_service.generate_opportunities(
             target_role=request.target_role,
             skills=request.skills,
             level=request.level,
             db=db
         )
+        await _invalidate_opportunities_read_cache()
         return {"opportunities": opportunities, "count": len(opportunities)}
     except Exception as e:
         logger.exception("Failed to discover opportunities: %s", str(e))
@@ -146,6 +209,7 @@ async def get_matched_opportunities(
 @router.post("/recommend")
 async def get_recommendations(
     request: OpportunityRecommendRequest,
+    async_mode: bool = Query(False, description="If true, execute in background and return job_id"),
     db: Session = Depends(deps.get_db),
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
@@ -154,6 +218,31 @@ async def get_recommendations(
     Combines DB matches with freshly generated opportunities.
     """
     try:
+        if async_mode:
+            async def _work():
+                async_db = SessionLocal()
+                try:
+                    recommendations = await opportunity_service.get_ai_recommendations(
+                        user_skills=request.skills,
+                        user_role=request.target_role,
+                        db=async_db,
+                        limit=request.limit,
+                    )
+                finally:
+                    async_db.close()
+                return {"opportunities": recommendations, "count": len(recommendations)}
+
+            job_id = await submit_job(
+                "opportunities.recommend",
+                factory=_work,
+                payload={
+                    "skills": request.skills,
+                    "target_role": request.target_role,
+                    "limit": request.limit,
+                },
+            )
+            return JSONResponse(status_code=202, content={"job_id": job_id, "status": "queued"})
+
         recommendations = await opportunity_service.get_ai_recommendations(
             user_skills=request.skills,
             user_role=request.target_role,
@@ -200,6 +289,7 @@ async def live_search(
 
 @router.post("/fetch-external")
 async def fetch_external_sources(
+    async_mode: bool = Query(False, description="If true, execute in background and return job_id"),
     db: Session = Depends(deps.get_db),
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
@@ -208,8 +298,31 @@ async def fetch_external_sources(
     Can be used by admin or the scheduler.
     """
     try:
+        if async_mode:
+            async def _work():
+                async_db = SessionLocal()
+                try:
+                    rss_count = await opportunity_service.fetch_rss_opportunities(async_db)
+                    api_count = await opportunity_service.fetch_public_api_opportunities(async_db)
+                finally:
+                    async_db.close()
+                await _invalidate_opportunities_read_cache()
+                return {
+                    "rss_fetched": rss_count,
+                    "api_fetched": api_count,
+                    "total_new": rss_count + api_count,
+                }
+
+            job_id = await submit_job(
+                "opportunities.fetch_external",
+                factory=_work,
+                payload={},
+            )
+            return JSONResponse(status_code=202, content={"job_id": job_id, "status": "queued"})
+
         rss_count = await opportunity_service.fetch_rss_opportunities(db)
         api_count = await opportunity_service.fetch_public_api_opportunities(db)
+        await _invalidate_opportunities_read_cache()
         return {
             "rss_fetched": rss_count,
             "api_fetched": api_count,
@@ -228,4 +341,5 @@ async def cleanup_expired(
     """Mark expired opportunities and remove duplicates."""
     expired_count = opportunity_service.cleanup_expired_opportunities(db)
     dupe_count = opportunity_service.remove_duplicates(db)
+    await _invalidate_opportunities_read_cache()
     return {"expired_count": expired_count, "duplicates_removed": dupe_count}

@@ -14,6 +14,7 @@ from app.schemas.user import TokenData
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/access-token")
 LAST_ACTIVE_WRITE_INTERVAL = timedelta(minutes=10)
+_LAST_ACTIVE_MAX_ENTRIES = 10_000  # Bound memory even with millions of users
 _last_active_flush: dict[str, datetime] = {}
 
 def _get_black_admin_emails() -> list:
@@ -146,6 +147,11 @@ def get_current_user(
             db.add(user)
             db.commit()
             _last_active_flush[user_key] = now
+            # Evict oldest entries when dict grows too large (millions of users)
+            if len(_last_active_flush) > _LAST_ACTIVE_MAX_ENTRIES:
+                sorted_keys = sorted(_last_active_flush, key=_last_active_flush.get)  # type: ignore
+                for k in sorted_keys[:len(sorted_keys) // 2]:
+                    _last_active_flush.pop(k, None)
     except Exception:
         db.rollback()
     

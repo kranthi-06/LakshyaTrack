@@ -20,3 +20,4 @@ apscheduler
 cloudinary
 pymongo
 dnspython
+redis[hiredis]

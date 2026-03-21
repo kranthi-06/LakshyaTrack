@@ -1,12 +1,13 @@
 """
 Database session layer — production-grade with connection pooling,
-health monitoring, and automatic reconnection.
+health monitoring, automatic reconnection, and pool pre-warming.
 """
 import logging
+import time
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,10 +28,10 @@ if _is_sqlite:
 else:
     # PostgreSQL connection pool tuning
     _engine_kwargs.update({
-        "pool_size": 10,          # Maintained connections
-        "max_overflow": 20,       # Extra connections under load
-        "pool_timeout": 30,       # Wait for a connection (seconds)
-        "pool_recycle": 1800,     # Recycle connections every 30 min
+        "pool_size": settings.DB_POOL_SIZE,                  # Maintained connections
+        "max_overflow": settings.DB_MAX_OVERFLOW,            # Extra connections under load
+        "pool_timeout": settings.DB_POOL_TIMEOUT_SECONDS,    # Wait for a connection (seconds)
+        "pool_recycle": settings.DB_POOL_RECYCLE_SECONDS,    # Recycle connections
         "pool_pre_ping": True,    # Verify connections before use
         "echo": False,
     })
@@ -40,20 +41,6 @@ engine = create_engine(SQLALCHEMY_DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-# ── Connection event hooks for monitoring ──────────────────────
-@event.listens_for(engine, "connect")
-def _on_connect(dbapi_conn, connection_record):
-    logger.debug("DB connection established (pool checkout).")
-
-
-@event.listens_for(engine, "checkout")
-def _on_checkout(dbapi_conn, connection_record, connection_proxy):
-    pass  # Could add metrics tracking here
-
-
-@event.listens_for(engine, "checkin")
-def _on_checkin(dbapi_conn, connection_record):
-    pass  # Connection returned to pool
 
 
 # ── Safe database session helpers ──────────────────────────────
@@ -93,14 +80,17 @@ def get_db_session() -> Generator[Session, None, None]:
 def check_db_health() -> dict:
     """
     Quick health check — verifies database connectivity.
-    Returns a status dict.
+    Returns a status dict with pool statistics.
     """
     try:
+        start = time.monotonic()
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+        latency_ms = (time.monotonic() - start) * 1000
         pool = engine.pool
         return {
             "status": "healthy",
+            "latency_ms": round(latency_ms, 1),
             "pool_size": pool.size() if hasattr(pool, 'size') else "N/A",
             "checked_in": pool.checkedin() if hasattr(pool, 'checkedin') else "N/A",
             "checked_out": pool.checkedout() if hasattr(pool, 'checkedout') else "N/A",
@@ -114,16 +104,26 @@ def check_db_health() -> dict:
         }
 
 
-def safe_db_execute(db: Session, operation_name: str = "db_operation"):
+def safe_db_execute(db: Session, func, *args, operation_name: str = "db_operation", max_retries: int = 2, **kwargs):
     """
-    Decorator/context for safe database operations with automatic retry
-    on transient connection errors.
+    Execute a database operation with automatic retry on transient errors.
+    
+    Usage:
+        result = safe_db_execute(db, my_query_func, arg1, arg2, operation_name="fetch_user")
+    
+    Args:
+        db: SQLAlchemy session
+        func: Callable to execute
+        operation_name: Name for logging
+        max_retries: Number of retry attempts on transient errors
     """
-    max_retries = 2
+    last_exception = None
     for attempt in range(max_retries + 1):
         try:
-            return
+            result = func(db, *args, **kwargs)
+            return result
         except OperationalError as e:
+            last_exception = e
             if attempt < max_retries:
                 logger.warning(
                     "DB OperationalError on %s (attempt %d/%d): %s",
@@ -133,6 +133,7 @@ def safe_db_execute(db: Session, operation_name: str = "db_operation"):
                 continue
             raise
         except DBAPIError as e:
+            last_exception = e
             if e.connection_invalidated and attempt < max_retries:
                 logger.warning(
                     "DB connection invalidated on %s (attempt %d/%d): %s",
@@ -141,3 +142,29 @@ def safe_db_execute(db: Session, operation_name: str = "db_operation"):
                 db.rollback()
                 continue
             raise
+    raise last_exception  # Should not reach here
+
+
+def prewarm_pool(min_connections: int = 3) -> None:
+    """
+    Pre-warm the connection pool by checking out and returning connections.
+    Call once at startup to avoid cold-start latency on the first real request.
+    """
+    if _is_sqlite:
+        return
+    connections = []
+    target = min(min_connections, settings.DB_POOL_SIZE)
+    try:
+        for _ in range(target):
+            conn = engine.connect()
+            conn.execute(text("SELECT 1"))
+            connections.append(conn)
+        logger.info("Connection pool pre-warmed with %d connections.", target)
+    except Exception as e:
+        logger.warning("Pool pre-warm failed (non-fatal): %s", str(e))
+    finally:
+        for conn in connections:
+            try:
+                conn.close()
+            except Exception:
+                pass
