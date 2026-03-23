@@ -205,6 +205,32 @@ async def auto_populate_reasoning_job():
         )
 
 
+async def reset_usage_counters_job():
+    """Bulk-reset weekly and monthly usage counters for all users."""
+    logger.info("Running job: reset_usage_counters_job")
+    _log_job_event("reset_usage_counters_job", "started")
+    db: Session = SessionLocal()
+    try:
+        from app.services.usage_service import bulk_reset_weekly, bulk_reset_monthly
+        weekly = bulk_reset_weekly(db)
+        monthly = bulk_reset_monthly(db)
+        logger.info(f"Usage reset: {weekly} weekly, {monthly} monthly.")
+        _log_job_event(
+            "reset_usage_counters_job",
+            "success",
+            {"weekly_reset": weekly, "monthly_reset": monthly},
+        )
+    except Exception as e:
+        logger.error(f"Error in reset_usage_counters_job: {e}")
+        _log_job_event(
+            "reset_usage_counters_job",
+            "failed",
+            {"error": str(e)},
+        )
+    finally:
+        db.close()
+
+
 def setup_background_jobs():
     """Initialize and start the background scheduler."""
     scheduler = AsyncIOScheduler()
@@ -263,6 +289,15 @@ def setup_background_jobs():
         replace_existing=True
     )
 
+    # 7. Every 6 hours: Reset usage counters (weekly + monthly)
+    scheduler.add_job(
+        reset_usage_counters_job,
+        IntervalTrigger(hours=6),
+        id="reset_usage_counters",
+        name="Reset usage counters every 6 hours",
+        replace_existing=True
+    )
+
     scheduler.start()
-    logger.info("Background scheduler started with opportunity + subscription + reasoning cycles.")
+    logger.info("Background scheduler started with opportunity + subscription + reasoning + usage-reset cycles.")
     return scheduler

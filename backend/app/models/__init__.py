@@ -6,3 +6,4 @@ from .subscription import (
     SubscriptionPlan, MicroPlan, UserSubscription,
     UserMicroPurchase, Coupon, CouponUsage, PaymentTransaction,
 )
+from .usage import UserUsage

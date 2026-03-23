@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SubscriptionProvider } from './context/SubscriptionContext';
+import { UsageProvider } from './context/UsageContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
@@ -172,6 +173,7 @@ function App() {
       <AuthProvider>
         <AuthHydrationGate>
         <SubscriptionProvider>
+        <UsageProvider>
         <Suspense fallback={<AuthLoadingScreen />}>
           <OAuthCodeInterceptor>
           <Routes>
@@ -218,6 +220,7 @@ function App() {
           </Routes>
           </OAuthCodeInterceptor>
         </Suspense>
+        </UsageProvider>
         </SubscriptionProvider>
         </AuthHydrationGate>
       </AuthProvider>

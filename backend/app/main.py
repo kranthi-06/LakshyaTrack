@@ -54,6 +54,7 @@ from app.models.subscription import (
     SubscriptionPlan, MicroPlan, UserSubscription,
     UserMicroPurchase, Coupon, CouponUsage, PaymentTransaction,
 )
+from app.models.usage import UserUsage
 from app.services import document_store_service
 
 # Configure structured logging early so startup failures appear in logs.

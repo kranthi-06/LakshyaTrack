@@ -3,21 +3,37 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
     Crown, Check, Zap, Star, ArrowRight, Sparkles,
-    Clock, Shield, Rocket, ChevronLeft, Tag, X,
+    Clock, Shield, Rocket, X, Tag, Lock,
+    FileText, Mic, Map, Edit3, Infinity,
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
+import { useUsage } from '../context/UsageContext';
 import {
     getPlans, getMicroPlans, checkout, verifyPayment, applyCoupon,
     SubscriptionPlan, MicroPlan,
 } from '../services/subscription';
+import { getPlanLimits } from '../services/usage';
 
-const STAGE_COLORS: Record<number, { gradient: string; accent: string; glow: string; text: string; light: string }> = {
+// ══════════════════════════════════════════════════════════════
+// CONSTANTS & CONFIG
+// ══════════════════════════════════════════════════════════════
+
+const STAGE_COLORS: Record<number, { gradient: string; accent: string; glow: string; text: string; light: string; border: string }> = {
+    0: {
+        gradient: 'from-slate-400 to-slate-500',
+        accent: '#94A3B8',
+        glow: 'shadow-slate-500/10',
+        text: 'text-slate-600 dark:text-slate-400',
+        light: 'bg-slate-50 dark:bg-slate-500/10',
+        border: 'border-slate-200/80 dark:border-slate-800/60',
+    },
     1: {
         gradient: 'from-blue-500 to-cyan-400',
         accent: '#3B82F6',
         glow: 'shadow-blue-500/20',
         text: 'text-blue-600 dark:text-blue-400',
         light: 'bg-blue-50 dark:bg-blue-500/10',
+        border: 'border-blue-200/50 dark:border-blue-500/20',
     },
     2: {
         gradient: 'from-violet-500 to-purple-400',
@@ -25,6 +41,7 @@ const STAGE_COLORS: Record<number, { gradient: string; accent: string; glow: str
         glow: 'shadow-violet-500/20',
         text: 'text-violet-600 dark:text-violet-400',
         light: 'bg-violet-50 dark:bg-violet-500/10',
+        border: 'border-violet-200/50 dark:border-violet-500/20',
     },
     3: {
         gradient: 'from-amber-500 to-orange-400',
@@ -32,6 +49,7 @@ const STAGE_COLORS: Record<number, { gradient: string; accent: string; glow: str
         glow: 'shadow-amber-500/20',
         text: 'text-amber-600 dark:text-amber-400',
         light: 'bg-amber-50 dark:bg-amber-500/10',
+        border: 'border-amber-200/50 dark:border-amber-500/20',
     },
 };
 
@@ -42,23 +60,55 @@ const STAGE_NAMES: Record<number, string> = {
     3: 'Ultimate',
 };
 
+const STAGE_DESCRIPTIONS: Record<number, string> = {
+    0: 'Get started with basic features',
+    1: 'Perfect for beginners',
+    2: 'For serious career builders',
+    3: 'Unlimited access to everything',
+};
+
 const STAGE_ICONS: Record<number, any> = {
+    0: Star,
     1: Zap,
     2: Shield,
     3: Rocket,
 };
 
+interface LimitDefinition {
+    resume_count: number;
+    interview_count_weekly: number;
+    plan_count: number;
+    resume_edit_monthly: number;
+}
+
+const LIMIT_LABELS: { key: keyof LimitDefinition; label: string; icon: any; unit: string }[] = [
+    { key: 'resume_count', label: 'Resume Storage', icon: FileText, unit: 'resumes' },
+    { key: 'interview_count_weekly', label: 'Weekly Interviews', icon: Mic, unit: '/week' },
+    { key: 'plan_count', label: 'Roadmaps', icon: Map, unit: 'roadmaps' },
+    { key: 'resume_edit_monthly', label: 'Monthly Edits', icon: Edit3, unit: '/month' },
+];
+
 const FREE_FEATURES = [
     'Dashboard access',
     'Resume creation preview',
     'Limited quiz & analytics',
+    '1 resume storage',
+    '2 interviews/week',
+    '1 roadmap',
+    '3 resume edits/month',
 ];
+
+// ══════════════════════════════════════════════════════════════
+// COMPONENT
+// ══════════════════════════════════════════════════════════════
 
 export default function Plans() {
     const navigate = useNavigate();
     const { stage: currentStage, refreshAccess } = useSubscription();
+    const { usage, refreshUsage } = useUsage();
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
     const [microPlans, setMicroPlans] = useState<MicroPlan[]>([]);
+    const [planLimits, setPlanLimits] = useState<Record<string, LimitDefinition> | null>(null);
     const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
     const [loading, setLoading] = useState(true);
     const [showCheckout, setShowCheckout] = useState(false);
@@ -67,16 +117,19 @@ export default function Plans() {
     const [couponResult, setCouponResult] = useState<{ valid: boolean; discount: number; final_amount: number; message: string } | null>(null);
     const [processing, setProcessing] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [showComparison, setShowComparison] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [planData, microData] = await Promise.all([
+                const [planData, microData, limitData] = await Promise.all([
                     getPlans(),
                     getMicroPlans(),
+                    getPlanLimits(),
                 ]);
                 setPlans(planData);
                 setMicroPlans(microData);
+                setPlanLimits(limitData.plans as Record<string, LimitDefinition>);
             } catch (err) {
                 console.error('Failed to load plans:', err);
             } finally {
@@ -139,7 +192,7 @@ export default function Plans() {
 
             if (result.success) {
                 setSuccess(true);
-                await refreshAccess();
+                await Promise.all([refreshAccess(), refreshUsage()]);
                 setTimeout(() => {
                     navigate('/dashboard');
                 }, 2000);
@@ -154,13 +207,16 @@ export default function Plans() {
     const fadeIn = (i: number) => ({
         initial: { opacity: 0, y: 16 },
         animate: { opacity: 1, y: 0 },
-        transition: { delay: i * 0.1, duration: 0.5 },
+        transition: { delay: i * 0.08, duration: 0.5 },
     });
 
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <div className="w-8 h-8 border-3 border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-8 h-8 border-3 border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Loading plans...</p>
+                </div>
             </div>
         );
     }
@@ -181,9 +237,69 @@ export default function Plans() {
                         </span>
                     </h1>
                     <p className="text-slate-500 dark:text-slate-400 mt-3 text-base font-medium max-w-xl mx-auto">
-                        Unlock premium features to accelerate your career journey
+                        Unlock premium features to accelerate your career journey.
+                        All limits are enforced securely — upgrade anytime.
                     </p>
                 </motion.div>
+
+                {/* ── Current Usage Summary ── */}
+                {usage && !usage.is_admin && (
+                    <motion.div {...fadeIn(0.5)} className="mb-8">
+                        <div className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                    Your Current Usage
+                                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#6C63FF]/10 text-[#6C63FF]">
+                                        {STAGE_NAMES[usage.stage]} Plan
+                                    </span>
+                                </h3>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                {LIMIT_LABELS.map(({ key, label, icon: Icon, unit }) => {
+                                    const counter = usage.counters[key];
+                                    if (!counter) return null;
+                                    const isUnlimited = counter.limit === -1;
+                                    const pct = isUnlimited ? 0 : Math.min(100, (counter.current / counter.limit) * 100);
+                                    const isExceeded = !isUnlimited && counter.exceeded;
+
+                                    return (
+                                        <div key={key} className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Icon className="w-3.5 h-3.5 text-slate-400" />
+                                                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                    {label}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-baseline gap-1 mb-2">
+                                                <span className={`text-lg font-bold ${isExceeded ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
+                                                    {counter.current}
+                                                </span>
+                                                <span className="text-xs text-slate-400">
+                                                    / {isUnlimited ? '∞' : counter.limit} {unit}
+                                                </span>
+                                            </div>
+                                            <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all duration-500 ${
+                                                        isExceeded ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'
+                                                    }`}
+                                                    style={{ width: isUnlimited ? '0%' : `${pct}%` }}
+                                                />
+                                            </div>
+                                            {isExceeded && (
+                                                <div className="flex items-center gap-1 mt-1.5">
+                                                    <Lock className="w-3 h-3 text-rose-400" />
+                                                    <span className="text-[10px] font-semibold text-rose-500">Limit reached</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
 
                 {/* ── Billing Toggle ── */}
                 <motion.div {...fadeIn(1)} className="flex justify-center mb-10">
@@ -211,7 +327,6 @@ export default function Plans() {
                                 Save 33%
                             </span>
                         </button>
-                        {/* Sliding background */}
                         <motion.div
                             layout
                             className="absolute top-1 bottom-1 rounded-xl bg-gradient-to-r from-[#6C63FF] to-[#4F46E5] shadow-lg shadow-indigo-500/20"
@@ -225,38 +340,63 @@ export default function Plans() {
                 </motion.div>
 
                 {/* ── Plan Cards ── */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 mb-16">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 mb-10">
                     {/* Free Plan */}
                     <motion.div
                         {...fadeIn(2)}
-                        className={`relative bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-3xl border p-6 lg:p-7 transition-all ${
+                        className={`relative bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-3xl border p-5 lg:p-6 transition-all ${
                             currentStage === 0
                                 ? 'border-[#6C63FF]/30 ring-2 ring-[#6C63FF]/10'
                                 : 'border-slate-200/80 dark:border-slate-800/60'
                         }`}
                     >
                         {currentStage === 0 && (
-                            <div className="absolute -top-3 left-6 px-3 py-0.5 rounded-full bg-[#6C63FF] text-white text-[10px] font-bold uppercase tracking-wider">
+                            <div className="absolute -top-3 left-5 px-3 py-0.5 rounded-full bg-[#6C63FF] text-white text-[10px] font-bold uppercase tracking-wider">
                                 Current Plan
                             </div>
                         )}
 
-                        <div className="mb-5">
-                            <div className="w-11 h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                        <div className="mb-4">
+                            <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
                                 <Star className="w-5 h-5 text-slate-400" />
                             </div>
-                            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Free</h3>
-                            <div className="mt-2">
-                                <span className="text-3xl font-extrabold text-slate-900 dark:text-white">₹0</span>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Free</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                {STAGE_DESCRIPTIONS[0]}
+                            </p>
+                            <div className="mt-3">
+                                <span className="text-2xl font-extrabold text-slate-900 dark:text-white">₹0</span>
                                 <span className="text-slate-400 text-sm ml-1">forever</span>
                             </div>
                         </div>
 
-                        <ul className="space-y-3 mb-6">
-                            {FREE_FEATURES.map((f) => (
-                                <li key={f} className="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-400 font-medium">
-                                    <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
-                                        <Check className="w-3 h-3 text-slate-400" />
+                        {/* Limits */}
+                        <div className="space-y-2 mb-4">
+                            {planLimits && (
+                                <>
+                                    {LIMIT_LABELS.map(({ key, label, icon: Icon }) => {
+                                        const limit = planLimits.free?.[key] ?? 0;
+                                        return (
+                                            <div key={key} className="flex items-center gap-2.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                                <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                                                    <Icon className="w-2.5 h-2.5 text-slate-400" />
+                                                </div>
+                                                <span>{label}:</span>
+                                                <span className="font-bold text-slate-700 dark:text-slate-300">
+                                                    {limit === -1 ? 'Unlimited' : limit}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            )}
+                        </div>
+
+                        <ul className="space-y-2 mb-5">
+                            {FREE_FEATURES.slice(0, 3).map((f) => (
+                                <li key={f} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 font-medium">
+                                    <div className="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                                        <Check className="w-2.5 h-2.5 text-slate-400" />
                                     </div>
                                     {f}
                                 </li>
@@ -265,7 +405,7 @@ export default function Plans() {
 
                         <button
                             disabled
-                            className="w-full py-3 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
+                            className="w-full py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
                         >
                             {currentStage === 0 ? 'Active Plan' : 'Free Tier'}
                         </button>
@@ -277,42 +417,46 @@ export default function Plans() {
                         const colors = STAGE_COLORS[stage];
                         const StageIcon = STAGE_ICONS[stage];
                         const isCurrentPlan = currentStage === stage;
+                        const planKey = STAGE_NAMES[stage].toLowerCase();
 
                         return (
                             <motion.div
                                 key={stage}
                                 {...fadeIn(i + 3)}
-                                className={`relative bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-3xl border p-6 lg:p-7 transition-all hover:shadow-xl ${colors.glow} ${
+                                className={`relative bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-3xl border p-5 lg:p-6 transition-all hover:shadow-xl ${colors.glow} ${
                                     isRecommended
-                                        ? `border-[${colors.accent}]/30 ring-2 ring-[${colors.accent}]/10 scale-[1.02]`
+                                        ? `${colors.border} ring-2 ring-[${colors.accent}]/15 scale-[1.02] lg:scale-[1.03]`
                                         : isCurrentPlan
                                         ? 'border-[#6C63FF]/30 ring-2 ring-[#6C63FF]/10'
                                         : 'border-slate-200/80 dark:border-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700'
                                 }`}
                             >
                                 {isRecommended && (
-                                    <div className={`absolute -top-3 left-6 px-3 py-0.5 rounded-full bg-gradient-to-r ${colors.gradient} text-white text-[10px] font-bold uppercase tracking-wider shadow-lg ${colors.glow}`}>
+                                    <div className={`absolute -top-3 left-5 px-3 py-0.5 rounded-full bg-gradient-to-r ${colors.gradient} text-white text-[10px] font-bold uppercase tracking-wider shadow-lg ${colors.glow}`}>
                                         <span className="flex items-center gap-1">
                                             <Sparkles className="w-3 h-3" />
-                                            Recommended
+                                            Most Popular
                                         </span>
                                     </div>
                                 )}
                                 {isCurrentPlan && !isRecommended && (
-                                    <div className="absolute -top-3 left-6 px-3 py-0.5 rounded-full bg-[#6C63FF] text-white text-[10px] font-bold uppercase tracking-wider">
+                                    <div className="absolute -top-3 left-5 px-3 py-0.5 rounded-full bg-[#6C63FF] text-white text-[10px] font-bold uppercase tracking-wider">
                                         Current Plan
                                     </div>
                                 )}
 
-                                <div className="mb-5">
-                                    <div className={`w-11 h-11 rounded-2xl ${colors.light} flex items-center justify-center mb-4`}>
+                                <div className="mb-4">
+                                    <div className={`w-10 h-10 rounded-2xl ${colors.light} flex items-center justify-center mb-3`}>
                                         <StageIcon className="w-5 h-5" style={{ color: colors.accent }} />
                                     </div>
-                                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                                         {STAGE_NAMES[stage]}
                                     </h3>
-                                    <div className="mt-2 flex items-baseline gap-1">
-                                        <span className="text-3xl font-extrabold text-slate-900 dark:text-white">
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                        {STAGE_DESCRIPTIONS[stage]}
+                                    </p>
+                                    <div className="mt-3 flex items-baseline gap-1">
+                                        <span className="text-2xl font-extrabold text-slate-900 dark:text-white">
                                             ₹{activePlan.price}
                                         </span>
                                         <span className="text-slate-400 text-sm">
@@ -326,11 +470,39 @@ export default function Plans() {
                                     )}
                                 </div>
 
-                                <ul className="space-y-3 mb-6">
-                                    {activePlan.features.map((f) => (
-                                        <li key={f} className="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 font-medium">
-                                            <div className={`w-5 h-5 rounded-full ${colors.light} flex items-center justify-center flex-shrink-0`}>
-                                                <Check className="w-3 h-3" style={{ color: colors.accent }} />
+                                {/* Limits */}
+                                <div className="space-y-2 mb-4">
+                                    {planLimits && (
+                                        <>
+                                            {LIMIT_LABELS.map(({ key, label, icon: Icon }) => {
+                                                const limit = planLimits[planKey]?.[key] ?? 0;
+                                                const isUnlimited = limit === -1;
+                                                return (
+                                                    <div key={key} className="flex items-center gap-2.5 text-xs font-medium">
+                                                        <div className={`w-5 h-5 rounded-full ${colors.light} flex items-center justify-center flex-shrink-0`}>
+                                                            {isUnlimited ? (
+                                                                <Infinity className="w-2.5 h-2.5" style={{ color: colors.accent }} />
+                                                            ) : (
+                                                                <Icon className="w-2.5 h-2.5" style={{ color: colors.accent }} />
+                                                            )}
+                                                        </div>
+                                                        <span className="text-slate-500 dark:text-slate-400">{label}:</span>
+                                                        <span className={`font-bold ${isUnlimited ? colors.text : 'text-slate-700 dark:text-slate-300'}`}>
+                                                            {isUnlimited ? 'Unlimited' : limit}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Features */}
+                                <ul className="space-y-2 mb-5">
+                                    {activePlan.features.slice(0, 4).map((f) => (
+                                        <li key={f} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                                            <div className={`w-4 h-4 rounded-full ${colors.light} flex items-center justify-center flex-shrink-0`}>
+                                                <Check className="w-2.5 h-2.5" style={{ color: colors.accent }} />
                                             </div>
                                             {f}
                                         </li>
@@ -340,7 +512,7 @@ export default function Plans() {
                                 <button
                                     onClick={() => handleSelectPlan(activePlan)}
                                     disabled={isCurrentPlan || currentStage > stage}
-                                    className={`w-full py-3 rounded-xl text-sm font-bold transition-all ${
+                                    className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${
                                         isCurrentPlan
                                             ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                                             : currentStage > stage
@@ -360,9 +532,118 @@ export default function Plans() {
                     })}
                 </div>
 
+                {/* ── Feature Comparison Toggle ── */}
+                <motion.div {...fadeIn(6)} className="text-center mb-6">
+                    <button
+                        onClick={() => setShowComparison(!showComparison)}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                    >
+                        {showComparison ? 'Hide' : 'Show'} Feature Comparison
+                        <ArrowRight className={`w-4 h-4 transition-transform ${showComparison ? 'rotate-90' : ''}`} />
+                    </button>
+                </motion.div>
+
+                {/* ── Feature Comparison Table ── */}
+                {showComparison && planLimits && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-16 overflow-hidden"
+                    >
+                        <div className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-3xl border border-slate-200/80 dark:border-slate-800/60 overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="border-b border-slate-200/80 dark:border-slate-800/60">
+                                            <th className="text-left py-4 px-5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                Feature
+                                            </th>
+                                            {['Free', 'Starter', 'Professional', 'Ultimate'].map((name, idx) => (
+                                                <th key={name} className="text-center py-4 px-4">
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <span className={`text-xs font-bold ${idx === 2 ? 'text-violet-600 dark:text-violet-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                            {name}
+                                                        </span>
+                                                        {idx === 2 && (
+                                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400">
+                                                                POPULAR
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {LIMIT_LABELS.map(({ key, label, icon: Icon }) => {
+                                            const plans_arr = ['free', 'starter', 'professional', 'ultimate'];
+                                            return (
+                                                <tr key={key} className="border-b border-slate-100 dark:border-slate-800/40 last:border-0">
+                                                    <td className="py-3.5 px-5">
+                                                        <div className="flex items-center gap-2">
+                                                            <Icon className="w-4 h-4 text-slate-400" />
+                                                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
+                                                        </div>
+                                                    </td>
+                                                    {plans_arr.map((plan, idx) => {
+                                                        const val = planLimits[plan]?.[key] ?? 0;
+                                                        const isUnlimited = val === -1;
+                                                        return (
+                                                            <td key={plan} className="text-center py-3.5 px-4">
+                                                                {isUnlimited ? (
+                                                                    <span className="inline-flex items-center gap-1 text-sm font-bold text-amber-500">
+                                                                        <Infinity className="w-3.5 h-3.5" />
+                                                                        ∞
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className={`text-sm font-bold ${idx === 0 ? 'text-slate-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                        {val}
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            );
+                                        })}
+                                        {/* Additional feature rows */}
+                                        {[
+                                            { label: 'Dashboard Access', values: [true, true, true, true] },
+                                            { label: 'Resume Builder', values: [false, true, true, true] },
+                                            { label: 'Job Portal', values: [false, false, true, true] },
+                                            { label: 'Ad-Free Experience', values: [false, false, true, true] },
+                                            { label: 'Priority Support', values: [false, false, false, true] },
+                                        ].map(({ label, values }) => (
+                                            <tr key={label} className="border-b border-slate-100 dark:border-slate-800/40 last:border-0">
+                                                <td className="py-3.5 px-5">
+                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
+                                                </td>
+                                                {values.map((has, idx) => (
+                                                    <td key={idx} className="text-center py-3.5 px-4">
+                                                        {has ? (
+                                                            <div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center mx-auto">
+                                                                <Check className="w-3 h-3 text-emerald-500" />
+                                                            </div>
+                                                        ) : (
+                                                            <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto">
+                                                                <X className="w-3 h-3 text-slate-400" />
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+
                 {/* ── Micro Plans Section ── */}
                 {microPlans.length > 0 && (
-                    <motion.div {...fadeIn(6)}>
+                    <motion.div {...fadeIn(7)}>
                         <div className="text-center mb-8">
                             <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center justify-center gap-2">
                                 <Zap className="w-6 h-6 text-amber-500" />
@@ -377,12 +658,8 @@ export default function Plans() {
                             {microPlans.map((mp, i) => (
                                 <motion.div
                                     key={mp.id}
-                                    {...fadeIn(i + 7)}
+                                    {...fadeIn(i + 8)}
                                     className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5 hover:shadow-lg hover:border-slate-300 dark:hover:border-slate-700 transition-all group cursor-pointer"
-                                    onClick={() => {
-                                        setSelectedPlan(null);
-                                        // Could handle micro plan checkout here
-                                    }}
                                 >
                                     <div className="flex items-center gap-3 mb-3">
                                         <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
@@ -415,6 +692,16 @@ export default function Plans() {
                         </div>
                     </motion.div>
                 )}
+
+                {/* ── Security Badge ── */}
+                <motion.div {...fadeIn(12)} className="mt-12 text-center">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <Shield className="w-4 h-4" />
+                        <span className="text-xs font-semibold">
+                            All limits enforced server-side • Secure payments • Cancel anytime
+                        </span>
+                    </div>
+                </motion.div>
             </div>
 
             {/* ════════════════════════════════════════════════ */}
@@ -501,6 +788,29 @@ export default function Plans() {
                                                 </span>
                                             </div>
                                         </div>
+
+                                        {/* What you'll unlock */}
+                                        {planLimits && (
+                                            <div>
+                                                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                                                    What you'll unlock
+                                                </p>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {LIMIT_LABELS.map(({ key, label, icon: Icon }) => {
+                                                        const planKey = STAGE_NAMES[selectedPlan.stage].toLowerCase();
+                                                        const limit = planLimits[planKey]?.[key] ?? 0;
+                                                        return (
+                                                            <div key={key} className="flex items-center gap-2 p-2 rounded-lg bg-[#6C63FF]/5">
+                                                                <Icon className="w-3.5 h-3.5 text-[#6C63FF]" />
+                                                                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                                                    {label}: <span className="font-bold text-[#6C63FF]">{limit === -1 ? '∞' : limit}</span>
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {/* Coupon input */}
                                         <div>

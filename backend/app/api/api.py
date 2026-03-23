@@ -19,6 +19,8 @@ from app.api.endpoints import (
     english_speaking,
     # Reasoning & Problem Solving module
     reasoning,
+    # Usage tracking & limits
+    usage,
 )
 
 api_router = APIRouter()
@@ -59,3 +61,6 @@ api_router.include_router(english_speaking.router, prefix="/english", tags=["eng
 
 # ── Reasoning & Problem Solving ──────────────────────────
 api_router.include_router(reasoning.router, prefix="/reasoning", tags=["reasoning"])
+
+# ── Usage Tracking & Limits ──────────────────────────────
+api_router.include_router(usage.router, prefix="/usage", tags=["usage"])

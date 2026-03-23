@@ -7,6 +7,8 @@ from typing import Dict, Any
 from app.api import deps
 from app.models.resume import SavedResume
 from app.models.user import Profile
+from app.middleware.require_usage_limit import require_usage_limit
+from app.services.usage_service import increment_usage, decrement_usage
 
 router = APIRouter()
 
@@ -49,9 +51,9 @@ def extract_skills_from_resume(resume_data: Dict[str, Any]) -> List[str]:
 async def save_resume(
     request: ResumeSaveRequest,
     db: Session = Depends(deps.get_db),
-    current_user = Depends(deps.get_current_active_user),
+    current_user = Depends(require_usage_limit("resume_count")),
 ) -> Any:
-    """Save a resume and intelligently sync skills."""
+    """Save a resume and intelligently sync skills. Enforces resume_count limit."""
     
     # 1. Deal with is_primary
     if request.is_primary:
@@ -93,7 +95,10 @@ async def save_resume(
         
     db.commit()
     db.refresh(new_resume)
-    
+
+    # Increment resume count after successful save
+    increment_usage(db, current_user.id, "resume_count")
+
     return {"message": "Resume saved successfully", "id": str(new_resume.id)}
 
 @router.get("/")
@@ -142,9 +147,9 @@ async def update_saved_resume(
     resume_id: str,
     request: ResumeUpdateRequest,
     db: Session = Depends(deps.get_db),
-    current_user = Depends(deps.get_current_active_user),
+    current_user = Depends(require_usage_limit("resume_edit_monthly")),
 ) -> Any:
-    """Update an existing saved resume."""
+    """Update an existing saved resume. Enforces resume_edit_monthly limit."""
     resume = db.query(SavedResume).filter(
         SavedResume.id == resume_id,
         SavedResume.user_id == current_user.id
@@ -194,7 +199,10 @@ async def update_saved_resume(
     
     db.commit()
     db.refresh(resume)
-    
+
+    # Increment monthly edit count
+    increment_usage(db, current_user.id, "resume_edit_monthly")
+
     return {"message": "Resume updated successfully", "id": str(resume.id)}
 
 @router.delete("/{resume_id}")
@@ -214,4 +222,8 @@ async def delete_saved_resume(
         
     db.delete(resume)
     db.commit()
+
+    # Decrement resume count on deletion
+    decrement_usage(db, current_user.id, "resume_count")
+
     return {"message": "Resume deleted successfully"}

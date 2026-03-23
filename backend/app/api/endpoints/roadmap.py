@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import roadmap_service
+from app.middleware.require_usage_limit import require_usage_limit
+from app.services.usage_service import increment_usage
 import logging
 
 router = APIRouter()
@@ -41,9 +43,9 @@ class DeleteRoadmapRequest(BaseModel):
 async def generate_roadmap(
     request: RoadmapRequest,
     db: Session = Depends(deps.get_db),
-    current_user=Depends(deps.get_current_active_user),
+    current_user=Depends(require_usage_limit("plan_count")),
 ) -> Any:
-    """Generate a personalized skill roadmap using AI."""
+    """Generate a personalized skill roadmap using AI. Enforces plan_count limit."""
     try:
         result = await roadmap_service.generate_roadmap(
             user_id=str(current_user.id),
@@ -54,6 +56,10 @@ async def generate_roadmap(
             topic_name=request.topic_name,
             difficulty=request.difficulty,
         )
+
+        # Increment plan count after successful generation
+        increment_usage(db, current_user.id, "plan_count")
+
         return result
     except ValueError as e:
         logger.warning("Roadmap validation failed: %s", str(e))

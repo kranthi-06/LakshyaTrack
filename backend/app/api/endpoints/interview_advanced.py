@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import interview_advanced_service
+from app.middleware.require_usage_limit import require_usage_limit
+from app.services.usage_service import increment_usage
 import logging
 
 router = APIRouter()
@@ -55,9 +57,10 @@ async def check_interview_unlock(
 @router.post("/next-question-advanced")
 async def get_next_question(
     request: AdvancedQuestionRequest,
-    current_user=Depends(deps.get_current_active_user),
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(require_usage_limit("interview_count_weekly")),
 ) -> Any:
-    """Generate the next resume-aware, role-aware interview question."""
+    """Generate the next interview question. Enforces interview_count_weekly limit."""
     question = await interview_advanced_service.generate_interview_question_advanced(
         position=request.position,
         round_type=request.round_type,
@@ -65,6 +68,10 @@ async def get_next_question(
         resume_summary=request.resume_summary,
         target_skills=request.target_skills
     )
+
+    # Increment weekly interview counter
+    increment_usage(db, current_user.id, "interview_count_weekly")
+
     return {"question": question}
 
 

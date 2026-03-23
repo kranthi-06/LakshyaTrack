@@ -135,6 +135,7 @@ const SILENT_ENDPOINTS = [
     '/saved-resumes',
     '/subscription/status',
     '/subscription/feature-access',
+    '/usage/status',
 ];
 
 function isSilentEndpoint(url: string | undefined): boolean {
@@ -196,6 +197,16 @@ api.interceptors.response.use(
 
         // ── 2. Server errors — retry with backoff ────────────────
         if (isRetryable(error) && config) {
+            // LIMIT_EXCEEDED is a 429 that means plan limit hit — NOT a rate limit.
+            // Do NOT retry these — the user needs to upgrade their plan.
+            const isLimitExceeded =
+                error.response?.status === 429 &&
+                (error.response?.data as any)?.detail?.error === 'LIMIT_EXCEEDED';
+
+            if (isLimitExceeded) {
+                return Promise.reject(error);
+            }
+
             const retryCount = config._retryCount || 0;
             if (retryCount < MAX_RETRIES && !config._isRetry) {
                 config._retryCount = retryCount + 1;
