@@ -24,26 +24,33 @@ logger = logging.getLogger(__name__)
 # PLAN LIMITS — Single source of truth for all usage caps
 # stage 0 = Free, 1 = Starter, 2 = Professional, 3 = Ultimate
 # -1 means unlimited
+#
+# FREE tier philosophy:
+#   - Resume creation: 1/month (resets monthly)
+#   - Interview practice: 2/week (resets weekly)
+#   - Roadmap generation: 1 total
+#   - Resume edits: UNLIMITED (no limit)
+#   - Quiz, evaluate, jobs, English, reasoning: UNLIMITED
 # ══════════════════════════════════════════════════════════════
 
 PLAN_LIMITS: Dict[int, Dict[str, int]] = {
     0: {  # FREE
-        "resume_count": 1,
-        "interview_count_weekly": 2,
-        "plan_count": 1,
-        "resume_edit_monthly": 3,
+        "resume_count": 1,              # 1 resume creation per month
+        "interview_count_weekly": 2,    # 2 interviews per week
+        "plan_count": 1,                # 1 roadmap
+        "resume_edit_monthly": -1,      # unlimited edits
     },
     1: {  # STARTER (BASIC)
-        "resume_count": 3,
-        "interview_count_weekly": 5,
-        "plan_count": 3,
-        "resume_edit_monthly": 10,
+        "resume_count": 5,              # 5 resume creations per month
+        "interview_count_weekly": 10,   # 10 interviews per week
+        "plan_count": 5,                # 5 roadmaps
+        "resume_edit_monthly": -1,      # unlimited edits
     },
     2: {  # PROFESSIONAL (PRO)
-        "resume_count": 10,
-        "interview_count_weekly": 15,
-        "plan_count": 10,
-        "resume_edit_monthly": 30,
+        "resume_count": 20,             # 20 resume creations per month
+        "interview_count_weekly": 30,   # 30 interviews per week
+        "plan_count": 15,               # 15 roadmaps
+        "resume_edit_monthly": -1,      # unlimited edits
     },
     3: {  # ULTIMATE — unlimited everything
         "resume_count": -1,
@@ -96,6 +103,7 @@ def _maybe_reset_monthly(usage: UserUsage) -> bool:
     """Reset monthly counters if 30+ days have passed since last reset."""
     now = datetime.now(timezone.utc)
     if usage.last_reset_monthly is None or (now - usage.last_reset_monthly) >= timedelta(days=30):
+        usage.resume_count = 0           # resume creation resets monthly
         usage.resume_edit_monthly = 0
         usage.last_reset_monthly = now
         return True
@@ -328,6 +336,7 @@ def bulk_reset_monthly(db: Session) -> int:
     )
     count = 0
     for u in users:
+        u.resume_count = 0               # resume creation resets monthly
         u.resume_edit_monthly = 0
         u.last_reset_monthly = datetime.now(timezone.utc)
         count += 1

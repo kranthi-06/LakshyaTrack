@@ -23,9 +23,9 @@ interface UpgradeModalProps {
 
 const COUNTER_LABELS: Record<string, { label: string; icon: string; description: string }> = {
     resume_count: {
-        label: 'Resume Storage',
+        label: 'Resume Creation',
         icon: '📄',
-        description: 'You\'ve reached your resume storage limit.',
+        description: 'You\'ve reached your monthly resume creation limit. Wait for next month or upgrade your plan.',
     },
     interview_count_weekly: {
         label: 'Interview Practice',
@@ -45,7 +45,7 @@ const COUNTER_LABELS: Record<string, { label: string; icon: string; description:
 };
 
 const PLAN_BENEFITS = [
-    { icon: Zap, label: 'Starter', desc: 'More storage & edits', color: '#3B82F6' },
+    { icon: Zap, label: 'Starter', desc: 'More creations & interviews', color: '#3B82F6' },
     { icon: Shield, label: 'Professional', desc: 'Full platform access', color: '#8B5CF6' },
     { icon: Rocket, label: 'Ultimate', desc: 'Unlimited everything', color: '#F59E0B' },
 ];

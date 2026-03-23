@@ -38,10 +38,10 @@ interface FeatureLockButtonProps {
 }
 
 const COUNTER_FRIENDLY_NAMES: Record<string, string> = {
-    resume_count: 'Resume Storage',
+    resume_count: 'Monthly Resume Creation',
     interview_count_weekly: 'Weekly Interviews',
     plan_count: 'Roadmap Generator',
-    resume_edit_monthly: 'Monthly Resume Edits',
+    resume_edit_monthly: 'Resume Edits',
 };
 
 export default function FeatureLockButton({

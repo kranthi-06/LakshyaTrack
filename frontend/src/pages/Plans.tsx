@@ -82,20 +82,21 @@ interface LimitDefinition {
 }
 
 const LIMIT_LABELS: { key: keyof LimitDefinition; label: string; icon: any; unit: string }[] = [
-    { key: 'resume_count', label: 'Resume Storage', icon: FileText, unit: 'resumes' },
+    { key: 'resume_count', label: 'Resume Creation', icon: FileText, unit: '/month' },
     { key: 'interview_count_weekly', label: 'Weekly Interviews', icon: Mic, unit: '/week' },
     { key: 'plan_count', label: 'Roadmaps', icon: Map, unit: 'roadmaps' },
-    { key: 'resume_edit_monthly', label: 'Monthly Edits', icon: Edit3, unit: '/month' },
+    // resume_edit_monthly is unlimited for all plans — not shown in limits
 ];
 
 const FREE_FEATURES = [
     'Dashboard access',
-    'Resume creation preview',
-    'Limited quiz & analytics',
-    '1 resume storage',
+    'Unlimited quiz & analytics',
+    'Unlimited resume evaluation',
+    '1 resume creation/month',
     '2 interviews/week',
     '1 roadmap',
-    '3 resume edits/month',
+    'Unlimited resume edits',
+    'Jobs, English & Reasoning — unlimited',
 ];
 
 // ══════════════════════════════════════════════════════════════
