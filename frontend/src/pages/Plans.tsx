@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
     Crown, Check, Zap, Star, ArrowRight, Sparkles,
@@ -13,6 +13,7 @@ import {
     SubscriptionPlan, MicroPlan,
 } from '../services/subscription';
 import { getPlanLimits } from '../services/usage';
+import UpgradeModal from '../components/UpgradeModal';
 
 // ══════════════════════════════════════════════════════════════
 // CONSTANTS & CONFIG
@@ -104,6 +105,7 @@ const FREE_FEATURES = [
 // ══════════════════════════════════════════════════════════════
 
 export default function Plans() {
+    const location = useLocation();
     const navigate = useNavigate();
     const { stage: currentStage, refreshAccess } = useSubscription();
     const { usage, refreshUsage } = useUsage();
@@ -119,6 +121,14 @@ export default function Plans() {
     const [processing, setProcessing] = useState(false);
     const [success, setSuccess] = useState(false);
     const [showComparison, setShowComparison] = useState(false);
+    const [limitPopup, setLimitPopup] = useState<{
+        isOpen: boolean;
+        title?: string;
+        counter?: string;
+        current?: number;
+        limit?: number;
+        message?: string;
+    }>({ isOpen: false });
 
     useEffect(() => {
         const fetchData = async () => {
@@ -139,6 +149,31 @@ export default function Plans() {
         };
         fetchData();
     }, []);
+
+    useEffect(() => {
+        const navState = location.state as {
+            limitPopup?: {
+                title?: string;
+                counter?: string;
+                current?: number;
+                limit?: number;
+                message?: string;
+            };
+        } | null;
+
+        if (!navState?.limitPopup) return;
+
+        setLimitPopup({
+            isOpen: true,
+            title: navState.limitPopup.title,
+            counter: navState.limitPopup.counter,
+            current: navState.limitPopup.current,
+            limit: navState.limitPopup.limit,
+            message: navState.limitPopup.message,
+        });
+
+        navigate(location.pathname, { replace: true, state: {} });
+    }, [location.pathname, location.state, navigate]);
 
     // Group plans by stage
     const stageGroups = [1, 2, 3].map((stage) => {
@@ -244,6 +279,19 @@ export default function Plans() {
                 </motion.div>
 
                 {/* ── Current Usage Summary ── */}
+                {limitPopup.isOpen && (
+                    <motion.div {...fadeIn(0.2)} className="mb-8 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+                        <div className="flex items-start gap-3">
+                            <Lock className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
+                            <div>
+                                <p className="font-bold">Roadmap limit reached</p>
+                                <p className="mt-1 font-medium text-amber-800">
+                                    Upgrade your subscription or choose a quick access pass below to create another roadmap.
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
                 {usage && !usage.is_admin && (
                     <motion.div {...fadeIn(0.5)} className="mb-8">
                         <div className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5">
@@ -870,6 +918,15 @@ export default function Plans() {
                     </motion.div>
                 </>
             )}
+            <UpgradeModal
+                isOpen={limitPopup.isOpen}
+                onClose={() => setLimitPopup({ isOpen: false })}
+                counter={limitPopup.counter}
+                current={limitPopup.current}
+                limit={limitPopup.limit}
+                title={limitPopup.title}
+                message={limitPopup.message}
+            />
         </div>
     );
 }
