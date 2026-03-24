@@ -302,6 +302,58 @@ export default function Plans() {
                     </motion.div>
                 )}
 
+                {/* ── Micro Plans Section ── */}
+                {microPlans.length > 0 && (
+                    <motion.div {...fadeIn(0.7)} className="mb-10">
+                        <div className="text-center mb-8">
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center justify-center gap-2">
+                                <Zap className="w-6 h-6 text-amber-500" />
+                                Quick Access Passes
+                            </h2>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-2">
+                                Need a single feature? Get instant access without a subscription.
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {microPlans.map((mp, i) => (
+                                <motion.div
+                                    key={mp.id}
+                                    {...fadeIn(i * 0.1 + 0.8)}
+                                    className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5 hover:shadow-lg hover:border-slate-300 dark:hover:border-slate-700 transition-all group cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                            {mp.usage_type === 'time_limited' ? (
+                                                <Clock className="w-5 h-5 text-amber-500" />
+                                            ) : (
+                                                <Zap className="w-5 h-5 text-amber-500" />
+                                            )}
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">{mp.name}</h4>
+                                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                {mp.duration_hours ? `${mp.duration_hours}h access` : 'Single use'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 font-medium">
+                                        {mp.description}
+                                    </p>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
+                                            ₹{mp.price}
+                                        </span>
+                                        <span className="text-xs font-semibold text-[#6C63FF] group-hover:underline flex items-center gap-1">
+                                            Buy Now <ArrowRight className="w-3 h-3" />
+                                        </span>
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
+
                 {/* ── Billing Toggle ── */}
                 <motion.div {...fadeIn(1)} className="flex justify-center mb-10">
                     <div className="relative inline-flex items-center bg-slate-100 dark:bg-slate-800/80 rounded-2xl p-1">
@@ -638,58 +690,6 @@ export default function Plans() {
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
-                    </motion.div>
-                )}
-
-                {/* ── Micro Plans Section ── */}
-                {microPlans.length > 0 && (
-                    <motion.div {...fadeIn(7)}>
-                        <div className="text-center mb-8">
-                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center justify-center gap-2">
-                                <Zap className="w-6 h-6 text-amber-500" />
-                                Quick Access Passes
-                            </h2>
-                            <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-2">
-                                Need a single feature? Get instant access without a subscription.
-                            </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {microPlans.map((mp, i) => (
-                                <motion.div
-                                    key={mp.id}
-                                    {...fadeIn(i + 8)}
-                                    className="bg-white/80 dark:bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/60 p-5 hover:shadow-lg hover:border-slate-300 dark:hover:border-slate-700 transition-all group cursor-pointer"
-                                >
-                                    <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                                            {mp.usage_type === 'time_limited' ? (
-                                                <Clock className="w-5 h-5 text-amber-500" />
-                                            ) : (
-                                                <Zap className="w-5 h-5 text-amber-500" />
-                                            )}
-                                        </div>
-                                        <div>
-                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">{mp.name}</h4>
-                                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                                {mp.duration_hours ? `${mp.duration_hours}h access` : 'Single use'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 font-medium">
-                                        {mp.description}
-                                    </p>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
-                                            ₹{mp.price}
-                                        </span>
-                                        <span className="text-xs font-semibold text-[#6C63FF] group-hover:underline flex items-center gap-1">
-                                            Buy Now <ArrowRight className="w-3 h-3" />
-                                        </span>
-                                    </div>
-                                </motion.div>
-                            ))}
                         </div>
                     </motion.div>
                 )}
