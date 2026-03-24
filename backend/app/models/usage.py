@@ -5,7 +5,7 @@ Fields track:
 - Resume storage count
 - Weekly interview practice count
 - Plan maker usage count
-- Monthly resume edit count
+- Monthly resume download count
 - Timestamps for auto-reset (weekly + monthly)
 """
 import uuid
@@ -41,6 +41,7 @@ class UserUsage(Base):
     interview_count_weekly = Column(Integer, default=0, nullable=False)
     # Current number of active/generated roadmaps stored for the user.
     plan_count = Column(Integer, default=0, nullable=False)
+    # Monthly resume download count.
     resume_edit_monthly = Column(Integer, default=0, nullable=False)
 
     # ── Reset timestamps ────────────────────────────────────────
@@ -68,5 +69,5 @@ class UserUsage(Base):
             f"resumes={self.resume_count} "
             f"interviews_weekly={self.interview_count_weekly} "
             f"plans={self.plan_count} "
-            f"edits_monthly={self.resume_edit_monthly}>"
+            f"downloads_monthly={self.resume_edit_monthly}>"
         )

@@ -152,6 +152,10 @@ class ResumeUpdateRequest(BaseModel):
     ats_score: Optional[float] = None
     is_primary: Optional[bool] = None
 
+
+class ResumeDownloadAuthorizeRequest(BaseModel):
+    resume_id: Optional[str] = None
+
 @router.put("/{resume_id}")
 async def update_saved_resume(
     resume_id: str,
@@ -159,7 +163,7 @@ async def update_saved_resume(
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_active_user),
 ) -> Any:
-    """Update an existing saved resume with monthly edit enforcement."""
+    """Update an existing saved resume without consuming monthly download quota."""
     resume = db.query(SavedResume).filter(
         SavedResume.id == resume_id,
         SavedResume.user_id == current_user.id
@@ -168,14 +172,7 @@ async def update_saved_resume(
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
 
-    user_role = _resolve_user_role(current_user)
     try:
-        consume_usage(
-            db,
-            current_user.id,
-            "resumeEditsMonthly",
-            user_role=user_role,
-        )
         if request.resume_name is not None:
             resume.resume_name = request.resume_name
         if request.resume_url is not None:
@@ -217,12 +214,45 @@ async def update_saved_resume(
         db.refresh(resume)
 
         return {"message": "Resume updated successfully", "id": str(resume.id)}
-    except LimitExceededError as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
     except Exception:
         db.rollback()
         raise
+
+
+@router.post("/download-authorize")
+async def authorize_resume_download(
+    request: ResumeDownloadAuthorizeRequest,
+    db: Session = Depends(deps.get_db),
+    current_user = Depends(deps.get_current_active_user),
+) -> Any:
+    """Consume monthly resume download quota before any official export action."""
+    if request.resume_id:
+        resume = db.query(SavedResume).filter(
+            SavedResume.id == request.resume_id,
+            SavedResume.user_id == current_user.id,
+        ).first()
+        if not resume:
+            raise HTTPException(status_code=404, detail="Resume not found")
+
+    user_role = _resolve_user_role(current_user)
+    try:
+        snapshot = consume_usage(
+            db,
+            current_user.id,
+            "resume_download",
+            user_role=user_role,
+        )
+        db.commit()
+        return {
+            "message": "Resume download authorized",
+            "counter": snapshot["counter"],
+            "current": snapshot["current"],
+            "limit": snapshot["limit"],
+            "remaining": snapshot["remaining"],
+        }
+    except LimitExceededError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
 
 @router.delete("/{resume_id}")
 async def delete_saved_resume(

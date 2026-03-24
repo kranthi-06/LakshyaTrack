@@ -1,11 +1,23 @@
 import { useState } from 'react';
-import { ShieldCheck, CheckCircle2, AlertTriangle, Download, Trophy, ArrowRight } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, AlertTriangle, Download, Trophy, ArrowRight, Lock } from 'lucide-react';
 import { SectionCard, AIButton } from './components';
 import { runATSCheck } from '../../services/resumeBuilder';
+import { authorizeResumeDownload } from '../../services/resumeStorage';
+import { extractLimitExceededError } from '../../services/api';
+import UpgradeModal from '../../components/UpgradeModal';
+import { useUsage } from '../../context/UsageContext';
 import type { ResumeData } from './types';
 
 export function StepATSPreview({ data, onChange }: { data: ResumeData; onChange: (d: Partial<ResumeData>) => void }) {
     const [aiLoading, setAiLoading] = useState(false);
+    const [limitModal, setLimitModal] = useState<{
+        isOpen: boolean;
+        counter?: string;
+        current?: number;
+        limit?: number;
+        message?: string;
+    }>({ isOpen: false });
+    const { refreshUsage, isLimitExceeded, getCounter, resolved } = useUsage();
     const ats = data.ats;
 
     const handleCheck = async () => {
@@ -29,20 +41,56 @@ export function StepATSPreview({ data, onChange }: { data: ResumeData; onChange:
     const scoreColor = ats ? (ats.score >= 80 ? 'text-emerald-500' : ats.score >= 60 ? 'text-amber-500' : 'text-red-500') : '';
     const scoreBg = ats ? (ats.score >= 80 ? 'from-emerald-500 to-green-500' : ats.score >= 60 ? 'from-amber-500 to-yellow-500' : 'from-red-500 to-rose-500') : '';
 
-    const downloadJSON = () => {
-        const output = {
-            meta: { generated_at: new Date().toISOString(), target_role: data.target_role, ats_score: ats?.score },
-            personal_info: data.personal,
-            education: data.education,
-            experience: data.experience,
-            projects: data.projects,
-            skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
-        };
-        const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
-        URL.revokeObjectURL(url);
+    const downloadCounter = getCounter('resume_edit_monthly');
+    const downloadLimitReached = isLimitExceeded('resume_edit_monthly');
+
+    const openDownloadLimitModal = (message?: string) => {
+        setLimitModal({
+            isOpen: true,
+            counter: 'resume_edit_monthly',
+            current: downloadCounter?.current,
+            limit: downloadCounter?.limit,
+            message,
+        });
+    };
+
+    const downloadJSON = async () => {
+        if (resolved && downloadLimitReached) {
+            openDownloadLimitModal();
+            return;
+        }
+
+        try {
+            await authorizeResumeDownload();
+            await refreshUsage();
+
+            const output = {
+                meta: { generated_at: new Date().toISOString(), target_role: data.target_role, ats_score: ats?.score },
+                personal_info: data.personal,
+                education: data.education,
+                experience: data.experience,
+                projects: data.projects,
+                skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
+            };
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            const limitInfo = extractLimitExceededError(e);
+            if (limitInfo) {
+                setLimitModal({
+                    isOpen: true,
+                    counter: limitInfo.counter,
+                    current: limitInfo.current,
+                    limit: limitInfo.limit,
+                    message: limitInfo.message,
+                });
+            } else {
+                console.error(e);
+            }
+        }
     };
 
     return (
@@ -90,12 +138,25 @@ export function StepATSPreview({ data, onChange }: { data: ResumeData; onChange:
 
                     <div className="flex flex-wrap gap-3 justify-center pt-4">
                         <AIButton onClick={handleCheck} loading={aiLoading} label="Re-run ATS Check" />
-                        <button onClick={downloadJSON} className="px-6 py-3 bg-gray-900 text-white rounded-2xl font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-gray-800 transition-all">
-                            <Download className="w-4 h-4" /> Download Resume JSON
+                        <button
+                            onClick={downloadJSON}
+                            className={`px-6 py-3 bg-gray-900 text-white rounded-2xl font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-gray-800 transition-all ${downloadLimitReached ? 'opacity-80' : ''}`}
+                        >
+                            <Download className="w-4 h-4" />
+                            Download Resume JSON
+                            {downloadLimitReached && <Lock className="w-4 h-4 text-white/70" />}
                         </button>
                     </div>
                 </div>
             )}
+            <UpgradeModal
+                isOpen={limitModal.isOpen}
+                onClose={() => setLimitModal({ isOpen: false })}
+                counter={limitModal.counter}
+                current={limitModal.current}
+                limit={limitModal.limit}
+                message={limitModal.message}
+            />
         </SectionCard>
     );
 }

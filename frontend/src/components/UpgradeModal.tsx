@@ -38,14 +38,14 @@ const COUNTER_LABELS: Record<string, { label: string; icon: string; description:
         description: 'You\'ve reached the maximum number of roadmaps for your current plan.',
     },
     resume_edit_monthly: {
-        label: 'Monthly Resume Edits',
+        label: 'Monthly Resume Downloads',
         icon: '✏️',
-        description: 'You\'ve used all your resume edits for this month.',
+        description: 'You\'ve used all your resume downloads for this month.',
     },
 };
 
 const PLAN_BENEFITS = [
-    { icon: Zap, label: 'Starter', desc: 'More storage, interviews, and edits', color: '#3B82F6' },
+    { icon: Zap, label: 'Starter', desc: 'More storage, interviews, and downloads', color: '#3B82F6' },
     { icon: Shield, label: 'Professional', desc: 'Much higher limits across every tool', color: '#8B5CF6' },
     { icon: Rocket, label: 'Ultimate', desc: 'Unlimited limits on all core features', color: '#F59E0B' },
 ];

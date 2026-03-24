@@ -85,7 +85,7 @@ const LIMIT_LABELS: { key: keyof LimitDefinition; label: string; icon: any; unit
     { key: 'resume_count', label: 'Resume Storage', icon: FileText, unit: 'stored' },
     { key: 'interview_count_weekly', label: 'Weekly Interviews', icon: Mic, unit: '/week' },
     { key: 'plan_count', label: 'Roadmaps', icon: Map, unit: 'roadmaps' },
-    { key: 'resume_edit_monthly', label: 'Monthly Resume Edits', icon: Edit3, unit: '/month' },
+    { key: 'resume_edit_monthly', label: 'Monthly Resume Downloads', icon: Edit3, unit: '/month' },
 ];
 
 const FREE_FEATURES = [
@@ -95,7 +95,7 @@ const FREE_FEATURES = [
     '1 stored resume',
     '1 interview/week',
     '1 roadmap',
-    '1 resume edit/month',
+    '1 resume download/month',
     'Jobs, English & Reasoning — unlimited',
 ];
 

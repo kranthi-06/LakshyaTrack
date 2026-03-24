@@ -41,7 +41,7 @@ const COUNTER_FRIENDLY_NAMES: Record<string, string> = {
     resume_count: 'Resume Storage',
     interview_count_weekly: 'Weekly Interviews',
     plan_count: 'Roadmaps',
-    resume_edit_monthly: 'Monthly Resume Edits',
+    resume_edit_monthly: 'Monthly Resume Downloads',
 };
 
 export default function FeatureLockButton({

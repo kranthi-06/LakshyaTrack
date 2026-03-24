@@ -9,10 +9,14 @@ import { uploadUserMedia } from '../services/media';
 import {
     User, Mail, Phone, MapPin, Briefcase, Calendar,
     Linkedin, Github, Globe, FileText, Award, Star,
-    Edit2, Camera, Save, X, Plus, Trash2, Eye, Download, Loader2
+    Edit2, Camera, Save, X, Plus, Trash2, Eye, Download, Loader2, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getSavedResumes, deleteSavedResume } from '../services/resumeStorage';
+import { authorizeResumeDownload, getSavedResumes, deleteSavedResume } from '../services/resumeStorage';
+import { extractLimitExceededError } from '../services/api';
+import UpgradeModal from '../components/UpgradeModal';
+import { UsageBadge } from '../components/FeatureLockButton';
+import { useUsage } from '../context/UsageContext';
 import {
     ModernTemplate, ClassicTemplate, CreativeTemplate, DeveloperTemplate,
     MinimalATSTemplate, AcademicTemplate, ExecutiveTemplate, TwoColumnTemplate,
@@ -47,11 +51,12 @@ function RenderTemplate({ base, data, color }: { base: BaseTemplate; data: Resum
 }
 
 /* Lazy-rendered resume card — only renders the heavy template when visible */
-function LazyResumePreview({ resume, onDelete, onDownload, onEdit }: {
+function LazyResumePreview({ resume, onDelete, onDownload, onEdit, downloadLocked = false }: {
     resume: any;
     onDelete: (id: string) => void;
     onDownload: (resume: any) => void;
     onEdit: (resume: any) => void;
+    downloadLocked?: boolean;
 }) {
     const [isVisible, setIsVisible] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -93,10 +98,12 @@ function LazyResumePreview({ resume, onDelete, onDownload, onEdit }: {
                     <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 shadow-sm text-slate-600 hover:text-[#5c52d2] hover:bg-purple-50"
+                        className={`h-8 shadow-sm text-slate-600 hover:text-[#5c52d2] hover:bg-purple-50 ${downloadLocked ? 'opacity-80' : ''}`}
                         onClick={() => onDownload(resume)}
+                        title={downloadLocked ? 'Monthly download limit reached' : 'Download PDF'}
                     >
                         <Download className="w-4 h-4 mr-1.5" /> PDF
+                        {downloadLocked && <Lock className="w-3.5 h-3.5 text-rose-500" />}
                     </Button>
                     <Button
                         variant="outline"
@@ -154,8 +161,13 @@ function LazyResumePreview({ resume, onDelete, onDownload, onEdit }: {
                     <Button size="lg" className="bg-[#5c52d2] text-white hover:bg-[#4a42b8] font-bold px-8 shadow-xl" onClick={() => onEdit(resume)}>
                         <Edit2 className="w-5 h-5 mr-2" /> Edit Resume
                     </Button>
-                    <Button size="lg" className="bg-white text-slate-900 hover:bg-slate-50 font-bold px-8 shadow-xl" onClick={() => onDownload(resume)}>
+                    <Button
+                        size="lg"
+                        className={`bg-white text-slate-900 hover:bg-slate-50 font-bold px-8 shadow-xl ${downloadLocked ? 'opacity-85' : ''}`}
+                        onClick={() => onDownload(resume)}
+                    >
                         <Download className="w-5 h-5 mr-2" /> Download Document
+                        {downloadLocked && <Lock className="w-4 h-4 text-rose-500" />}
                     </Button>
                 </div>
             </div>
@@ -176,6 +188,7 @@ function formatJoinDate(dateStr?: string | null): string {
 
 export default function Profile() {
     const { user, refreshUser } = useAuth();
+    const { usage, refreshUsage, isLimitExceeded, getCounter, resolved } = useUsage();
     const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -204,6 +217,32 @@ export default function Profile() {
 
     const [savedResumes, setSavedResumes] = useState<any[]>([]);
     const [loadingResumes, setLoadingResumes] = useState(false);
+    const [limitModal, setLimitModal] = useState<{
+        isOpen: boolean;
+        counter?: 'resume_count' | 'resume_edit_monthly';
+        current?: number;
+        limit?: number;
+        message?: string;
+    }>({ isOpen: false });
+
+    const storageCounter = getCounter('resume_count');
+    const downloadCounter = getCounter('resume_edit_monthly');
+    const storageLimitReached = isLimitExceeded('resume_count');
+    const downloadLimitReached = isLimitExceeded('resume_edit_monthly');
+
+    const openUsageLimitModal = useCallback(
+        (counter: 'resume_count' | 'resume_edit_monthly', message?: string) => {
+            const counterData = getCounter(counter);
+            setLimitModal({
+                isOpen: true,
+                counter,
+                current: counterData?.current,
+                limit: counterData?.limit,
+                message,
+            });
+        },
+        [getCounter],
+    );
 
     // Refresh user data from backend on page load to guarantee latest data
     useEffect(() => {
@@ -282,14 +321,42 @@ export default function Profile() {
         try {
             await deleteSavedResume(id);
             setSavedResumes(prev => prev.filter(r => r.id !== id));
+            await refreshUsage();
         } catch (err) {
             console.error("Error deleting resume:", err);
         }
     };
 
     const handleDownloadPDF = async (resume: any) => {
-        const name = resume.resume_name.replace(/\s+/g, '_') || 'resume';
-        await exportToPDF(`resume-preview-${resume.id}`, `${name}.pdf`);
+        if (resolved && downloadLimitReached) {
+            openUsageLimitModal(
+                'resume_edit_monthly',
+                'You have used all resume downloads for this month. You can still edit your saved resumes, but downloading another file requires the next monthly reset or a higher plan.',
+            );
+            return;
+        }
+
+        try {
+            await authorizeResumeDownload(resume.id);
+            await refreshUsage();
+
+            const name = resume.resume_name.replace(/\s+/g, '_') || 'resume';
+            await exportToPDF(`resume-preview-${resume.id}`, `${name}.pdf`);
+        } catch (error) {
+            const limitInfo = extractLimitExceededError(error);
+            if (limitInfo) {
+                setLimitModal({
+                    isOpen: true,
+                    counter: limitInfo.counter,
+                    current: limitInfo.current,
+                    limit: limitInfo.limit,
+                    message: limitInfo.message,
+                });
+            } else {
+                console.error("Error downloading resume:", error);
+                alert("Unable to download this resume right now. Please try again.");
+            }
+        }
     };
 
     const handleEditResume = (resume: any) => {
@@ -699,6 +766,39 @@ export default function Profile() {
                     <h3 className="font-black text-slate-900 text-2xl mb-6 flex items-center gap-3">
                         <FileText className="w-6 h-6 text-[#5c52d2]" /> Saved Resumes
                     </h3>
+                    <div className="mb-6 rounded-3xl border border-slate-200 bg-white/90 px-5 py-4 shadow-sm">
+                        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                            <span className="inline-flex items-center rounded-full bg-[#5c52d2]/10 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-[#5c52d2]">
+                                {(usage?.plan || 'free').toUpperCase()} Plan
+                            </span>
+                            <span className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-700">Saved Resumes</span>
+                                <UsageBadge counter="resume_count" showWhenUnlimited />
+                                {storageCounter?.limit === -1 && <span className="font-semibold text-emerald-600">Unlimited</span>}
+                            </span>
+                            <span className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-700">Monthly Downloads</span>
+                                <UsageBadge counter="resume_edit_monthly" showWhenUnlimited />
+                                {downloadCounter?.limit === -1 && <span className="font-semibold text-emerald-600">Unlimited</span>}
+                            </span>
+                        </div>
+                        {resolved && (storageLimitReached || downloadLimitReached) && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                                {storageLimitReached && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 font-semibold text-amber-700">
+                                        <Lock className="w-3.5 h-3.5" />
+                                        Saved resume storage is full.
+                                    </span>
+                                )}
+                                {downloadLimitReached && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1 font-semibold text-rose-700">
+                                        <Lock className="w-3.5 h-3.5" />
+                                        Monthly resume download limit reached.
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
 
                     {loadingResumes ? (
                         <div className="text-center text-slate-400 py-10">Loading your resumes...</div>
@@ -717,12 +817,21 @@ export default function Profile() {
                                     onDelete={handleDeleteResume}
                                     onDownload={handleDownloadPDF}
                                     onEdit={handleEditResume}
+                                    downloadLocked={resolved && downloadLimitReached}
                                 />
                             ))}
                         </div>
                     )}
                 </div>
             </main>
+            <UpgradeModal
+                isOpen={limitModal.isOpen}
+                onClose={() => setLimitModal({ isOpen: false })}
+                counter={limitModal.counter}
+                current={limitModal.current}
+                limit={limitModal.limit}
+                message={limitModal.message}
+            />
         </div>
     );
 }

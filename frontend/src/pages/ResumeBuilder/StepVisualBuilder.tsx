@@ -19,10 +19,11 @@ import type { BaseTemplate, CatalogTemplate } from './templates';
 import type { ResumeData } from './types';
 import { exportToPDF, exportToDOCX } from './exportUtils';
 import { optimizeResumeContent } from '../../services/resumeBuilder';
-import { saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
+import { authorizeResumeDownload, saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
 import { extractLimitExceededError } from '../../services/api';
 import { SidePanelEditor } from './SidePanelEditor';
 import { useFeatureGate } from '../../hooks/useFeatureGate';
+import { UsageBadge } from '../../components/FeatureLockButton';
 import PremiumGate from '../../components/PremiumGate';
 import UpgradeModal from '../../components/UpgradeModal';
 import { useResumeProtection } from '../../hooks/useResumeProtection';
@@ -123,7 +124,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
         1,
         'Save your resume to your profile for future editing. Upgrade to unlock this feature.',
     );
-    const { refreshUsage } = useUsage();
+    const { usage, refreshUsage, isLimitExceeded, getCounter, resolved } = useUsage();
 
     const [selectedId, setSelectedId] = useState('ats-modern');
     const [customColor, setCustomColor] = useState<string | null>(null);
@@ -194,6 +195,27 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
         return TEMPLATE_CATALOG.find(t => t.template_id === selectedId) || TEMPLATE_CATALOG[0];
     }, [selectedId, editMeta]);
     const accentColor = customColor || (editMeta?.theme && editMeta.theme !== 'default' ? editMeta.theme : null) || selected.default_color;
+    const storageCounter = getCounter('resume_count');
+    const downloadCounter = getCounter('resume_edit_monthly');
+    const storageLimitReached = isLimitExceeded('resume_count');
+    const downloadLimitReached = isLimitExceeded('resume_edit_monthly');
+    const downloadActionLocked = isDownloadLocked || (resolved && downloadLimitReached);
+    const saveActionLocked = isSaveLocked || (!editMeta && resolved && storageLimitReached);
+    const saveCopyLocked = isSaveLocked || (resolved && storageLimitReached);
+
+    const openUsageLimitModal = useCallback(
+        (counter: 'resume_count' | 'resume_edit_monthly', message?: string) => {
+            const counterData = getCounter(counter);
+            setLimitModal({
+                isOpen: true,
+                counter,
+                current: counterData?.current,
+                limit: counterData?.limit,
+                message,
+            });
+        },
+        [getCounter],
+    );
 
     // In edit mode, initialise selected template from editMeta
     useEffect(() => {
@@ -326,22 +348,60 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
 
     const handleExportPDF = async () => {
         guardDownload(async () => {
+            if (resolved && downloadLimitReached) {
+                openUsageLimitModal('resume_edit_monthly');
+                return;
+            }
             setExporting('pdf');
             try {
+                await authorizeResumeDownload();
+                await refreshUsage();
                 const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
                 await exportToPDF('resume-preview-container', `${name}_Resume.pdf`);
-            } catch (e) { console.error('PDF export error:', e); }
+            } catch (e) {
+                const limitInfo = extractLimitExceededError(e);
+                if (limitInfo) {
+                    setLimitModal({
+                        isOpen: true,
+                        counter: limitInfo.counter,
+                        current: limitInfo.current,
+                        limit: limitInfo.limit,
+                        message: limitInfo.message,
+                    });
+                } else {
+                    console.error('PDF export error:', e);
+                }
+            }
             setExporting(null);
         });
     };
 
     const handleExportDOCX = async () => {
         guardDownload(async () => {
+            if (resolved && downloadLimitReached) {
+                openUsageLimitModal('resume_edit_monthly');
+                return;
+            }
             setExporting('docx');
             try {
+                await authorizeResumeDownload();
+                await refreshUsage();
                 const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
                 await exportToDOCX('resume-preview-container', `${name}_Resume.doc`);
-            } catch (e) { console.error('DOCX export error:', e); }
+            } catch (e) {
+                const limitInfo = extractLimitExceededError(e);
+                if (limitInfo) {
+                    setLimitModal({
+                        isOpen: true,
+                        counter: limitInfo.counter,
+                        current: limitInfo.current,
+                        limit: limitInfo.limit,
+                        message: limitInfo.message,
+                    });
+                } else {
+                    console.error('DOCX export error:', e);
+                }
+            }
             setExporting(null);
         });
     };
@@ -365,6 +425,13 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
 
     // Entry point: user clicks "Save to Profile"
     const handleSaveToProfile = () => {
+        if (!editMeta && resolved && storageLimitReached) {
+            openUsageLimitModal(
+                'resume_count',
+                'You have reached your saved resume limit. You can keep editing this draft, but saving a new resume to your profile requires more storage.',
+            );
+            return;
+        }
         guardSave(() => {
             if (editMeta) {
                 // Editing mode → ask replace or copy
@@ -382,6 +449,13 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
     // Save fresh resume with a name
     const handleSaveWithName = async () => {
         if (!resumeNameInput.trim()) return;
+        if (resolved && storageLimitReached) {
+            openUsageLimitModal(
+                'resume_count',
+                'You have reached your saved resume limit. You can keep editing this draft, but saving another resume to your profile requires more storage.',
+            );
+            return;
+        }
         setSaving(true);
         setShowNameModal(false);
         try {
@@ -438,6 +512,13 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
     // Save as a new copy with custom name
     const handleSaveAsCopy = async () => {
         if (!copyNameInput.trim()) return;
+        if (resolved && storageLimitReached) {
+            openUsageLimitModal(
+                'resume_count',
+                'You have reached your saved resume limit. You can still replace the current saved resume, but saving a new copy requires more storage.',
+            );
+            return;
+        }
         setSaving(true);
         setShowSaveModeModal(false);
         try {
@@ -465,19 +546,46 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
 
     const handleDownloadJSON = () => {
         guardDownload(() => {
-            const output = {
-                meta: { generated_at: new Date().toISOString(), target_role: data.target_role, template: selectedId, ats_score: data.ats?.score },
-                personal_info: data.personal,
-                education: data.education,
-                experience: data.experience,
-                projects: data.projects,
-                skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
+            const run = async () => {
+                if (resolved && downloadLimitReached) {
+                    openUsageLimitModal('resume_edit_monthly');
+                    return;
+                }
+
+                try {
+                    await authorizeResumeDownload();
+                    await refreshUsage();
+
+                    const output = {
+                        meta: { generated_at: new Date().toISOString(), target_role: data.target_role, template: selectedId, ats_score: data.ats?.score },
+                        personal_info: data.personal,
+                        education: data.education,
+                        experience: data.experience,
+                        projects: data.projects,
+                        skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
+                    };
+                    const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    const limitInfo = extractLimitExceededError(e);
+                    if (limitInfo) {
+                        setLimitModal({
+                            isOpen: true,
+                            counter: limitInfo.counter,
+                            current: limitInfo.current,
+                            limit: limitInfo.limit,
+                            message: limitInfo.message,
+                        });
+                    } else {
+                        console.error('JSON export error:', e);
+                    }
+                }
             };
-            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
-            URL.revokeObjectURL(url);
+
+            void run();
         });
     };
 
@@ -629,6 +737,33 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         <span className="w-px h-3 bg-gray-200 dark:bg-slate-600 hidden sm:block" />
                         <span className="hidden sm:inline"><span className="font-bold text-gray-600 dark:text-gray-300">For:</span> {selected.recommended_for_roles.slice(0, 3).join(', ')}</span>
                     </div>
+                    <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-white/90 dark:bg-slate-900/70 border-b border-gray-100 dark:border-slate-700/40 text-[10px] text-gray-500 dark:text-slate-300">
+                        <span className="inline-flex items-center rounded-full bg-[#5c52d2]/10 px-2.5 py-1 font-black uppercase tracking-[0.18em] text-[#5c52d2]">
+                            {(usage?.plan || 'free').toUpperCase()} Plan
+                        </span>
+                        <span className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-600 dark:text-slate-200">Saved Resumes</span>
+                            <UsageBadge counter="resume_count" showWhenUnlimited />
+                            {storageCounter?.limit === -1 && <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Unlimited</span>}
+                        </span>
+                        <span className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-600 dark:text-slate-200">Monthly Downloads</span>
+                            <UsageBadge counter="resume_edit_monthly" showWhenUnlimited />
+                            {downloadCounter?.limit === -1 && <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Unlimited</span>}
+                        </span>
+                        {resolved && storageLimitReached && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                                <AlertTriangle className="w-3 h-3" />
+                                Storage full. You can still edit your existing saved resume.
+                            </span>
+                        )}
+                        {resolved && downloadLimitReached && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                                <Lock className="w-3 h-3" />
+                                Monthly download limit reached.
+                            </span>
+                        )}
+                    </div>
 
                     {/* ── RESUME PREVIEW CANVAS ── */}
                     <div className="flex-1 overflow-auto bg-gray-100 dark:bg-slate-900/60" style={{ backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
@@ -669,24 +804,24 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {/* ── EXPORT ACTIONS BAR ── */}
                     <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-4 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-gray-200/60 dark:border-slate-700/60 flex-shrink-0">
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportPDF} disabled={!!exporting}
-                            className={`relative px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold text-xs shadow-md shadow-red-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${isDownloadLocked ? 'opacity-75' : ''}`}>
+                            className={`relative px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold text-xs shadow-md shadow-red-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${downloadActionLocked ? 'opacity-75' : ''}`}>
                             {exporting === 'pdf' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...</> : <><FileText className="w-3.5 h-3.5" /> PDF</>}
-                            {isDownloadLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
+                            {downloadActionLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleExportDOCX} disabled={!!exporting}
-                            className={`relative px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${isDownloadLocked ? 'opacity-75' : ''}`}>
+                            className={`relative px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${downloadActionLocked ? 'opacity-75' : ''}`}>
                             {exporting === 'docx' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...</> : <><FileType2 className="w-3.5 h-3.5" /> DOCX</>}
-                            {isDownloadLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
+                            {downloadActionLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleDownloadJSON}
-                            className={`relative px-5 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl font-bold text-xs shadow-md hover:bg-gray-800 transition-all flex items-center gap-1.5 ${isDownloadLocked ? 'opacity-75' : ''}`}>
+                            className={`relative px-5 py-2 bg-gray-900 dark:bg-slate-700 text-white rounded-xl font-bold text-xs shadow-md hover:bg-gray-800 transition-all flex items-center gap-1.5 ${downloadActionLocked ? 'opacity-75' : ''}`}>
                             <Download className="w-3.5 h-3.5" /> JSON
-                            {isDownloadLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
+                            {downloadActionLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSaveToProfile} disabled={saving}
-                            className={`relative px-5 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-bold text-xs shadow-md shadow-green-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${isSaveLocked ? 'opacity-75' : ''}`}>
+                            className={`relative px-5 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-bold text-xs shadow-md shadow-green-200/40 hover:shadow-lg transition-all disabled:opacity-60 flex items-center gap-1.5 ${saveActionLocked ? 'opacity-75' : ''}`}>
                             {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</> : saved ? <><CheckCircle2 className="w-3.5 h-3.5" /> Saved!</> : <><Save className="w-3.5 h-3.5" /> Save</>}
-                            {isSaveLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
+                            {saveActionLocked && <Lock className="w-3 h-3 ml-1 text-white/70" />}
                         </motion.button>
                     </div>
 
@@ -1181,6 +1316,11 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                     <p className="text-white/70 text-sm font-medium mt-1">Give it a memorable name so you can find it later</p>
                                 </div>
                                 <div className="p-8 space-y-6">
+                                    {resolved && storageLimitReached && (
+                                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                                            Your current plan is full for saved resumes. You can keep editing this draft, but saving a new resume to your profile requires more storage.
+                                        </div>
+                                    )}
                                     <div className="space-y-2">
                                         <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Resume Name</label>
                                         <input
@@ -1203,9 +1343,10 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                         <button
                                             onClick={handleSaveWithName}
                                             disabled={!resumeNameInput.trim()}
-                                            className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-green-200 hover:shadow-xl transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                                            className={`flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-green-200 hover:shadow-xl transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${resolved && storageLimitReached ? 'opacity-80' : ''}`}
                                         >
                                             <Save className="w-4 h-4" /> Save Resume
+                                            {resolved && storageLimitReached && <Lock className="w-4 h-4 text-white/80" />}
                                         </button>
                                     </div>
                                 </div>
@@ -1265,23 +1406,33 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                                     </div>
                                                     <div>
                                                         <h4 className="font-black text-gray-800 text-base">Replace Original</h4>
-                                                        <p className="text-gray-400 text-sm font-medium mt-0.5">Overwrite "{editMeta?.originalName}" with your changes</p>
+                                                        <p className="text-gray-400 text-sm font-medium mt-0.5">Overwrite "{editMeta?.originalName}" with your changes. Editing the same saved resume stays available.</p>
                                                     </div>
                                                 </button>
 
                                                 <button
                                                     onClick={() => {
+                                                        if (resolved && storageLimitReached) {
+                                                            openUsageLimitModal(
+                                                                'resume_count',
+                                                                'You have reached your saved resume limit. You can still replace the current saved resume, but saving a new copy requires more storage.',
+                                                            );
+                                                            return;
+                                                        }
                                                         setCopyNameInput(`${editMeta?.originalName || 'Resume'} (Copy)`);
                                                         setSaveModeStep('copy-name');
                                                     }}
-                                                    className="w-full p-5 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/50 transition-all group text-left flex items-start gap-4"
+                                                    className={`w-full p-5 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/50 transition-all group text-left flex items-start gap-4 ${saveCopyLocked ? 'opacity-80' : ''}`}
                                                 >
-                                                    <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-500 transition-colors">
+                                                    <div className={`w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0 transition-colors ${saveCopyLocked ? '' : 'group-hover:bg-emerald-500'}`}>
                                                         <FileText className="w-5 h-5 text-emerald-600 group-hover:text-white transition-colors" />
                                                     </div>
                                                     <div>
-                                                        <h4 className="font-black text-gray-800 text-base">Save as New Copy</h4>
-                                                        <p className="text-gray-400 text-sm font-medium mt-0.5">Keep the original and create a separate version</p>
+                                                        <h4 className="font-black text-gray-800 text-base flex items-center gap-2">
+                                                            Save as New Copy
+                                                            {saveCopyLocked && <Lock className="w-4 h-4 text-amber-500" />}
+                                                        </h4>
+                                                        <p className="text-gray-400 text-sm font-medium mt-0.5">Keep the original and create a separate version, if your plan still has saved resume space.</p>
                                                     </div>
                                                 </button>
 
@@ -1302,6 +1453,11 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                                 exit={{ opacity: 0, x: -10 }}
                                                 className="space-y-6"
                                             >
+                                                {resolved && storageLimitReached && (
+                                                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                                                        Your saved resume storage is full. You can still replace the original, but saving an extra copy requires more storage.
+                                                    </div>
+                                                )}
                                                 <div className="space-y-2">
                                                     <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Name for the Copy</label>
                                                     <input
@@ -1324,9 +1480,10 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                                     <button
                                                         onClick={handleSaveAsCopy}
                                                         disabled={!copyNameInput.trim()}
-                                                        className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-green-200 hover:shadow-xl transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                                                        className={`flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-green-200 hover:shadow-xl transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${saveCopyLocked ? 'opacity-80' : ''}`}
                                                     >
                                                         <Save className="w-4 h-4" /> Save Copy
+                                                        {saveCopyLocked && <Lock className="w-4 h-4 text-white/80" />}
                                                     </button>
                                                 </div>
                                             </motion.div>

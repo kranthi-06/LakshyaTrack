@@ -46,3 +46,10 @@ export const deleteSavedResume = async (resumeId: string) => {
     invalidateCache(SAVED_RESUMES_CACHE_KEY);
     return res.data;
 };
+
+export const authorizeResumeDownload = async (resumeId?: string) => {
+    const res = await api.post('/saved-resumes/download-authorize', {
+        resume_id: resumeId || null,
+    });
+    return res.data;
+};

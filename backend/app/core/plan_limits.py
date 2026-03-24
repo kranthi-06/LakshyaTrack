@@ -83,7 +83,7 @@ CANONICAL_COUNTERS = {
         "legacy": "resume_edit_monthly",
         "usage_field": "resume_edit_monthly",
         "reset": "monthly",
-        "display_name": "Monthly Resume Edits",
+        "display_name": "Monthly Resume Downloads",
     },
 }
 
@@ -99,6 +99,7 @@ FEATURE_TO_COUNTER = {
     "resume_edit": "resumeEditsMonthly",
     "resume_edit_monthly": "resumeEditsMonthly",
     "resumeEditsMonthly": "resumeEditsMonthly",
+    "resume_download": "resumeEditsMonthly",
     "interview_start": "weeklyInterviews",
     "weeklyInterviews": "weeklyInterviews",
     "interview_count_weekly": "weeklyInterviews",

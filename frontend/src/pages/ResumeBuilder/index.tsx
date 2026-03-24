@@ -15,7 +15,7 @@ import { StepVisualBuilder } from './StepVisualBuilder';
 import type { BuilderStep, ResumeData } from './types';
 import { defaultResumeData } from './types';
 import { useAuth } from '../../context/AuthContext';
-import { saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
+import { updateSavedResume } from '../../services/resumeStorage';
 import { useAutoSave, type AutoSaveReason } from './useAutoSave';
 import { useBeforeUnload } from './useBeforeUnload';
 import { useResumeStorage } from './useResumeStorage';
@@ -117,6 +117,7 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
     const syncBackendResume = useCallback(
         async (resume: ResumeData) => {
             if (!authTokenPresentRef.current) return;
+            if (!editResume) return;
 
             // Avoid hammering the backend. LocalStorage persistence is the source of truth for crash safety.
             const now = Date.now();
@@ -133,37 +134,7 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
             };
 
             try {
-                if (editResume) {
-                    await updateSavedResume(editResume.id, {
-                        resume_data,
-                        target_role: resume.target_role,
-                        ats_score: resume.ats?.score,
-                    });
-                    return;
-                }
-
-                if (!backendDraftIdRef.current) {
-                    const res = await saveResumeToProfile({
-                        resume_name: 'Auto-saved Resume',
-                        resume_data,
-                        template_id: 'ats-modern',
-                        theme: 'default',
-                        target_role: resume.target_role,
-                        ats_score: resume.ats?.score,
-                        is_primary: false,
-                    });
-                    backendDraftIdRef.current = res?.id ? String(res.id) : null;
-                    if (backendDraftIdRef.current) {
-                        try {
-                            localStorage.setItem(BACKEND_DRAFT_ID_STORAGE_KEY, backendDraftIdRef.current);
-                        } catch {
-                            // ignore
-                        }
-                    }
-                    return;
-                }
-
-                await updateSavedResume(backendDraftIdRef.current, {
+                await updateSavedResume(editResume.id, {
                     resume_data,
                     target_role: resume.target_role,
                     ats_score: resume.ats?.score,

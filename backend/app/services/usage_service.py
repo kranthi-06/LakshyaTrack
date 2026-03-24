@@ -378,6 +378,7 @@ def get_usage_status(
             "interviewsUsedWeekly": int(usage.interview_count_weekly or 0),
             "roadmapUsed": int(usage.plan_count or 0),
             "resumeEditsUsedMonthly": int(usage.resume_edit_monthly or 0),
+            "resumeDownloadsUsedMonthly": int(usage.resume_edit_monthly or 0),
             "lastWeeklyReset": _ensure_aware(usage.last_reset_weekly).isoformat() if usage.last_reset_weekly else None,
             "lastMonthlyReset": _ensure_aware(usage.last_reset_monthly).isoformat() if usage.last_reset_monthly else None,
         },
