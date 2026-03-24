@@ -40,25 +40,25 @@ export const generateRoadmap = async (
     return res.data;
 };
 
-export const getActiveRoadmap = async () => {
+export const getActiveRoadmap = async (options: { bypassCache?: boolean } = {}) => {
     return cachedRequest(
         CACHE_KEYS.activeRoadmap,
         async () => {
             const res = await api.get('/roadmap/active');
             return res.data;
         },
-        { ttlMs: 120_000, persist: true },
+        { ttlMs: 120_000, persist: true, bypassCache: options.bypassCache },
     );
 };
 
-export const getAllRoadmaps = async () => {
+export const getAllRoadmaps = async (options: { bypassCache?: boolean } = {}) => {
     return cachedRequest(
         CACHE_KEYS.allRoadmaps,
         async () => {
             const res = await api.get('/roadmap/all');
             return res.data;
         },
-        { ttlMs: 120_000, persist: true },
+        { ttlMs: 120_000, persist: true, bypassCache: options.bypassCache },
     );
 };
 

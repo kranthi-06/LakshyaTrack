@@ -200,49 +200,56 @@ export default function CareerIntelligence() {
     }, []);
 
     // ── Fetch all roadmaps ────────────────
-    const fetchAllRoadmaps = useCallback(async () => {
+    const fetchAllRoadmaps = useCallback(async (bypassCache = false) => {
         try {
-            const res = await getAllRoadmaps();
+            const res = await getAllRoadmaps({ bypassCache });
             setAllRoadmaps(res.roadmaps || []);
         } catch {
             // silent
         }
     }, []);
 
+    const restoreExistingRoadmap = useCallback(async (bypassCache = false) => {
+        try {
+            const res = await getActiveRoadmap({ bypassCache });
+            if (res.roadmap) {
+                loadRoadmapIntoView(res.roadmap);
+                return true;
+            }
+        } catch {
+            // Fall back to all roadmaps below.
+        }
+
+        try {
+            const allRes = await getAllRoadmaps({ bypassCache });
+            const roadmaps = allRes.roadmaps || [];
+            setAllRoadmaps(roadmaps);
+
+            if (roadmaps.length > 0) {
+                const restored = await setActiveRoadmap(roadmaps[0].id);
+                loadRoadmapIntoView({
+                    id: restored.id,
+                    target_role: restored.target_role,
+                    topic_name: restored.topic_name,
+                    roadmap_data: restored.roadmap_data,
+                });
+                return true;
+            }
+        } catch {
+            // No roadmap to restore.
+        }
+
+        return false;
+    }, [loadRoadmapIntoView]);
+
     // Check for existing roadmap on mount
     useEffect(() => {
         const checkExistingRoadmap = async () => {
-            try {
-                const res = await getActiveRoadmap();
-                if (res.roadmap) {
-                    loadRoadmapIntoView(res.roadmap);
-                    return;
-                }
-            } catch {
-                // Fall back to the full roadmap list below.
-            }
-
-            try {
-                const allRes = await getAllRoadmaps();
-                const roadmaps = allRes.roadmaps || [];
-                setAllRoadmaps(roadmaps);
-
-                if (roadmaps.length > 0) {
-                    const restored = await setActiveRoadmap(roadmaps[0].id);
-                    loadRoadmapIntoView({
-                        id: restored.id,
-                        target_role: restored.target_role,
-                        topic_name: restored.topic_name,
-                        roadmap_data: restored.roadmap_data,
-                    });
-                }
-            } catch {
-                // No roadmap yet - stay on domains step
-            }
+            await restoreExistingRoadmap(true);
         };
         checkExistingRoadmap();
-        fetchAllRoadmaps();
-    }, [fetchAllRoadmaps, loadRoadmapIntoView]);
+        fetchAllRoadmaps(true);
+    }, [fetchAllRoadmaps, restoreExistingRoadmap]);
 
     const filteredRoles = jobRoles.filter(role =>
         role.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -277,10 +284,17 @@ export default function CareerIntelligence() {
                 const limitInfo = extractLimitExceededError(error);
                 if (limitInfo) {
                     setSelectedRole(previousRole);
-                    setRoadmapData(previousRoadmapData);
-                    setRoadmapId(previousRoadmapId);
-                    setActiveTopicName(previousTopicName);
-                    setStep(previousRoadmapData ? 'roadmap' : previousStep);
+                    if (previousRoadmapData) {
+                        setRoadmapData(previousRoadmapData);
+                        setRoadmapId(previousRoadmapId);
+                        setActiveTopicName(previousTopicName);
+                        setStep('roadmap');
+                    } else {
+                        const restored = await restoreExistingRoadmap(true);
+                        if (!restored) {
+                            setStep(previousStep);
+                        }
+                    }
                     setLimitModal({
                         isOpen: true,
                         counter: limitInfo.counter,
@@ -330,10 +344,17 @@ export default function CareerIntelligence() {
                 const limitInfo = extractLimitExceededError(error);
                 if (limitInfo) {
                     setSelectedRole(previousRole);
-                    setRoadmapData(previousRoadmapData);
-                    setRoadmapId(previousRoadmapId);
-                    setActiveTopicName(previousTopicName);
-                    setStep(previousRoadmapData ? 'roadmap' : previousStep);
+                    if (previousRoadmapData) {
+                        setRoadmapData(previousRoadmapData);
+                        setRoadmapId(previousRoadmapId);
+                        setActiveTopicName(previousTopicName);
+                        setStep('roadmap');
+                    } else {
+                        const restored = await restoreExistingRoadmap(true);
+                        if (!restored) {
+                            setStep(previousStep);
+                        }
+                    }
                     setLimitModal({
                         isOpen: true,
                         counter: limitInfo.counter,
@@ -364,7 +385,7 @@ export default function CareerIntelligence() {
                 topic_name: res.topic_name,
                 roadmap_data: res.roadmap_data,
             });
-            await fetchAllRoadmaps();
+            await fetchAllRoadmaps(true);
         } catch (error) {
             console.error('Failed to switch roadmap:', error);
         } finally {
@@ -378,23 +399,15 @@ export default function CareerIntelligence() {
         if (!confirm('Are you sure you want to delete this roadmap? This cannot be undone.')) return;
         try {
             await deleteRoadmapApi(id);
-            await fetchAllRoadmaps();
+            await fetchAllRoadmaps(true);
             // If we deleted the active one, reload active
             if (id === roadmapId) {
-                try {
-                    const res = await getActiveRoadmap();
-                    if (res.roadmap) {
-                        loadRoadmapIntoView(res.roadmap);
-                    } else {
-                        setRoadmapData(null);
-                        setRoadmapId(null);
-                        setSelectedRole(null);
-                        setActiveTopicName(null);
-                        setStep('domains');
-                    }
-                } catch {
+                const restored = await restoreExistingRoadmap(true);
+                if (!restored) {
                     setRoadmapData(null);
                     setRoadmapId(null);
+                    setSelectedRole(null);
+                    setActiveTopicName(null);
                     setStep('domains');
                 }
             }
