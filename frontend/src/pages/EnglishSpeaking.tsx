@@ -62,13 +62,47 @@ function useSpeechRecognition() {
     recognition.lang = 'en-US';
 
     recognition.onresult = (event: any) => {
-      let interim = '', final = '';
+      let finalArr: string[] = [];
+      let interimArr: string[] = [];
+
       for (let i = 0; i < event.results.length; i++) {
-        if (event.results[i].isFinal) final += event.results[i][0].transcript + ' ';
-        else interim += event.results[i][0].transcript;
+        let text = event.results[i][0].transcript.trim();
+        if (!text) continue;
+
+        if (event.results[i].isFinal) {
+          if (finalArr.length > 0) {
+            let prev = finalArr[finalArr.length - 1];
+            if (text.toLowerCase().startsWith(prev.toLowerCase())) {
+              finalArr[finalArr.length - 1] = text;
+            } else {
+              finalArr.push(text);
+            }
+          } else {
+            finalArr.push(text);
+          }
+        } else {
+          if (interimArr.length > 0) {
+            let prev = interimArr[interimArr.length - 1];
+            if (text.toLowerCase().startsWith(prev.toLowerCase())) {
+              interimArr[interimArr.length - 1] = text;
+            } else {
+              interimArr.push(text);
+            }
+          } else {
+            interimArr.push(text);
+          }
+        }
       }
-      setTranscript(final.trim());
-      setInterimTranscript(interim);
+
+      let finalStr = finalArr.join(' ');
+      let interimStr = interimArr.join(' ');
+
+      if (finalStr && interimStr.toLowerCase().startsWith(finalStr.toLowerCase())) {
+        interimStr = interimStr.substring(finalStr.length).trim();
+      }
+
+      setTranscript(finalStr);
+      setInterimTranscript(interimStr);
     };
     recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
