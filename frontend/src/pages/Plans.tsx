@@ -82,20 +82,20 @@ interface LimitDefinition {
 }
 
 const LIMIT_LABELS: { key: keyof LimitDefinition; label: string; icon: any; unit: string }[] = [
-    { key: 'resume_count', label: 'Resume Creation', icon: FileText, unit: '/month' },
+    { key: 'resume_count', label: 'Resume Storage', icon: FileText, unit: 'stored' },
     { key: 'interview_count_weekly', label: 'Weekly Interviews', icon: Mic, unit: '/week' },
     { key: 'plan_count', label: 'Roadmaps', icon: Map, unit: 'roadmaps' },
-    // resume_edit_monthly is unlimited for all plans — not shown in limits
+    { key: 'resume_edit_monthly', label: 'Monthly Resume Edits', icon: Edit3, unit: '/month' },
 ];
 
 const FREE_FEATURES = [
     'Dashboard access',
     'Unlimited quiz & analytics',
     'Unlimited resume evaluation',
-    '1 resume creation/month',
-    '2 interviews/week',
+    '1 stored resume',
+    '1 interview/week',
     '1 roadmap',
-    'Unlimited resume edits',
+    '1 resume edit/month',
     'Jobs, English & Reasoning — unlimited',
 ];
 
@@ -663,8 +663,8 @@ export default function Plans() {
                                         {/* Additional feature rows */}
                                         {[
                                             { label: 'Dashboard Access', values: [true, true, true, true] },
-                                            { label: 'Resume Builder', values: [false, true, true, true] },
-                                            { label: 'Job Portal', values: [false, false, true, true] },
+                                            { label: 'Resume Builder', values: [true, true, true, true] },
+                                            { label: 'Job Portal', values: [true, true, true, true] },
                                             { label: 'Ad-Free Experience', values: [false, false, true, true] },
                                             { label: 'Priority Support', values: [false, false, false, true] },
                                         ].map(({ label, values }) => (

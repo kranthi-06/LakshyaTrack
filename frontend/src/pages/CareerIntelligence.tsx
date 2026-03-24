@@ -38,6 +38,9 @@ import {
 } from '../services/careerPlatform';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import PremiumGate from '../components/PremiumGate';
+import UpgradeModal from '../components/UpgradeModal';
+import { extractLimitExceededError } from '../services/api';
+import { useUsage } from '../context/UsageContext';
 
 type Step = 'domains' | 'roles' | 'analysis' | 'roadmap';
 
@@ -152,6 +155,7 @@ export default function CareerIntelligence() {
         1,
         'Generate personalized AI learning roadmaps to achieve your career goals. Upgrade to unlock.',
     );
+    const { refreshUsage } = useUsage();
 
     const [step, setStep] = useState<Step>('domains');
     const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
@@ -173,6 +177,13 @@ export default function CareerIntelligence() {
     const [newDifficulty, setNewDifficulty] = useState('');
     const [isSwitching, setIsSwitching] = useState(false);
     const [activeTopicName, setActiveTopicName] = useState<string | null>(null);
+    const [limitModal, setLimitModal] = useState<{
+        isOpen: boolean;
+        counter?: string;
+        current?: number;
+        limit?: number;
+        message?: string;
+    }>({ isOpen: false });
 
     // ── Fetch all roadmaps ────────────────
     const fetchAllRoadmaps = useCallback(async () => {
@@ -212,6 +223,8 @@ export default function CareerIntelligence() {
     // Generate roadmap when role is selected
     const handleRoleSelect = async (roleTitle: string) => {
         guardAction(async () => {
+            const previousStep = step;
+            const previousRole = selectedRole;
             setSelectedRole(roleTitle);
             setIsGenerating(true);
             setStep('roadmap');
@@ -223,13 +236,27 @@ export default function CareerIntelligence() {
                     role?.skills || [],
                     []
                 );
+                await refreshUsage();
                 setRoadmapData(res.roadmap_data);
                 setRoadmapId(res.id);
                 setActiveTopicName(res.topic_name || roleTitle);
                 await fetchAllRoadmaps();
             } catch (error) {
-                console.error('Failed to generate roadmap:', error);
-                window.location.href = '/dashboard';
+                const limitInfo = extractLimitExceededError(error);
+                if (limitInfo) {
+                    setSelectedRole(previousRole);
+                    setStep(previousStep);
+                    setLimitModal({
+                        isOpen: true,
+                        counter: limitInfo.counter,
+                        current: limitInfo.current,
+                        limit: limitInfo.limit,
+                        message: limitInfo.message,
+                    });
+                } else {
+                    console.error('Failed to generate roadmap:', error);
+                    window.location.href = '/dashboard';
+                }
             } finally {
                 setIsGenerating(false);
             }
@@ -240,6 +267,8 @@ export default function CareerIntelligence() {
     const handleCreateNewRoadmap = async () => {
         if (!newTopic.trim()) return;
         guardAction(async () => {
+            const previousStep = step;
+            const previousRole = selectedRole;
             setShowNewRoadmapModal(false);
             setIsGenerating(true);
             setStep('roadmap');
@@ -253,13 +282,27 @@ export default function CareerIntelligence() {
                     newTopic.trim(),
                     newDifficulty || undefined
                 );
+                await refreshUsage();
                 setRoadmapData(res.roadmap_data);
                 setRoadmapId(res.id);
                 setActiveTopicName(res.topic_name || newTopic.trim());
                 setSelectedRole(res.target_role);
                 await fetchAllRoadmaps();
             } catch (error) {
-                console.error('Failed to generate custom roadmap:', error);
+                const limitInfo = extractLimitExceededError(error);
+                if (limitInfo) {
+                    setSelectedRole(previousRole);
+                    setStep(previousStep);
+                    setLimitModal({
+                        isOpen: true,
+                        counter: limitInfo.counter,
+                        current: limitInfo.current,
+                        limit: limitInfo.limit,
+                        message: limitInfo.message,
+                    });
+                } else {
+                    console.error('Failed to generate custom roadmap:', error);
+                }
             } finally {
                 setIsGenerating(false);
                 setNewTopic('');
@@ -972,6 +1015,14 @@ export default function CareerIntelligence() {
             </AnimatePresence>
             {/* Premium Gate Modal */}
             <PremiumGate {...gateProps} />
+            <UpgradeModal
+                isOpen={limitModal.isOpen}
+                onClose={() => setLimitModal({ isOpen: false })}
+                counter={limitModal.counter}
+                current={limitModal.current}
+                limit={limitModal.limit}
+                message={limitModal.message}
+            />
         </div>
     );
 }

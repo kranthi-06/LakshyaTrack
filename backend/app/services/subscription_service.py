@@ -17,6 +17,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.core.plan_limits import (
+    CORE_FEATURE_FLAGS,
+    PLAN_LIMITS,
+    STAGE_TO_PLAN,
+    get_api_plan_name,
+    get_plan_for_stage,
+    serialize_limit,
+)
 from app.models.subscription import (
     Coupon, CouponUsage, MicroPlan, PaymentTransaction,
     SubscriptionPlan, UserMicroPurchase, UserSubscription,
@@ -85,10 +93,8 @@ def invalidate_all_subscription_cache() -> None:
 # ══════════════════════════════════════════════════════════════
 
 STAGE_TO_PLAN_NAME = {
-    0: "free",
-    1: "starter",
-    2: "professional",
-    3: "ultimate",
+    stage: get_api_plan_name(plan)
+    for stage, plan in STAGE_TO_PLAN.items()
 }
 
 
@@ -165,61 +171,16 @@ def get_subscription_status(
 # ══════════════════════════════════════════════════════════════
 
 STAGE_FEATURES: Dict[int, Dict[str, bool]] = {
-    0: {
-        "dashboard": True,
-        "resume_preview": True,
-        "quiz_limited": True,
-        "analytics_limited": True,
-        "resume_download": False,
-        "resume_builder": False,
-        "roadmap_generate": False,
-        "interview_start": False,
-        "job_portal": False,
-        "ads_free": False,
-    },
-    1: {
-        "dashboard": True,
-        "resume_preview": True,
-        "quiz_limited": True,
-        "analytics_limited": True,
-        "resume_download": True,
-        "resume_builder": True,
-        "roadmap_generate": True,
-        "interview_start": False,
-        "job_portal": False,
-        "ads_free": False,
-    },
-    2: {
-        "dashboard": True,
-        "resume_preview": True,
-        "quiz_limited": True,
-        "analytics_limited": True,
-        "resume_download": True,
-        "resume_builder": True,
-        "roadmap_generate": True,
-        "interview_start": False,
-        "job_portal": True,
-        "ads_free": True,
-    },
-    3: {
-        "dashboard": True,
-        "resume_preview": True,
-        "quiz_limited": True,
-        "analytics_limited": True,
-        "resume_download": True,
-        "resume_builder": True,
-        "roadmap_generate": True,
-        "interview_start": True,
-        "job_portal": True,
-        "ads_free": True,
-    },
+    stage: dict(CORE_FEATURE_FLAGS)
+    for stage in STAGE_TO_PLAN_NAME
 }
 
 STAGE_LIMITS = {
-    0: {"resume_limit": 0, "roadmap_limit": 0},
-    1: {"resume_limit": 1, "roadmap_limit": 1},
-    2: {"resume_limit": 5, "roadmap_limit": 3},
-    3: {"resume_limit": -1, "roadmap_limit": -1},  # -1 = unlimited
+    stage: {
+        "resume_limit": serialize_limit(PLAN_LIMITS[plan]["resumeStorage"]),
+        "roadmap_limit": serialize_limit(PLAN_LIMITS[plan]["roadmap"]),
+    }
+    for stage, plan in STAGE_TO_PLAN.items()
 }
 
 
@@ -235,14 +196,14 @@ DEFAULT_PLANS = [
         "billing_cycle": "monthly",
         "price": 99,
         "features": [
-            "Resume builder enabled",
-            "Resume download (1 resume)",
-            "1 learning roadmap",
-            "Dashboard analytics",
-            "Progress tracking",
+            "All core features unlocked",
+            "Resume storage up to 5 resumes",
+            "10 interviews per week",
+            "5 roadmaps",
+            "10 monthly resume edits",
         ],
-        "resume_limit": 1,
-        "roadmap_limit": 1,
+        "resume_limit": 5,
+        "roadmap_limit": 5,
         "is_recommended": False,
     },
     {
@@ -251,14 +212,14 @@ DEFAULT_PLANS = [
         "billing_cycle": "yearly",
         "price": 799,
         "features": [
-            "Resume builder enabled",
-            "Resume download (1 resume)",
-            "1 learning roadmap",
-            "Dashboard analytics",
-            "Progress tracking",
+            "All core features unlocked",
+            "Resume storage up to 5 resumes",
+            "10 interviews per week",
+            "5 roadmaps",
+            "10 monthly resume edits",
         ],
-        "resume_limit": 1,
-        "roadmap_limit": 1,
+        "resume_limit": 5,
+        "roadmap_limit": 5,
         "is_recommended": False,
     },
     # Stage 2
@@ -268,14 +229,14 @@ DEFAULT_PLANS = [
         "billing_cycle": "monthly",
         "price": 249,
         "features": [
-            "Everything in Stage 1",
-            "5 resume storage",
-            "3 learning roadmaps",
-            "Job opportunity portal",
-            "Ad-free experience",
+            "All core features unlocked",
+            "Resume storage up to 20 resumes",
+            "30 interviews per week",
+            "15 roadmaps",
+            "50 monthly resume edits",
         ],
-        "resume_limit": 5,
-        "roadmap_limit": 3,
+        "resume_limit": 20,
+        "roadmap_limit": 15,
         "is_recommended": True,
     },
     {
@@ -284,14 +245,14 @@ DEFAULT_PLANS = [
         "billing_cycle": "yearly",
         "price": 1999,
         "features": [
-            "Everything in Stage 1",
-            "5 resume storage",
-            "3 learning roadmaps",
-            "Job opportunity portal",
-            "Ad-free experience",
+            "All core features unlocked",
+            "Resume storage up to 20 resumes",
+            "30 interviews per week",
+            "15 roadmaps",
+            "50 monthly resume edits",
         ],
-        "resume_limit": 5,
-        "roadmap_limit": 3,
+        "resume_limit": 20,
+        "roadmap_limit": 15,
         "is_recommended": True,
     },
     # Stage 3
@@ -301,13 +262,13 @@ DEFAULT_PLANS = [
         "billing_cycle": "monthly",
         "price": 499,
         "features": [
-            "Full platform access",
-            "Unlimited resumes",
-            "Unlimited roadmaps",
+            "Unlimited resume storage",
             "Unlimited interviews",
-            "Job portal access",
-            "No ads",
-            "Full analytics",
+            "Unlimited roadmaps",
+            "Unlimited monthly resume edits",
+            "All core platform features",
+            "Priority experience",
+            "Future premium add-ons included",
         ],
         "resume_limit": -1,
         "roadmap_limit": -1,
@@ -319,13 +280,13 @@ DEFAULT_PLANS = [
         "billing_cycle": "yearly",
         "price": 3999,
         "features": [
-            "Full platform access",
-            "Unlimited resumes",
-            "Unlimited roadmaps",
+            "Unlimited resume storage",
             "Unlimited interviews",
-            "Job portal access",
-            "No ads",
-            "Full analytics",
+            "Unlimited roadmaps",
+            "Unlimited monthly resume edits",
+            "All core platform features",
+            "Priority experience",
+            "Future premium add-ons included",
         ],
         "resume_limit": -1,
         "roadmap_limit": -1,

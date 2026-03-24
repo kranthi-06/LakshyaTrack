@@ -21,6 +21,9 @@ from app.api.endpoints import (
     reasoning,
     # Usage tracking & limits
     usage,
+    # SaaS aliases
+    user_plan,
+    plan,
 )
 
 api_router = APIRouter()
@@ -64,3 +67,7 @@ api_router.include_router(reasoning.router, prefix="/reasoning", tags=["reasonin
 
 # ── Usage Tracking & Limits ──────────────────────────────
 api_router.include_router(usage.router, prefix="/usage", tags=["usage"])
+
+# SaaS alias routes
+api_router.include_router(user_plan.router, prefix="/user", tags=["user-plan"])
+api_router.include_router(plan.router, prefix="/plan", tags=["plan"])

@@ -3,13 +3,13 @@ API Endpoints for Advanced AI Mock Interviews.
 Extends the existing Interview page with roadmap-gated interviews.
 """
 from typing import Any, List, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
+from app.api.deps import _resolve_user_role
 from app.services import interview_advanced_service
-from app.middleware.require_usage_limit import require_usage_limit
-from app.services.usage_service import increment_usage
+from app.services.usage_service import LimitExceededError, consume_usage
 import logging
 
 router = APIRouter()
@@ -58,21 +58,34 @@ async def check_interview_unlock(
 async def get_next_question(
     request: AdvancedQuestionRequest,
     db: Session = Depends(deps.get_db),
-    current_user=Depends(require_usage_limit("interview_count_weekly")),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     """Generate the next interview question. Enforces interview_count_weekly limit."""
-    question = await interview_advanced_service.generate_interview_question_advanced(
-        position=request.position,
-        round_type=request.round_type,
-        history=request.history,
-        resume_summary=request.resume_summary,
-        target_skills=request.target_skills
-    )
+    try:
+        # Consume the weekly interview quota only for the first question in a session.
+        if not request.history:
+            consume_usage(
+                db,
+                current_user.id,
+                "weeklyInterviews",
+                user_role=_resolve_user_role(current_user),
+            )
 
-    # Increment weekly interview counter
-    increment_usage(db, current_user.id, "interview_count_weekly")
-
-    return {"question": question}
+        question = await interview_advanced_service.generate_interview_question_advanced(
+            position=request.position,
+            round_type=request.round_type,
+            history=request.history,
+            resume_summary=request.resume_summary,
+            target_skills=request.target_skills
+        )
+        db.commit()
+        return {"question": question}
+    except LimitExceededError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/finish-advanced")

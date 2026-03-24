@@ -24,6 +24,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import PremiumGate from '../components/PremiumGate';
+import UpgradeModal from '../components/UpgradeModal';
+import { extractLimitExceededError } from '../services/api';
+import { useUsage } from '../context/UsageContext';
 type InterviewStep = 'landing' | 'setup' | 'screening' | 'technical' | 'coding' | 'hr' | 'stage_result' | 'final_results';
 type InterviewMode = 'text' | 'voice';
 type InterviewPath = 'resume_screening' | 'direct_skill';
@@ -51,6 +54,7 @@ export default function Interview() {
         2,
         'Practice with our AI-powered 4-stage interview simulator. Upgrade to Stage 2 or purchase a micro-plan to unlock.',
     );
+    const { refreshUsage } = useUsage();
 
     const [step, setStep] = useState<InterviewStep>('landing');
     const [mode, setMode] = useState<InterviewMode>('text');
@@ -85,6 +89,13 @@ export default function Interview() {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [speechSpeed, setSpeechSpeed] = useState<number>(1);
+    const [limitModal, setLimitModal] = useState<{
+        isOpen: boolean;
+        counter?: string;
+        current?: number;
+        limit?: number;
+        message?: string;
+    }>({ isOpen: false });
     const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
     const lastSpokenQuestion = useRef<string>('');
 
@@ -190,6 +201,7 @@ export default function Interview() {
             setIsLoading(true);
             try {
                 const session = await createMultistageSession(position, interviewPath, 'intermediate');
+                await refreshUsage();
                 setSessionId(session.id);
                 setCurrentStageIdx(0);
                 setQuestionIndex(0);
@@ -199,8 +211,22 @@ export default function Interview() {
                 setCurrentStageEval(null);
                 await fetchQuestion('screening', []);
                 setStep('screening');
-            } catch (e) { console.error('Start error:', e); }
-            setIsLoading(false);
+            } catch (e) {
+                const limitInfo = extractLimitExceededError(e);
+                if (limitInfo) {
+                    setLimitModal({
+                        isOpen: true,
+                        counter: limitInfo.counter,
+                        current: limitInfo.current,
+                        limit: limitInfo.limit,
+                        message: limitInfo.message,
+                    });
+                } else {
+                    console.error('Start error:', e);
+                }
+            } finally {
+                setIsLoading(false);
+            }
         });
     };
 
@@ -494,6 +520,14 @@ export default function Interview() {
 
                                 {/* Premium Gate Modal */}
                                 <PremiumGate {...gateProps} />
+                                <UpgradeModal
+                                    isOpen={limitModal.isOpen}
+                                    onClose={() => setLimitModal({ isOpen: false })}
+                                    counter={limitModal.counter}
+                                    current={limitModal.current}
+                                    limit={limitModal.limit}
+                                    message={limitModal.message}
+                                />
                             </motion.div>
                         )}
 

@@ -23,31 +23,31 @@ interface UpgradeModalProps {
 
 const COUNTER_LABELS: Record<string, { label: string; icon: string; description: string }> = {
     resume_count: {
-        label: 'Resume Creation',
+        label: 'Resume Storage',
         icon: '📄',
-        description: 'You\'ve reached your monthly resume creation limit. Wait for next month or upgrade your plan.',
+        description: 'You\'ve reached your resume storage limit for this plan. Delete an older resume or upgrade for more space.',
     },
     interview_count_weekly: {
-        label: 'Interview Practice',
+        label: 'Weekly Interviews',
         icon: '🎤',
-        description: 'You\'ve used all your interview sessions for this week.',
+        description: 'You\'ve used all interview starts available for this week.',
     },
     plan_count: {
-        label: 'Roadmap Generator',
+        label: 'Roadmaps',
         icon: '🗺️',
-        description: 'You\'ve reached your roadmap generation limit.',
+        description: 'You\'ve reached the maximum number of roadmaps for your current plan.',
     },
     resume_edit_monthly: {
-        label: 'Resume Edits',
+        label: 'Monthly Resume Edits',
         icon: '✏️',
         description: 'You\'ve used all your resume edits for this month.',
     },
 };
 
 const PLAN_BENEFITS = [
-    { icon: Zap, label: 'Starter', desc: 'More creations & interviews', color: '#3B82F6' },
-    { icon: Shield, label: 'Professional', desc: 'Full platform access', color: '#8B5CF6' },
-    { icon: Rocket, label: 'Ultimate', desc: 'Unlimited everything', color: '#F59E0B' },
+    { icon: Zap, label: 'Starter', desc: 'More storage, interviews, and edits', color: '#3B82F6' },
+    { icon: Shield, label: 'Professional', desc: 'Much higher limits across every tool', color: '#8B5CF6' },
+    { icon: Rocket, label: 'Ultimate', desc: 'Unlimited limits on all core features', color: '#F59E0B' },
 ];
 
 export default function UpgradeModal({

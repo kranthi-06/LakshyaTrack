@@ -1,98 +1,161 @@
 """
-Usage Service — centralized business logic for:
-- Usage limit definitions per plan stage
-- Usage counter get/increment/reset
-- Auto-reset logic (weekly & monthly)
-- Limit checking before allowing actions
+Usage service for backend-enforced SaaS limits.
 
-All limits are enforced STRICTLY in the backend — frontend is for UX only.
+This module keeps the existing storage model and frontend response shape
+compatible, while moving all limit semantics to the centralized plan config.
 """
+from __future__ import annotations
+
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.plan_limits import (
+    CANONICAL_COUNTERS,
+    PLAN_LIMITS,
+    UNLIMITED,
+    get_api_plan_name,
+    get_legacy_counter,
+    get_plan_for_stage,
+    get_usage_field,
+    normalize_counter_key,
+    serialize_limit,
+)
+from app.models.career import Roadmap
+from app.models.resume import SavedResume
 from app.models.usage import UserUsage
 from app.services.subscription_service import get_user_stage
 
 logger = logging.getLogger(__name__)
 
-
-# ══════════════════════════════════════════════════════════════
-# PLAN LIMITS — Single source of truth for all usage caps
-# stage 0 = Free, 1 = Starter, 2 = Professional, 3 = Ultimate
-# -1 means unlimited
-#
-# FREE tier philosophy:
-#   - Resume creation: 1/month (resets monthly)
-#   - Interview practice: 2/week (resets weekly)
-#   - Roadmap generation: 1 total
-#   - Resume edits: UNLIMITED (no limit)
-#   - Quiz, evaluate, jobs, English, reasoning: UNLIMITED
-# ══════════════════════════════════════════════════════════════
-
-PLAN_LIMITS: Dict[int, Dict[str, int]] = {
-    0: {  # FREE
-        "resume_count": 1,              # 1 resume creation per month
-        "interview_count_weekly": 2,    # 2 interviews per week
-        "plan_count": 1,                # 1 roadmap
-        "resume_edit_monthly": -1,      # unlimited edits
-    },
-    1: {  # STARTER (BASIC)
-        "resume_count": 5,              # 5 resume creations per month
-        "interview_count_weekly": 10,   # 10 interviews per week
-        "plan_count": 5,                # 5 roadmaps
-        "resume_edit_monthly": -1,      # unlimited edits
-    },
-    2: {  # PROFESSIONAL (PRO)
-        "resume_count": 20,             # 20 resume creations per month
-        "interview_count_weekly": 30,   # 30 interviews per week
-        "plan_count": 15,               # 15 roadmaps
-        "resume_edit_monthly": -1,      # unlimited edits
-    },
-    3: {  # ULTIMATE — unlimited everything
-        "resume_count": -1,
-        "interview_count_weekly": -1,
-        "plan_count": -1,
-        "resume_edit_monthly": -1,
-    },
-}
+WEEKLY_RESET_WINDOW = timedelta(days=7)
+MONTHLY_RESET_WINDOW = timedelta(days=30)
+STORAGE_BASED_COUNTERS = {"resumeStorage", "roadmap"}
 
 
-# ══════════════════════════════════════════════════════════════
-# USAGE RECORD — get or create (lazy initialization)
-# ══════════════════════════════════════════════════════════════
+@dataclass
+class UsageSnapshot:
+    usage: UserUsage
+    stage: int
+    plan_key: str
+    is_admin: bool
 
-def get_or_create_usage(db: Session, user_id: uuid.UUID) -> UserUsage:
-    """
-    Get or lazily create a UserUsage record for the given user.
-    This ensures every user has a usage record without requiring
-    explicit creation during signup.
-    """
-    usage = (
-        db.query(UserUsage)
-        .filter(UserUsage.user_id == user_id)
-        .first()
+
+class LimitExceededError(Exception):
+    """Raised when a user consumes a feature beyond the allowed plan limit."""
+
+    def __init__(self, detail: Dict[str, Any]):
+        super().__init__(detail.get("message", "Usage limit exceeded"))
+        self.detail = detail
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _ensure_aware(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _counter_display_name(counter_key: str) -> str:
+    return str(CANONICAL_COUNTERS[counter_key]["display_name"])
+
+
+def _get_reset_deadline(counter_key: str, usage: UserUsage) -> Optional[datetime]:
+    if counter_key == "weeklyInterviews" and usage.last_reset_weekly:
+        return _ensure_aware(usage.last_reset_weekly) + WEEKLY_RESET_WINDOW
+    if counter_key == "resumeEditsMonthly" and usage.last_reset_monthly:
+        return _ensure_aware(usage.last_reset_monthly) + MONTHLY_RESET_WINDOW
+    return None
+
+
+def _build_status(
+    *,
+    counter_key: str,
+    current: int,
+    limit: float,
+    plan_key: str,
+    stage: int,
+    usage: UserUsage,
+) -> Dict[str, Any]:
+    limit_value = serialize_limit(limit)
+    remaining = -1 if limit == UNLIMITED else max(0, int(limit) - current)
+    reset_at = _get_reset_deadline(counter_key, usage)
+
+    return {
+        "allowed": limit == UNLIMITED or current < limit,
+        "current": current,
+        "limit": limit_value,
+        "remaining": remaining,
+        "counter": get_legacy_counter(counter_key),
+        "counter_key": counter_key,
+        "display_name": _counter_display_name(counter_key),
+        "plan": get_api_plan_name(plan_key),
+        "plan_key": plan_key,
+        "stage": stage,
+        "reset_at": reset_at.isoformat() if reset_at else None,
+    }
+
+
+def build_limit_exceeded_detail(status_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "code": "LIMIT_EXCEEDED",
+        "error": "LIMIT_EXCEEDED",
+        "message": "You reached your limit. Upgrade your plan.",
+        "counter": status_snapshot["counter"],
+        "counter_key": status_snapshot["counter_key"],
+        "display_name": status_snapshot["display_name"],
+        "current": status_snapshot["current"],
+        "limit": status_snapshot["limit"],
+        "remaining": status_snapshot["remaining"],
+        "plan": status_snapshot["plan"],
+        "stage": status_snapshot["stage"],
+        "reset_at": status_snapshot.get("reset_at"),
+        "upgrade_url": "/plans",
+    }
+
+
+def _build_snapshot(db: Session, user_id: uuid.UUID, user_role: str, *, lock: bool = False) -> UsageSnapshot:
+    is_admin = user_role in ("admin", "black_admin")
+    stage = 3 if is_admin else get_user_stage(db, user_id, user_role)
+    plan_key = get_plan_for_stage(stage)
+    usage = get_or_create_usage(db, user_id, lock=lock)
+    auto_reset_if_needed(db, usage)
+    return UsageSnapshot(
+        usage=usage,
+        stage=stage,
+        plan_key=plan_key,
+        is_admin=is_admin,
     )
+
+
+def get_or_create_usage(db: Session, user_id: uuid.UUID, *, lock: bool = False) -> UserUsage:
+    query = db.query(UserUsage).filter(UserUsage.user_id == user_id)
+    if lock:
+        query = query.with_for_update()
+
+    usage = query.first()
     if usage is None:
         usage = UserUsage(user_id=user_id)
         db.add(usage)
-        db.commit()
-        db.refresh(usage)
+        db.flush()
         logger.info("Created usage record for user %s", user_id)
     return usage
 
 
-# ══════════════════════════════════════════════════════════════
-# AUTO-RESET — weekly & monthly counter resets
-# ══════════════════════════════════════════════════════════════
-
 def _maybe_reset_weekly(usage: UserUsage) -> bool:
-    """Reset weekly counters if 7+ days have passed since last reset."""
-    now = datetime.now(timezone.utc)
-    if usage.last_reset_weekly is None or (now - usage.last_reset_weekly) >= timedelta(days=7):
+    now = _utc_now()
+    last_reset = _ensure_aware(usage.last_reset_weekly)
+    if last_reset is None or (now - last_reset) >= WEEKLY_RESET_WINDOW:
         usage.interview_count_weekly = 0
         usage.last_reset_weekly = now
         return True
@@ -100,10 +163,9 @@ def _maybe_reset_weekly(usage: UserUsage) -> bool:
 
 
 def _maybe_reset_monthly(usage: UserUsage) -> bool:
-    """Reset monthly counters if 30+ days have passed since last reset."""
-    now = datetime.now(timezone.utc)
-    if usage.last_reset_monthly is None or (now - usage.last_reset_monthly) >= timedelta(days=30):
-        usage.resume_count = 0           # resume creation resets monthly
+    now = _utc_now()
+    last_reset = _ensure_aware(usage.last_reset_monthly)
+    if last_reset is None or (now - last_reset) >= MONTHLY_RESET_WINDOW:
         usage.resume_edit_monthly = 0
         usage.last_reset_monthly = now
         return True
@@ -111,28 +173,47 @@ def _maybe_reset_monthly(usage: UserUsage) -> bool:
 
 
 def auto_reset_if_needed(db: Session, usage: UserUsage) -> None:
-    """
-    Check and perform any needed time-based counter resets.
-    Called before every limit check to ensure counters are fresh.
-    """
     weekly_reset = _maybe_reset_weekly(usage)
     monthly_reset = _maybe_reset_monthly(usage)
     if weekly_reset or monthly_reset:
-        db.commit()
+        db.flush()
         logger.info(
-            "Auto-reset for user %s: weekly=%s, monthly=%s",
-            usage.user_id, weekly_reset, monthly_reset,
+            "Auto-reset for user %s: weekly=%s monthly=%s",
+            usage.user_id,
+            weekly_reset,
+            monthly_reset,
         )
 
 
-# ══════════════════════════════════════════════════════════════
-# LIMIT CHECKING
-# ══════════════════════════════════════════════════════════════
+def sync_usage_counts(
+    db: Session,
+    user_id: uuid.UUID,
+    *,
+    counters: Optional[Iterable[str]] = None,
+    usage: Optional[UserUsage] = None,
+) -> UserUsage:
+    """Synchronize storage-backed counters to the real DB state."""
+    usage_record = usage or get_or_create_usage(db, user_id)
+    counter_keys = set(counters or STORAGE_BASED_COUNTERS)
 
-def get_limit_for_stage(stage: int, counter_name: str) -> int:
-    """Get the limit for a specific counter at a given plan stage."""
-    stage_limits = PLAN_LIMITS.get(stage, PLAN_LIMITS[0])
-    return stage_limits.get(counter_name, 0)
+    if "resumeStorage" in counter_keys:
+        usage_record.resume_count = int(
+            db.query(func.count(SavedResume.id))
+            .filter(SavedResume.user_id == user_id)
+            .scalar()
+            or 0
+        )
+
+    if "roadmap" in counter_keys:
+        usage_record.plan_count = int(
+            db.query(func.count(Roadmap.id))
+            .filter(Roadmap.user_id == user_id)
+            .scalar()
+            or 0
+        )
+
+    db.flush()
+    return usage_record
 
 
 def check_limit(
@@ -141,181 +222,230 @@ def check_limit(
     counter_name: str,
     user_role: str = "user",
 ) -> Dict[str, Any]:
-    """
-    Check if a user has exceeded the limit for a given counter.
+    """Read-only limit check used by middleware and status endpoints."""
+    counter_key = normalize_counter_key(counter_name)
+    snapshot = _build_snapshot(db, user_id, user_role, lock=False)
 
-    Returns:
-        {
-            "allowed": bool,
-            "current": int,
-            "limit": int,       # -1 = unlimited
-            "remaining": int,   # -1 = unlimited
-            "counter": str,
-        }
-    """
-    # Admins always bypass limits
-    if user_role in ("admin", "black_admin"):
-        return {
-            "allowed": True,
-            "current": 0,
-            "limit": -1,
-            "remaining": -1,
-            "counter": counter_name,
-        }
+    if counter_key in STORAGE_BASED_COUNTERS:
+        sync_usage_counts(db, user_id, counters=[counter_key], usage=snapshot.usage)
 
-    stage = get_user_stage(db, user_id, user_role)
-    limit = get_limit_for_stage(stage, counter_name)
+    field_name = get_usage_field(counter_key)
+    current = int(getattr(snapshot.usage, field_name, 0) or 0)
+    limit = PLAN_LIMITS[snapshot.plan_key][counter_key]
 
-    usage = get_or_create_usage(db, user_id)
-    auto_reset_if_needed(db, usage)
-
-    current = getattr(usage, counter_name, 0)
-
-    # -1 = unlimited
-    if limit == -1:
-        return {
-            "allowed": True,
-            "current": current,
-            "limit": -1,
-            "remaining": -1,
-            "counter": counter_name,
-        }
-
-    allowed = current < limit
-    remaining = max(0, limit - current)
-
-    return {
-        "allowed": allowed,
-        "current": current,
-        "limit": limit,
-        "remaining": remaining,
-        "counter": counter_name,
-    }
-
-
-def increment_usage(
-    db: Session,
-    user_id: uuid.UUID,
-    counter_name: str,
-    amount: int = 1,
-) -> int:
-    """
-    Increment a usage counter by the given amount.
-    Returns the new counter value.
-    """
-    usage = get_or_create_usage(db, user_id)
-    auto_reset_if_needed(db, usage)
-
-    current = getattr(usage, counter_name, 0)
-    new_value = current + amount
-    setattr(usage, counter_name, new_value)
-    db.commit()
-
-    logger.info(
-        "Usage incremented: user=%s counter=%s %d->%d",
-        user_id, counter_name, current, new_value,
+    return _build_status(
+        counter_key=counter_key,
+        current=current,
+        limit=limit,
+        plan_key=snapshot.plan_key,
+        stage=snapshot.stage,
+        usage=snapshot.usage,
     )
-    return new_value
 
 
-def decrement_usage(
+def assert_limit_available(
     db: Session,
     user_id: uuid.UUID,
     counter_name: str,
+    user_role: str = "user",
+) -> Dict[str, Any]:
+    status_snapshot = check_limit(db, user_id, counter_name, user_role)
+    if not status_snapshot["allowed"]:
+        raise LimitExceededError(build_limit_exceeded_detail(status_snapshot))
+    return status_snapshot
+
+
+def consume_usage(
+    db: Session,
+    user_id: uuid.UUID,
+    counter_name: str,
+    *,
+    user_role: str = "user",
     amount: int = 1,
+    sync_before_consume: bool = False,
+) -> Dict[str, Any]:
+    """
+    Atomically consume usage inside the current transaction.
+
+    The caller is responsible for committing or rolling back the transaction.
+    """
+    if amount < 0:
+        raise ValueError("Usage amount must be >= 0")
+
+    counter_key = normalize_counter_key(counter_name)
+    snapshot = _build_snapshot(db, user_id, user_role, lock=True)
+
+    if sync_before_consume or counter_key in STORAGE_BASED_COUNTERS:
+        sync_usage_counts(db, user_id, counters=[counter_key], usage=snapshot.usage)
+
+    field_name = get_usage_field(counter_key)
+    current = int(getattr(snapshot.usage, field_name, 0) or 0)
+    limit = PLAN_LIMITS[snapshot.plan_key][counter_key]
+
+    preflight = _build_status(
+        counter_key=counter_key,
+        current=current,
+        limit=limit,
+        plan_key=snapshot.plan_key,
+        stage=snapshot.stage,
+        usage=snapshot.usage,
+    )
+    if not preflight["allowed"]:
+        raise LimitExceededError(build_limit_exceeded_detail(preflight))
+
+    setattr(snapshot.usage, field_name, current + amount)
+    db.flush()
+
+    return _build_status(
+        counter_key=counter_key,
+        current=current + amount,
+        limit=limit,
+        plan_key=snapshot.plan_key,
+        stage=snapshot.stage,
+        usage=snapshot.usage,
+    )
+
+
+def release_usage(
+    db: Session,
+    user_id: uuid.UUID,
+    counter_name: str,
+    *,
+    amount: int = 1,
+    sync_before_release: bool = False,
 ) -> int:
-    """
-    Decrement a usage counter (e.g., when a resume is deleted).
-    Never goes below 0. Returns the new counter value.
-    """
-    usage = get_or_create_usage(db, user_id)
-    current = getattr(usage, counter_name, 0)
+    """Release usage inside the current transaction after a delete/rollback-style action."""
+    if amount < 0:
+        raise ValueError("Usage amount must be >= 0")
+
+    counter_key = normalize_counter_key(counter_name)
+    usage = get_or_create_usage(db, user_id, lock=True)
+    auto_reset_if_needed(db, usage)
+
+    if sync_before_release or counter_key in STORAGE_BASED_COUNTERS:
+        sync_usage_counts(db, user_id, counters=[counter_key], usage=usage)
+
+    field_name = get_usage_field(counter_key)
+    current = int(getattr(usage, field_name, 0) or 0)
     new_value = max(0, current - amount)
-    setattr(usage, counter_name, new_value)
-    db.commit()
+    setattr(usage, field_name, new_value)
+    db.flush()
     return new_value
 
-
-# ══════════════════════════════════════════════════════════════
-# FULL USAGE STATUS — for the frontend
-# ══════════════════════════════════════════════════════════════
 
 def get_usage_status(
     db: Session,
     user_id: uuid.UUID,
     user_role: str = "user",
 ) -> Dict[str, Any]:
-    """
-    Build a complete usage status response for the frontend.
-    Includes current counts, limits, and remaining for every counter.
-    """
-    is_admin = user_role in ("admin", "black_admin")
-    stage = get_user_stage(db, user_id, user_role)
-    usage = get_or_create_usage(db, user_id)
-    auto_reset_if_needed(db, usage)
+    snapshot = _build_snapshot(db, user_id, user_role, lock=False)
+    sync_usage_counts(db, user_id, counters=STORAGE_BASED_COUNTERS, usage=snapshot.usage)
 
-    stage_limits = PLAN_LIMITS.get(stage, PLAN_LIMITS[0])
-    counters = {}
+    usage = snapshot.usage
+    counters: Dict[str, Dict[str, Any]] = {}
+    limits: Dict[str, int] = {}
 
-    for counter_name, limit in stage_limits.items():
-        current = getattr(usage, counter_name, 0)
-        if is_admin or limit == -1:
-            counters[counter_name] = {
-                "current": current,
-                "limit": -1,
-                "remaining": -1,
-                "exceeded": False,
-            }
-        else:
-            remaining = max(0, limit - current)
-            counters[counter_name] = {
-                "current": current,
-                "limit": limit,
-                "remaining": remaining,
-                "exceeded": current >= limit,
-            }
+    for counter_key in CANONICAL_COUNTERS:
+        field_name = get_usage_field(counter_key)
+        current = int(getattr(usage, field_name, 0) or 0)
+        limit = PLAN_LIMITS[snapshot.plan_key][counter_key]
+        legacy_counter = get_legacy_counter(counter_key)
+        status_snapshot = _build_status(
+            counter_key=counter_key,
+            current=current,
+            limit=limit,
+            plan_key=snapshot.plan_key,
+            stage=snapshot.stage,
+            usage=usage,
+        )
+        counters[legacy_counter] = {
+            "current": status_snapshot["current"],
+            "limit": status_snapshot["limit"],
+            "remaining": status_snapshot["remaining"],
+            "exceeded": not status_snapshot["allowed"],
+            "counter_key": counter_key,
+            "display_name": status_snapshot["display_name"],
+        }
+        limits[counter_key] = status_snapshot["limit"]
 
     return {
-        "stage": stage,
-        "plan": _stage_to_plan_label(stage),
-        "is_admin": is_admin,
+        "stage": snapshot.stage,
+        "plan": get_api_plan_name(snapshot.plan_key),
+        "plan_key": snapshot.plan_key,
+        "is_admin": snapshot.is_admin,
+        "usage": {
+            "resumeStorageUsed": int(usage.resume_count or 0),
+            "interviewsUsedWeekly": int(usage.interview_count_weekly or 0),
+            "roadmapUsed": int(usage.plan_count or 0),
+            "resumeEditsUsedMonthly": int(usage.resume_edit_monthly or 0),
+            "lastWeeklyReset": _ensure_aware(usage.last_reset_weekly).isoformat() if usage.last_reset_weekly else None,
+            "lastMonthlyReset": _ensure_aware(usage.last_reset_monthly).isoformat() if usage.last_reset_monthly else None,
+        },
+        "limits": limits,
         "counters": counters,
         "resets": {
-            "weekly_resets_at": (
-                (usage.last_reset_weekly + timedelta(days=7)).isoformat()
-                if usage.last_reset_weekly else None
-            ),
-            "monthly_resets_at": (
-                (usage.last_reset_monthly + timedelta(days=30)).isoformat()
-                if usage.last_reset_monthly else None
-            ),
+            "weekly_resets_at": _get_reset_deadline("weeklyInterviews", usage).isoformat()
+            if _get_reset_deadline("weeklyInterviews", usage)
+            else None,
+            "monthly_resets_at": _get_reset_deadline("resumeEditsMonthly", usage).isoformat()
+            if _get_reset_deadline("resumeEditsMonthly", usage)
+            else None,
         },
     }
 
 
-def _stage_to_plan_label(stage: int) -> str:
-    return {0: "free", 1: "starter", 2: "professional", 3: "ultimate"}.get(stage, "free")
+def get_plan_snapshot(
+    db: Session,
+    user_id: uuid.UUID,
+    user_role: str = "user",
+) -> Dict[str, Any]:
+    snapshot = _build_snapshot(db, user_id, user_role, lock=False)
+    return {
+        "stage": snapshot.stage,
+        "plan": get_api_plan_name(snapshot.plan_key),
+        "plan_key": snapshot.plan_key,
+        "limits": {
+            counter_key: serialize_limit(limit)
+            for counter_key, limit in PLAN_LIMITS[snapshot.plan_key].items()
+        },
+        "legacy_limits": {
+            get_legacy_counter(counter_key): serialize_limit(limit)
+            for counter_key, limit in PLAN_LIMITS[snapshot.plan_key].items()
+        },
+    }
 
 
-# ══════════════════════════════════════════════════════════════
-# BULK RESET — background job
-# ══════════════════════════════════════════════════════════════
+def get_public_plan_limits() -> Dict[str, Dict[str, Dict[str, int]]]:
+    return {
+        "plans": {
+            get_api_plan_name(plan_key): {
+                get_legacy_counter(counter_key): serialize_limit(limit)
+                for counter_key, limit in limits.items()
+            }
+            for plan_key, limits in PLAN_LIMITS.items()
+        },
+        "canonical_plans": {
+            get_api_plan_name(plan_key): {
+                counter_key: serialize_limit(limit)
+                for counter_key, limit in limits.items()
+            }
+            for plan_key, limits in PLAN_LIMITS.items()
+        },
+    }
+
 
 def bulk_reset_weekly(db: Session) -> int:
-    """
-    Background job: reset weekly counters for all users whose
-    7-day window has elapsed. Returns count of users reset.
-    """
-    threshold = datetime.now(timezone.utc) - timedelta(days=7)
+    threshold = _utc_now() - WEEKLY_RESET_WINDOW
     users = (
         db.query(UserUsage)
         .filter(UserUsage.last_reset_weekly <= threshold)
         .all()
     )
     count = 0
-    for u in users:
-        u.interview_count_weekly = 0
-        u.last_reset_weekly = datetime.now(timezone.utc)
+    now = _utc_now()
+    for usage in users:
+        usage.interview_count_weekly = 0
+        usage.last_reset_weekly = now
         count += 1
     if count:
         db.commit()
@@ -324,21 +454,17 @@ def bulk_reset_weekly(db: Session) -> int:
 
 
 def bulk_reset_monthly(db: Session) -> int:
-    """
-    Background job: reset monthly counters for all users whose
-    30-day window has elapsed. Returns count of users reset.
-    """
-    threshold = datetime.now(timezone.utc) - timedelta(days=30)
+    threshold = _utc_now() - MONTHLY_RESET_WINDOW
     users = (
         db.query(UserUsage)
         .filter(UserUsage.last_reset_monthly <= threshold)
         .all()
     )
     count = 0
-    for u in users:
-        u.resume_count = 0               # resume creation resets monthly
-        u.resume_edit_monthly = 0
-        u.last_reset_monthly = datetime.now(timezone.utc)
+    now = _utc_now()
+    for usage in users:
+        usage.resume_edit_monthly = 0
+        usage.last_reset_monthly = now
         count += 1
     if count:
         db.commit()

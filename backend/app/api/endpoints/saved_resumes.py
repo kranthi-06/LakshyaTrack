@@ -1,13 +1,18 @@
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.api import deps
+from app.api.deps import _resolve_user_role
 from app.models.resume import SavedResume
 from app.models.user import Profile
 from app.middleware.require_usage_limit import require_usage_limit
-from app.services.usage_service import increment_usage
+from app.services.usage_service import (
+    LimitExceededError,
+    consume_usage,
+    sync_usage_counts,
+)
 
 router = APIRouter()
 
@@ -52,51 +57,59 @@ async def save_resume(
     db: Session = Depends(deps.get_db),
     current_user = Depends(require_usage_limit("resume_count")),
 ) -> Any:
-    """Save a resume and intelligently sync skills. Enforces resume_count limit (monthly)."""
-    
-    # 1. Deal with is_primary
-    if request.is_primary:
-        db.query(SavedResume).filter(
-            SavedResume.user_id == current_user.id
-        ).update({"is_primary": False})
-        
-    # 2. Create a new resume record
-    new_resume = SavedResume(
-        user_id=current_user.id,
-        resume_name=request.resume_name,
-        resume_url=request.resume_url,
-        resume_data=request.resume_data,
-        template_id=request.template_id,
-        theme=request.theme,
-        target_role=request.target_role,
-        ats_score=request.ats_score,
-        is_primary=request.is_primary
-    )
-    db.add(new_resume)
-    
-    # 3. Sync extracted skills to Profile
-    extracted_skills = extract_skills_from_resume(request.resume_data)
-    if extracted_skills:
-        profile = db.query(Profile).filter(Profile.id == current_user.id).first()
-        if not profile:
-            profile = Profile(id=current_user.id)
-            db.add(profile)
-            
-        current_skills = set(profile.skills or [])
-        new_skills = current_skills.union(set(extracted_skills))
-        
-        profile.skills = list(new_skills)
-        # SQLAlchemy JSON trick to force update
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(profile, "skills")
-        
-    db.commit()
-    db.refresh(new_resume)
+    """Save a resume and sync skills. Enforces resume storage limits."""
+    user_role = _resolve_user_role(current_user)
 
-    # Increment resume creation count after successful save (resets monthly)
-    increment_usage(db, current_user.id, "resume_count")
+    try:
+        consume_usage(
+            db,
+            current_user.id,
+            "resumeStorage",
+            user_role=user_role,
+            sync_before_consume=True,
+        )
+        if request.is_primary:
+            db.query(SavedResume).filter(
+                SavedResume.user_id == current_user.id
+            ).update({"is_primary": False})
 
-    return {"message": "Resume saved successfully", "id": str(new_resume.id)}
+        new_resume = SavedResume(
+            user_id=current_user.id,
+            resume_name=request.resume_name,
+            resume_url=request.resume_url,
+            resume_data=request.resume_data,
+            template_id=request.template_id,
+            theme=request.theme,
+            target_role=request.target_role,
+            ats_score=request.ats_score,
+            is_primary=request.is_primary
+        )
+        db.add(new_resume)
+
+        extracted_skills = extract_skills_from_resume(request.resume_data)
+        if extracted_skills:
+            profile = db.query(Profile).filter(Profile.id == current_user.id).first()
+            if not profile:
+                profile = Profile(id=current_user.id)
+                db.add(profile)
+
+            current_skills = set(profile.skills or [])
+            new_skills = current_skills.union(set(extracted_skills))
+
+            profile.skills = list(new_skills)
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(profile, "skills")
+
+        db.commit()
+        db.refresh(new_resume)
+
+        return {"message": "Resume saved successfully", "id": str(new_resume.id)}
+    except LimitExceededError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 @router.get("/")
 async def get_saved_resumes(
@@ -146,7 +159,7 @@ async def update_saved_resume(
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_active_user),
 ) -> Any:
-    """Update an existing saved resume. Edits are unlimited for all plans."""
+    """Update an existing saved resume with monthly edit enforcement."""
     resume = db.query(SavedResume).filter(
         SavedResume.id == resume_id,
         SavedResume.user_id == current_user.id
@@ -154,50 +167,62 @@ async def update_saved_resume(
     
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
-    
-    # Update fields that were provided
-    if request.resume_name is not None:
-        resume.resume_name = request.resume_name
-    if request.resume_url is not None:
-        resume.resume_url = request.resume_url
-    if request.resume_data is not None:
-        resume.resume_data = request.resume_data
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(resume, "resume_data")
-    if request.template_id is not None:
-        resume.template_id = request.template_id
-    if request.theme is not None:
-        resume.theme = request.theme
-    if request.target_role is not None:
-        resume.target_role = request.target_role
-    if request.ats_score is not None:
-        resume.ats_score = request.ats_score
-    if request.is_primary is not None:
-        if request.is_primary:
-            db.query(SavedResume).filter(
-                SavedResume.user_id == current_user.id,
-                SavedResume.id != resume_id
-            ).update({"is_primary": False})
-        resume.is_primary = request.is_primary
-    
-    # Sync extracted skills to Profile if resume_data was updated
-    if request.resume_data:
-        extracted_skills = extract_skills_from_resume(request.resume_data)
-        if extracted_skills:
-            profile = db.query(Profile).filter(Profile.id == current_user.id).first()
-            if not profile:
-                profile = Profile(id=current_user.id)
-                db.add(profile)
-            current_skills = set(profile.skills or [])
-            new_skills = current_skills.union(set(extracted_skills))
-            profile.skills = list(new_skills)
-            from sqlalchemy.orm.attributes import flag_modified as fm
-            fm(profile, "skills")
-    
-    db.commit()
-    db.refresh(resume)
 
-    return {"message": "Resume updated successfully", "id": str(resume.id)}
+    user_role = _resolve_user_role(current_user)
+    try:
+        consume_usage(
+            db,
+            current_user.id,
+            "resumeEditsMonthly",
+            user_role=user_role,
+        )
+        if request.resume_name is not None:
+            resume.resume_name = request.resume_name
+        if request.resume_url is not None:
+            resume.resume_url = request.resume_url
+        if request.resume_data is not None:
+            resume.resume_data = request.resume_data
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(resume, "resume_data")
+        if request.template_id is not None:
+            resume.template_id = request.template_id
+        if request.theme is not None:
+            resume.theme = request.theme
+        if request.target_role is not None:
+            resume.target_role = request.target_role
+        if request.ats_score is not None:
+            resume.ats_score = request.ats_score
+        if request.is_primary is not None:
+            if request.is_primary:
+                db.query(SavedResume).filter(
+                    SavedResume.user_id == current_user.id,
+                    SavedResume.id != resume_id
+                ).update({"is_primary": False})
+            resume.is_primary = request.is_primary
+
+        if request.resume_data:
+            extracted_skills = extract_skills_from_resume(request.resume_data)
+            if extracted_skills:
+                profile = db.query(Profile).filter(Profile.id == current_user.id).first()
+                if not profile:
+                    profile = Profile(id=current_user.id)
+                    db.add(profile)
+                current_skills = set(profile.skills or [])
+                new_skills = current_skills.union(set(extracted_skills))
+                profile.skills = list(new_skills)
+                from sqlalchemy.orm.attributes import flag_modified as fm
+                fm(profile, "skills")
+
+        db.commit()
+        db.refresh(resume)
+
+        return {"message": "Resume updated successfully", "id": str(resume.id)}
+    except LimitExceededError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 @router.delete("/{resume_id}")
 async def delete_saved_resume(
@@ -215,6 +240,8 @@ async def delete_saved_resume(
         raise HTTPException(status_code=404, detail="Resume not found")
         
     db.delete(resume)
+    db.flush()
+    sync_usage_counts(db, current_user.id, counters=["resumeStorage"])
     db.commit()
 
     return {"message": "Resume deleted successfully"}

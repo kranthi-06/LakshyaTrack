@@ -3,11 +3,13 @@ API Endpoints for Multi-Stage AI Interview System.
 Provides routes for the 4-stage hiring simulation.
 """
 from typing import Any, List, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
+from app.api.deps import _resolve_user_role
 from app.services import interview_multistage_service
+from app.services.usage_service import LimitExceededError, consume_usage
 
 router = APIRouter()
 
@@ -79,14 +81,29 @@ async def create_session(
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     """Create a new multi-stage interview session."""
-    result = interview_multistage_service.create_interview_session(
-        user_id=str(current_user.id),
-        position=request.position,
-        interview_mode=request.interview_mode,
-        difficulty=request.difficulty,
-        db=db,
-    )
-    return result
+    try:
+        result = interview_multistage_service.create_interview_session(
+            user_id=str(current_user.id),
+            position=request.position,
+            interview_mode=request.interview_mode,
+            difficulty=request.difficulty,
+            db=db,
+            commit=False,
+        )
+        consume_usage(
+            db,
+            current_user.id,
+            "weeklyInterviews",
+            user_role=_resolve_user_role(current_user),
+        )
+        db.commit()
+        return result
+    except LimitExceededError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/screening-question")

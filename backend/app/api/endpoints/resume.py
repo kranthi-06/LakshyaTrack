@@ -2,18 +2,23 @@ from typing import Any
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
 from app.api import deps
+from app.api.endpoints import saved_resumes as saved_resume_endpoints
 from app.services import cloudinary_service, document_store_service, media_service, resume_service
 
 router = APIRouter()
 
 from app.models.user import Profile
 
+
+class ResumeEditAliasRequest(saved_resume_endpoints.ResumeUpdateRequest):
+    resume_id: str
+
 @router.post("/analyze")
 async def analyze_resume(
     file: UploadFile = File(...),
     job_description: str = Form(""),
     db: Session = Depends(deps.get_db),
-    current_user = Depends(deps.get_current_user_optional),
+    current_user = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Upload a resume (PDF) and get AI analysis.
@@ -153,7 +158,7 @@ async def analyze_resume_text(
     filename: str = Form("resume.txt"),
     job_description: str = Form(""),
     db: Session = Depends(deps.get_db),
-    current_user = Depends(deps.get_current_user_optional),
+    current_user = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Analyze resume text directly (e.g., after client-side OCR).
@@ -228,3 +233,68 @@ async def analyze_resume_text(
             details={"filename": filename, "error": str(e)},
         )
         raise HTTPException(status_code=500, detail="Resume text analysis failed")
+
+
+@router.post("/upload")
+async def upload_saved_resume(
+    request: saved_resume_endpoints.ResumeSaveRequest,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Alias for SaaS resume storage upload."""
+    return await saved_resume_endpoints.save_resume(
+        request=request,
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.get("/list")
+async def list_saved_resumes(
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Alias for SaaS resume listing."""
+    return await saved_resume_endpoints.get_saved_resumes(
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.post("/edit")
+async def edit_saved_resume(
+    request: ResumeEditAliasRequest,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Alias for SaaS resume edit."""
+    update_payload = saved_resume_endpoints.ResumeUpdateRequest(
+        resume_name=request.resume_name,
+        resume_url=request.resume_url,
+        resume_data=request.resume_data,
+        template_id=request.template_id,
+        theme=request.theme,
+        target_role=request.target_role,
+        ats_score=request.ats_score,
+        is_primary=request.is_primary,
+    )
+    return await saved_resume_endpoints.update_saved_resume(
+        resume_id=request.resume_id,
+        request=update_payload,
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.delete("/{resume_id}")
+async def delete_saved_resume_alias(
+    resume_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Alias for SaaS resume delete."""
+    return await saved_resume_endpoints.delete_saved_resume(
+        resume_id=resume_id,
+        db=db,
+        current_user=current_user,
+    )

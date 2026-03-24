@@ -16,6 +16,21 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class AuthSessionResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
 @router.post("/signup")
 def signup(
     user_in: schemas.user.UserCreate,
@@ -307,6 +322,89 @@ def login_access_token(
         ),
         "token_type": "bearer",
     }
+
+
+@router.post("/auth/register")
+def register_alias(
+    user_in: schemas.user.UserCreate,
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    """Alias for the SaaS auth contract."""
+    return signup(user_in=user_in, db=db)
+
+
+@router.post("/auth/login", response_model=AuthSessionResponse)
+def login_alias(
+    body: LoginRequest,
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    """JSON login alias that returns access and refresh tokens."""
+    user = crud.get_user_by_email(db, email=body.email)
+    if not user or not security.verify_password(body.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    if not user.is_verified:
+        raise HTTPException(status_code=400, detail="Email not verified. Please verify your email first.")
+
+    black_emails = _get_black_admin_emails()
+    is_black_admin = user.email and user.email.lower() in black_emails
+    if not is_black_admin and user.is_blacklisted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been permanently blocked by admin."
+        )
+
+    user.last_active_at = datetime.now(timezone.utc)
+    db.add(user)
+    db.commit()
+
+    return AuthSessionResponse(
+        access_token=security.create_access_token(
+            user.id,
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        ),
+        refresh_token=security.create_refresh_token(user.id),
+    )
+
+
+@router.get("/auth/me")
+def me_alias(
+    current_user: models.user.User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Alias for the SaaS auth contract."""
+    return current_user
+
+
+@router.post("/auth/refresh", response_model=AuthSessionResponse)
+def refresh_session(
+    body: RefreshTokenRequest,
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    payload = security.decode_refresh_token(body.refresh_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    try:
+        import uuid
+        user = crud.get_user(db, user_id=uuid.UUID(str(user_id)))
+    except Exception:
+        user = None
+
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    return AuthSessionResponse(
+        access_token=security.create_access_token(
+            user.id,
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        ),
+        refresh_token=security.create_refresh_token(user.id),
+    )
 
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests

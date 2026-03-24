@@ -284,4 +284,42 @@ export function getApiHealthStatus() {
     };
 }
 
+export interface LimitExceededInfo {
+    counter?: string;
+    counterKey?: string;
+    current?: number;
+    limit?: number;
+    message: string;
+    upgradeUrl?: string;
+}
+
+const LIMIT_COUNTER_FALLBACKS: Record<string, string> = {
+    resumeStorage: 'resume_count',
+    weeklyInterviews: 'interview_count_weekly',
+    roadmap: 'plan_count',
+    resumeEditsMonthly: 'resume_edit_monthly',
+};
+
+export function extractLimitExceededError(error: unknown): LimitExceededInfo | null {
+    const axiosError = error as AxiosError | undefined;
+    const response = axiosError?.response;
+    const payload = (response?.data as any)?.detail ?? (response?.data as any);
+
+    if (!payload || typeof payload !== 'object') return null;
+
+    const code = payload.code || payload.error;
+    if (code !== 'LIMIT_EXCEEDED') return null;
+
+    return {
+        counter: payload.counter || LIMIT_COUNTER_FALLBACKS[payload.counter_key || payload.counterKey],
+        counterKey: payload.counter_key || payload.counterKey,
+        current: typeof payload.current === 'number' ? payload.current : undefined,
+        limit: typeof payload.limit === 'number' ? payload.limit : undefined,
+        message:
+            payload.message ||
+            "You've reached your current plan limit for this action.",
+        upgradeUrl: payload.upgrade_url || payload.upgradeUrl,
+    };
+}
+
 export default api;

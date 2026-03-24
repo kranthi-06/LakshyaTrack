@@ -31,6 +31,7 @@ async def generate_roadmap(
     db: Session,
     topic_name: Optional[str] = None,
     difficulty: Optional[str] = None,
+    commit: bool = True,
 ) -> dict:
     """
     Generate a personalized skill roadmap using AI.
@@ -145,8 +146,10 @@ async def generate_roadmap(
             last_opened=datetime.now(timezone.utc),
         )
         db.add(roadmap)
-        db.commit()
+        db.flush()
         db.refresh(roadmap)
+        if commit:
+            db.commit()
 
         return {
             "id": str(roadmap.id),
@@ -158,11 +161,13 @@ async def generate_roadmap(
 
     except json.JSONDecodeError as e:
         logger.error("Failed to parse roadmap JSON: %s", sanitize_for_logging(str(e)))
-        db.rollback()
+        if commit:
+            db.rollback()
         raise ValueError(f"AI returned invalid JSON: {str(e)}")
     except Exception as e:
         logger.error("Roadmap generation error: %s", sanitize_for_logging(str(e)))
-        db.rollback()
+        if commit:
+            db.rollback()
         raise
 
 
@@ -239,7 +244,7 @@ def set_active_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
     }
 
 
-def delete_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
+def delete_roadmap(user_id: str, roadmap_id: str, db: Session, commit: bool = True) -> dict:
     """Delete a specific roadmap for a user."""
     roadmap = db.query(Roadmap).filter(
         Roadmap.id == roadmap_id,
@@ -251,7 +256,7 @@ def delete_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
 
     was_active = roadmap.is_active
     db.delete(roadmap)
-    db.commit()
+    db.flush()
 
     # If the deleted roadmap was active, activate the most recent remaining one
     if was_active:
@@ -260,7 +265,8 @@ def delete_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
         ).order_by(Roadmap.last_opened.desc().nullslast(), Roadmap.created_at.desc()).first()
         if next_roadmap:
             next_roadmap.is_active = True
-            db.commit()
+    if commit:
+        db.commit()
 
     return {"deleted": True}
 

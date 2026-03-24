@@ -4,13 +4,14 @@ Integrates with the Plan page (CareerIntelligence).
 Supports multiple roadmaps per user with switcher.
 """
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
+from app.api.deps import _resolve_user_role
 from app.services import roadmap_service
 from app.middleware.require_usage_limit import require_usage_limit
-from app.services.usage_service import increment_usage
+from app.services.usage_service import LimitExceededError, consume_usage, sync_usage_counts
 import logging
 
 router = APIRouter()
@@ -47,6 +48,7 @@ async def generate_roadmap(
 ) -> Any:
     """Generate a personalized skill roadmap using AI. Enforces plan_count limit."""
     try:
+        user_role = _resolve_user_role(current_user)
         result = await roadmap_service.generate_roadmap(
             user_id=str(current_user.id),
             target_role=request.target_role,
@@ -55,18 +57,43 @@ async def generate_roadmap(
             db=db,
             topic_name=request.topic_name,
             difficulty=request.difficulty,
+            commit=False,
         )
-
-        # Increment plan count after successful generation
-        increment_usage(db, current_user.id, "plan_count")
+        consume_usage(
+            db,
+            current_user.id,
+            "roadmap",
+            user_role=user_role,
+            sync_before_consume=True,
+        )
+        db.commit()
 
         return result
+    except LimitExceededError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=e.detail) from e
     except ValueError as e:
+        db.rollback()
         logger.warning("Roadmap validation failed: %s", str(e))
         raise HTTPException(status_code=400, detail="Invalid roadmap request")
     except Exception as e:
+        db.rollback()
         logger.exception("Roadmap generation failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Roadmap generation failed")
+
+
+@router.post("/create")
+async def create_roadmap_alias(
+    request: RoadmapRequest,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(require_usage_limit("plan_count")),
+) -> Any:
+    """Alias endpoint for SaaS roadmap creation."""
+    return await generate_roadmap(
+        request=request,
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.get("/active")
@@ -89,6 +116,15 @@ async def get_all_roadmaps(
     """Get all roadmaps for the current user (for the switcher)."""
     roadmaps = roadmap_service.get_all_user_roadmaps(str(current_user.id), db)
     return {"roadmaps": roadmaps}
+
+
+@router.get("/list")
+async def list_roadmaps_alias(
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Alias endpoint for SaaS roadmap listing."""
+    return await get_all_roadmaps(db=db, current_user=current_user)
 
 
 @router.post("/set-active")
@@ -124,13 +160,18 @@ async def delete_roadmap(
         result = roadmap_service.delete_roadmap(
             user_id=str(current_user.id),
             roadmap_id=request.roadmap_id,
-            db=db
+            db=db,
+            commit=False,
         )
+        sync_usage_counts(db, current_user.id, counters=["roadmap"])
+        db.commit()
         return result
     except ValueError as e:
+        db.rollback()
         logger.warning("Delete roadmap validation failed: %s", str(e))
         raise HTTPException(status_code=404, detail="Roadmap not found")
     except Exception as e:
+        db.rollback()
         logger.exception("Delete roadmap failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Failed to delete roadmap")
 

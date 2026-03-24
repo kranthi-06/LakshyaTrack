@@ -20,10 +20,13 @@ import type { ResumeData } from './types';
 import { exportToPDF, exportToDOCX } from './exportUtils';
 import { optimizeResumeContent } from '../../services/resumeBuilder';
 import { saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
+import { extractLimitExceededError } from '../../services/api';
 import { SidePanelEditor } from './SidePanelEditor';
 import { useFeatureGate } from '../../hooks/useFeatureGate';
 import PremiumGate from '../../components/PremiumGate';
+import UpgradeModal from '../../components/UpgradeModal';
 import { useResumeProtection } from '../../hooks/useResumeProtection';
+import { useUsage } from '../../context/UsageContext';
 
 interface EditMeta {
     id: string;
@@ -120,6 +123,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
         1,
         'Save your resume to your profile for future editing. Upgrade to unlock this feature.',
     );
+    const { refreshUsage } = useUsage();
 
     const [selectedId, setSelectedId] = useState('ats-modern');
     const [customColor, setCustomColor] = useState<string | null>(null);
@@ -148,6 +152,13 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
     const [showSaveModeModal, setShowSaveModeModal] = useState(false);
     const [copyNameInput, setCopyNameInput] = useState('');
     const [saveModeStep, setSaveModeStep] = useState<'choose' | 'copy-name'>('choose');
+    const [limitModal, setLimitModal] = useState<{
+        isOpen: boolean;
+        counter?: string;
+        current?: number;
+        limit?: number;
+        message?: string;
+    }>({ isOpen: false });
 
     // ── Screenshot protection (applies to ALL users, including admin) ──
     const {
@@ -375,11 +386,23 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
         setShowNameModal(false);
         try {
             await saveResumeToProfile(buildPayload(resumeNameInput.trim()));
+            await refreshUsage();
             onExplicitSave?.();
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {
-            console.error('Error saving resume to profile:', e);
+            const limitInfo = extractLimitExceededError(e);
+            if (limitInfo) {
+                setLimitModal({
+                    isOpen: true,
+                    counter: limitInfo.counter,
+                    current: limitInfo.current,
+                    limit: limitInfo.limit,
+                    message: limitInfo.message,
+                });
+            } else {
+                console.error('Error saving resume to profile:', e);
+            }
         }
         setSaving(false);
     };
@@ -391,11 +414,23 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
         setShowSaveModeModal(false);
         try {
             await updateSavedResume(editMeta.id, buildPayload(editMeta.originalName));
+            await refreshUsage();
             onExplicitSave?.();
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {
-            console.error('Error updating resume:', e);
+            const limitInfo = extractLimitExceededError(e);
+            if (limitInfo) {
+                setLimitModal({
+                    isOpen: true,
+                    counter: limitInfo.counter,
+                    current: limitInfo.current,
+                    limit: limitInfo.limit,
+                    message: limitInfo.message,
+                });
+            } else {
+                console.error('Error updating resume:', e);
+            }
         }
         setSaving(false);
     };
@@ -407,11 +442,23 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
         setShowSaveModeModal(false);
         try {
             await saveResumeToProfile(buildPayload(copyNameInput.trim()));
+            await refreshUsage();
             onExplicitSave?.();
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {
-            console.error('Error saving resume copy:', e);
+            const limitInfo = extractLimitExceededError(e);
+            if (limitInfo) {
+                setLimitModal({
+                    isOpen: true,
+                    counter: limitInfo.counter,
+                    current: limitInfo.current,
+                    limit: limitInfo.limit,
+                    message: limitInfo.message,
+                });
+            } else {
+                console.error('Error saving resume copy:', e);
+            }
         }
         setSaving(false);
     };
@@ -646,6 +693,14 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {/* Premium Gate Modals */}
                     <PremiumGate {...downloadGateProps} />
                     <PremiumGate {...saveGateProps} />
+                    <UpgradeModal
+                        isOpen={limitModal.isOpen}
+                        onClose={() => setLimitModal({ isOpen: false })}
+                        counter={limitModal.counter}
+                        current={limitModal.current}
+                        limit={limitModal.limit}
+                        message={limitModal.message}
+                    />
                 </div>
 
                 {/* ═══════════════════════════════════════════════ */}

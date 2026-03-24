@@ -15,7 +15,32 @@ logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-ALGORITHM = "HS256"
+ALGORITHM = settings.ALGORITHM or "HS256"
+
+
+def _create_token(
+    *,
+    subject: Union[str, Any],
+    expires_delta: timedelta,
+    token_type: str,
+) -> str:
+    if not subject:
+        raise ValueError("Token subject cannot be empty")
+
+    now = datetime.now(timezone.utc)
+    expire = now + expires_delta
+    to_encode = {
+        "exp": expire,
+        "sub": str(subject),
+        "iat": now,
+        "type": token_type,
+    }
+
+    try:
+        return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    except Exception as e:
+        logger.error("Failed to create %s token: %s", token_type, str(e))
+        raise
 
 
 def create_access_token(
@@ -26,23 +51,23 @@ def create_access_token(
     Create a JWT access token.
     Uses timezone-aware datetimes (no deprecated utcnow).
     """
-    if not subject:
-        raise ValueError("Token subject cannot be empty")
+    return _create_token(
+        subject=subject,
+        expires_delta=expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        token_type="access",
+    )
 
-    now = datetime.now(timezone.utc)
-    if expires_delta:
-        expire = now + expires_delta
-    else:
-        expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    to_encode = {"exp": expire, "sub": str(subject), "iat": now}
-
-    try:
-        encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
-        return encoded_jwt
-    except Exception as e:
-        logger.error("Failed to create access token: %s", str(e))
-        raise
+def create_refresh_token(
+    subject: Union[str, Any],
+    expires_delta: Optional[timedelta] = None,
+) -> str:
+    """Create a JWT refresh token."""
+    return _create_token(
+        subject=subject,
+        expires_delta=expires_delta or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        token_type="refresh",
+    )
 
 
 def decode_access_token(token: str) -> Optional[dict]:
@@ -55,6 +80,8 @@ def decode_access_token(token: str) -> Optional[dict]:
 
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") not in (None, "access"):
+            return None
         return payload
     except JWTError as e:
         logger.debug("Token decode failed: %s", str(e))
@@ -62,6 +89,15 @@ def decode_access_token(token: str) -> Optional[dict]:
     except Exception as e:
         logger.warning("Unexpected token decode error: %s", str(e))
         return None
+
+
+def decode_refresh_token(token: str) -> Optional[dict]:
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+    if payload.get("type") not in (None, "refresh"):
+        return None
+    return payload
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

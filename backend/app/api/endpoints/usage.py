@@ -16,10 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user, _resolve_user_role
 from app.db.session import get_db
 from app.models.user import User
-from app.services.usage_service import (
-    PLAN_LIMITS,
-    get_usage_status,
-)
+from app.services.usage_service import get_public_plan_limits, get_usage_status
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,13 +57,7 @@ def get_plan_limits():
     GET /usage/limits — returns the limit definitions for all plan stages.
     Public endpoint — no auth required. Used by the pricing page.
     """
-    plan_names = {0: "free", 1: "starter", 2: "professional", 3: "ultimate"}
-    return {
-        "plans": {
-            plan_names[stage]: limits
-            for stage, limits in PLAN_LIMITS.items()
-        }
-    }
+    return get_public_plan_limits()
 
 
 @router.post("/upgrade-plan")

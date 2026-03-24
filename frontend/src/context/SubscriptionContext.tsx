@@ -45,6 +45,18 @@ interface SubscriptionContextType {
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
+const ALWAYS_AVAILABLE_FEATURES: Record<string, boolean> = {
+    dashboard: true,
+    resume_preview: true,
+    quiz_limited: true,
+    analytics_limited: true,
+    resume_download: true,
+    resume_builder: true,
+    roadmap_generate: true,
+    interview_start: true,
+    job_portal: true,
+};
+
 // ══════════════════════════════════════════════════════════════
 // PROVIDER
 // ══════════════════════════════════════════════════════════════
@@ -117,7 +129,10 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const plan = subscriptionData?.plan ?? 'free';
     const status = subscriptionData?.status ?? 'none';
     const isAdmin = subscriptionData?.is_admin ?? false;
-    const features = subscriptionData?.features ?? {};
+    const features = {
+        ...ALWAYS_AVAILABLE_FEATURES,
+        ...(subscriptionData?.features ?? {}),
+    };
     const featureExpires = subscriptionData?.feature_expires ?? {};
     const expiresAt = subscriptionData?.expires_at ?? null;
 

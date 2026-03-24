@@ -517,6 +517,7 @@ def create_interview_session(
     interview_mode: str,
     difficulty: str,
     db: Session,
+    commit: bool = True,
 ) -> dict:
     """Create a new multi-stage interview session with safe DB handling."""
     try:
@@ -528,11 +529,14 @@ def create_interview_session(
             current_stage="screening",
         )
         db.add(session)
-        db.commit()
+        db.flush()
         db.refresh(session)
+        if commit:
+            db.commit()
         return {"id": str(session.id), "position": position, "current_stage": "screening"}
     except Exception as e:
-        db.rollback()
+        if commit:
+            db.rollback()
         logger.error("Failed to create interview session: %s", str(e))
         raise
 

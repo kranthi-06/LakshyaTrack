@@ -73,7 +73,7 @@ class RegenerateRequest(BaseModel):
 @router.post("/enhance/personal-info")
 async def enhance_personal_info(
     request: PersonalInfoRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.enhance_personal_info(
@@ -88,7 +88,7 @@ async def enhance_personal_info(
 @router.post("/enhance/education")
 async def enhance_education(
     request: EducationRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.enhance_education(
@@ -103,7 +103,7 @@ async def enhance_education(
 @router.post("/enhance/experience")
 async def enhance_experience(
     request: ExperienceRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.enhance_experience(
@@ -118,7 +118,7 @@ async def enhance_experience(
 @router.post("/enhance/projects")
 async def enhance_projects(
     request: ProjectRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.enhance_projects(
@@ -133,7 +133,7 @@ async def enhance_projects(
 @router.post("/enhance/skills")
 async def enhance_skills(
     request: SkillsRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.enhance_skills(
@@ -148,7 +148,7 @@ async def enhance_skills(
 @router.post("/ats-check")
 async def ats_check(
     request: ATSCheckRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.run_ats_check(
@@ -163,7 +163,7 @@ async def ats_check(
 @router.post("/regenerate")
 async def regenerate_section(
     request: RegenerateRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.regenerate_section(
@@ -184,7 +184,7 @@ class OptimizeRequest(BaseModel):
 @router.post("/optimize")
 async def optimize_resume(
     request: OptimizeRequest,
-    current_user=Depends(deps.get_current_user_optional),
+    current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
         result = await resume_builder_service.optimize_full_resume(

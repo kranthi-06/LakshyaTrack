@@ -36,8 +36,10 @@ class UserUsage(Base):
     )
 
     # ── Counters ────────────────────────────────────────────────
+    # Current number of resumes stored by the user.
     resume_count = Column(Integer, default=0, nullable=False)
     interview_count_weekly = Column(Integer, default=0, nullable=False)
+    # Current number of active/generated roadmaps stored for the user.
     plan_count = Column(Integer, default=0, nullable=False)
     resume_edit_monthly = Column(Integer, default=0, nullable=False)
 
