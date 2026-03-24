@@ -47,7 +47,7 @@ export const getActiveRoadmap = async (options: { bypassCache?: boolean } = {}) 
             const res = await api.get('/roadmap/active');
             return res.data;
         },
-        { ttlMs: 120_000, persist: true, bypassCache: options.bypassCache },
+        { ttlMs: 120_000, persist: false, bypassCache: options.bypassCache },
     );
 };
 
@@ -58,7 +58,7 @@ export const getAllRoadmaps = async (options: { bypassCache?: boolean } = {}) =>
             const res = await api.get('/roadmap/all');
             return res.data;
         },
-        { ttlMs: 120_000, persist: true, bypassCache: options.bypassCache },
+        { ttlMs: 120_000, persist: false, bypassCache: options.bypassCache },
     );
 };
 

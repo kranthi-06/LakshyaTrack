@@ -348,6 +348,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (response.access_token) {
             localStorage.setItem(TOKEN_KEY, response.access_token);
             invalidateCache('auth:');
+            invalidateCache('roadmap:');
+            invalidateCache('progress:');
             const userData = await getMe();
             updateUser(userData);
             // Best-effort daily streak touch (non-blocking).
@@ -367,6 +369,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (response.access_token) {
             localStorage.setItem(TOKEN_KEY, response.access_token);
             invalidateCache('auth:');
+            invalidateCache('roadmap:');
+            invalidateCache('progress:');
             const userData = await getMe();
             updateUser(userData);
             touchDailyStreak().catch(() => { });
@@ -407,6 +411,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_CACHE_KEY);
         invalidateCache('auth:');
+        invalidateCache('roadmap:');
+        invalidateCache('progress:');
         // Sign out from Supabase too (if applicable)
         await supabase.auth.signOut().catch(() => { });
         updateUser(null);
