@@ -184,6 +184,20 @@ export default function CareerIntelligence() {
         limit?: number;
         message?: string;
     }>({ isOpen: false });
+    const showRoadmapUpgradeGate = isLocked && !roadmapData;
+
+    const loadRoadmapIntoView = useCallback((roadmap: {
+        id: string;
+        target_role: string;
+        topic_name?: string | null;
+        roadmap_data: any;
+    }) => {
+        setRoadmapData(roadmap.roadmap_data);
+        setRoadmapId(roadmap.id);
+        setSelectedRole(roadmap.target_role);
+        setActiveTopicName(roadmap.topic_name || roadmap.target_role);
+        setStep('roadmap');
+    }, []);
 
     // ── Fetch all roadmaps ────────────────
     const fetchAllRoadmaps = useCallback(async () => {
@@ -201,19 +215,34 @@ export default function CareerIntelligence() {
             try {
                 const res = await getActiveRoadmap();
                 if (res.roadmap) {
-                    setRoadmapData(res.roadmap.roadmap_data);
-                    setRoadmapId(res.roadmap.id);
-                    setSelectedRole(res.roadmap.target_role);
-                    setActiveTopicName(res.roadmap.topic_name || res.roadmap.target_role);
-                    setStep('roadmap');
+                    loadRoadmapIntoView(res.roadmap);
+                    return;
                 }
-            } catch (e) {
+            } catch {
+                // Fall back to the full roadmap list below.
+            }
+
+            try {
+                const allRes = await getAllRoadmaps();
+                const roadmaps = allRes.roadmaps || [];
+                setAllRoadmaps(roadmaps);
+
+                if (roadmaps.length > 0) {
+                    const restored = await setActiveRoadmap(roadmaps[0].id);
+                    loadRoadmapIntoView({
+                        id: restored.id,
+                        target_role: restored.target_role,
+                        topic_name: restored.topic_name,
+                        roadmap_data: restored.roadmap_data,
+                    });
+                }
+            } catch {
                 // No roadmap yet - stay on domains step
             }
         };
         checkExistingRoadmap();
         fetchAllRoadmaps();
-    }, [fetchAllRoadmaps]);
+    }, [fetchAllRoadmaps, loadRoadmapIntoView]);
 
     const filteredRoles = jobRoles.filter(role =>
         role.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -225,6 +254,9 @@ export default function CareerIntelligence() {
         guardAction(async () => {
             const previousStep = step;
             const previousRole = selectedRole;
+            const previousRoadmapData = roadmapData;
+            const previousRoadmapId = roadmapId;
+            const previousTopicName = activeTopicName;
             setSelectedRole(roleTitle);
             setIsGenerating(true);
             setStep('roadmap');
@@ -245,7 +277,10 @@ export default function CareerIntelligence() {
                 const limitInfo = extractLimitExceededError(error);
                 if (limitInfo) {
                     setSelectedRole(previousRole);
-                    setStep(previousStep);
+                    setRoadmapData(previousRoadmapData);
+                    setRoadmapId(previousRoadmapId);
+                    setActiveTopicName(previousTopicName);
+                    setStep(previousRoadmapData ? 'roadmap' : previousStep);
                     setLimitModal({
                         isOpen: true,
                         counter: limitInfo.counter,
@@ -269,6 +304,9 @@ export default function CareerIntelligence() {
         guardAction(async () => {
             const previousStep = step;
             const previousRole = selectedRole;
+            const previousRoadmapData = roadmapData;
+            const previousRoadmapId = roadmapId;
+            const previousTopicName = activeTopicName;
             setShowNewRoadmapModal(false);
             setIsGenerating(true);
             setStep('roadmap');
@@ -292,7 +330,10 @@ export default function CareerIntelligence() {
                 const limitInfo = extractLimitExceededError(error);
                 if (limitInfo) {
                     setSelectedRole(previousRole);
-                    setStep(previousStep);
+                    setRoadmapData(previousRoadmapData);
+                    setRoadmapId(previousRoadmapId);
+                    setActiveTopicName(previousTopicName);
+                    setStep(previousRoadmapData ? 'roadmap' : previousStep);
                     setLimitModal({
                         isOpen: true,
                         counter: limitInfo.counter,
@@ -317,11 +358,12 @@ export default function CareerIntelligence() {
         setIsSwitching(true);
         try {
             const res = await setActiveRoadmap(roadmap.id);
-            setRoadmapData(res.roadmap_data);
-            setRoadmapId(res.id);
-            setSelectedRole(res.target_role);
-            setActiveTopicName(res.topic_name || res.target_role);
-            setStep('roadmap');
+            loadRoadmapIntoView({
+                id: res.id,
+                target_role: res.target_role,
+                topic_name: res.topic_name,
+                roadmap_data: res.roadmap_data,
+            });
             await fetchAllRoadmaps();
         } catch (error) {
             console.error('Failed to switch roadmap:', error);
@@ -342,10 +384,7 @@ export default function CareerIntelligence() {
                 try {
                     const res = await getActiveRoadmap();
                     if (res.roadmap) {
-                        setRoadmapData(res.roadmap.roadmap_data);
-                        setRoadmapId(res.roadmap.id);
-                        setSelectedRole(res.roadmap.target_role);
-                        setActiveTopicName(res.roadmap.topic_name || res.roadmap.target_role);
+                        loadRoadmapIntoView(res.roadmap);
                     } else {
                         setRoadmapData(null);
                         setRoadmapId(null);
@@ -572,7 +611,7 @@ export default function CareerIntelligence() {
                             ) : roadmapData ? (
                                 <>
                                     {/* ── LOCKED OVERLAY: Free plan users see upgrade prompt ── */}
-                                    {isLocked && (
+                                    {showRoadmapUpgradeGate && (
                                         <motion.div
                                             initial={{ opacity: 0, y: 20 }}
                                             animate={{ opacity: 1, y: 0 }}
@@ -646,7 +685,7 @@ export default function CareerIntelligence() {
                                     )}
 
                                     {/* ── Unlocked: Show full roadmap content ── */}
-                                    {!isLocked && (<>
+                                    {!showRoadmapUpgradeGate && (<>
                                     <div className="text-center space-y-6">
                                         <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mx-auto shadow-sm">
                                             <Map className="w-8 h-8 text-[#5c52d2]" />
@@ -661,7 +700,7 @@ export default function CareerIntelligence() {
                                         {/* ── Action Buttons: Change Target Role + Add Roadmap ── */}
                                         <div className="flex items-center justify-center gap-3 flex-wrap">
                                             <Button
-                                                onClick={() => { setStep('domains'); setRoadmapData(null); setRoadmapId(null); }}
+                                                onClick={() => { setStep('domains'); }}
                                                 variant="outline"
                                                 className="h-12 px-8 rounded-xl border-slate-200 font-black text-slate-500 text-xs uppercase tracking-widest"
                                             >

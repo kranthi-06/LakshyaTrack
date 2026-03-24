@@ -179,7 +179,18 @@ def get_user_roadmap(user_id: str, db: Session) -> Optional[dict]:
     ).order_by(Roadmap.created_at.desc()).first()
 
     if not roadmap:
-        return None
+        # Self-heal older/inconsistent records where a roadmap exists but none is marked active.
+        roadmap = db.query(Roadmap).filter(
+            Roadmap.user_id == user_id,
+        ).order_by(Roadmap.last_opened.desc().nullslast(), Roadmap.created_at.desc()).first()
+
+        if not roadmap:
+            return None
+
+        roadmap.is_active = True
+        roadmap.last_opened = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(roadmap)
 
     return {
         "id": str(roadmap.id),
