@@ -40,6 +40,7 @@ import { useFeatureGate } from '../hooks/useFeatureGate';
 import PremiumGate from '../components/PremiumGate';
 import UpgradeModal from '../components/UpgradeModal';
 import { extractLimitExceededError } from '../services/api';
+import { getUsageStatus } from '../services/usage';
 import { useUsage } from '../context/UsageContext';
 
 type Step = 'domains' | 'roles' | 'analysis' | 'roadmap';
@@ -202,19 +203,46 @@ export default function CareerIntelligence() {
         setStep('roadmap');
     }, []);
 
-    const redirectToRoadmapUpgrade = useCallback((message?: string) => {
+    const redirectToRoadmapUpgrade = useCallback((options?: {
+        current?: number;
+        limit?: number;
+        message?: string;
+    }) => {
         navigate('/plans', {
             state: {
                 limitPopup: {
                     title: 'Roadmap Limit Reached',
                     counter: 'plan_count',
-                    current: roadmapCounter?.current,
-                    limit: roadmapCounter?.limit,
-                    message: message || 'Your free roadmap quota is already used. Upgrade your plan or choose a quick access pass to create another roadmap.',
+                    current: options?.current ?? roadmapCounter?.current,
+                    limit: options?.limit ?? roadmapCounter?.limit,
+                    message: options?.message || 'Your free roadmap quota is already used. Upgrade your plan or choose a quick access pass to create another roadmap.',
                 },
             },
         });
     }, [navigate, roadmapCounter]);
+
+    const shouldBlockRoadmapCreation = useCallback(async (message?: string) => {
+        try {
+            const freshUsage = await getUsageStatus();
+            const counter = freshUsage.counters.plan_count;
+
+            if (counter && counter.limit !== -1 && counter.current >= counter.limit) {
+                redirectToRoadmapUpgrade({
+                    current: counter.current,
+                    limit: counter.limit,
+                    message,
+                });
+                return true;
+            }
+        } catch {
+            if (resolved && roadmapLimitReached) {
+                redirectToRoadmapUpgrade({ message });
+                return true;
+            }
+        }
+
+        return false;
+    }, [redirectToRoadmapUpgrade, resolved, roadmapLimitReached]);
 
     // ── Fetch all roadmaps ────────────────
     const fetchAllRoadmaps = useCallback(async (bypassCache = false) => {
@@ -285,10 +313,9 @@ export default function CareerIntelligence() {
 
     // Generate roadmap when role is selected
     const handleRoleSelect = async (roleTitle: string) => {
-        if (resolved && roadmapLimitReached) {
-            redirectToRoadmapUpgrade(
-                'You already have the maximum roadmaps for your current plan. Upgrade your plan or use a quick access pass to create another roadmap.',
-            );
+        if (await shouldBlockRoadmapCreation(
+            'You already have the maximum roadmaps for your current plan. Upgrade your plan or use a quick access pass to create another roadmap.',
+        )) {
             return;
         }
         guardAction(async () => {
@@ -328,7 +355,11 @@ export default function CareerIntelligence() {
                             setStep(previousStep);
                         }
                     }
-                    redirectToRoadmapUpgrade(limitInfo.message);
+                    redirectToRoadmapUpgrade({
+                        current: limitInfo.current,
+                        limit: limitInfo.limit,
+                        message: limitInfo.message,
+                    });
                 } else {
                     console.error('Failed to generate roadmap:', error);
                     window.location.href = '/dashboard';
@@ -342,10 +373,9 @@ export default function CareerIntelligence() {
     // ── Create a new custom roadmap from the modal ─────
     const handleCreateNewRoadmap = async () => {
         if (!newTopic.trim()) return;
-        if (resolved && roadmapLimitReached) {
-            redirectToRoadmapUpgrade(
-                'You already have the maximum roadmaps for your current plan. Upgrade your plan or use a quick access pass to create another roadmap.',
-            );
+        if (await shouldBlockRoadmapCreation(
+            'You already have the maximum roadmaps for your current plan. Upgrade your plan or use a quick access pass to create another roadmap.',
+        )) {
             return;
         }
         guardAction(async () => {
@@ -388,7 +418,11 @@ export default function CareerIntelligence() {
                             setStep(previousStep);
                         }
                     }
-                    redirectToRoadmapUpgrade(limitInfo.message);
+                    redirectToRoadmapUpgrade({
+                        current: limitInfo.current,
+                        limit: limitInfo.limit,
+                        message: limitInfo.message,
+                    });
                 } else {
                     console.error('Failed to generate custom roadmap:', error);
                 }

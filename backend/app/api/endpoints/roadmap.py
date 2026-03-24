@@ -8,10 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
-from app.api.deps import _resolve_user_role
 from app.services import roadmap_service
 from app.middleware.require_usage_limit import require_usage_limit
-from app.services.usage_service import LimitExceededError, consume_usage, sync_usage_counts
+from app.services.usage_service import LimitExceededError, sync_usage_counts
 import logging
 
 router = APIRouter()
@@ -48,7 +47,6 @@ async def generate_roadmap(
 ) -> Any:
     """Generate a personalized skill roadmap using AI. Enforces plan_count limit."""
     try:
-        user_role = _resolve_user_role(current_user)
         result = await roadmap_service.generate_roadmap(
             user_id=str(current_user.id),
             target_role=request.target_role,
@@ -59,13 +57,7 @@ async def generate_roadmap(
             difficulty=request.difficulty,
             commit=False,
         )
-        consume_usage(
-            db,
-            current_user.id,
-            "roadmap",
-            user_role=user_role,
-            sync_before_consume=True,
-        )
+        sync_usage_counts(db, current_user.id, counters=["roadmap"])
         db.commit()
 
         return result
