@@ -106,7 +106,7 @@ async def save_resume(
         return {"message": "Resume saved successfully", "id": str(new_resume.id)}
     except LimitExceededError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
     except Exception:
         db.rollback()
         raise
@@ -252,7 +252,7 @@ async def authorize_resume_download(
         }
     except LimitExceededError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.detail) from exc
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
 
 @router.delete("/{resume_id}")
 async def delete_saved_resume(

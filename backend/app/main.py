@@ -175,6 +175,15 @@ def _ensure_column(conn, inspector, table_name: str, column_name: str, ddl: str)
         logger.warning("Failed to ensure column %s.%s: %s", table_name, column_name, str(e))
 
 
+def _ensure_statement(conn, ddl: str, description: str) -> None:
+    try:
+        conn.execute(text(ddl))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.warning("Failed to ensure %s: %s", description, str(e))
+
+
 def initialize_relational_database() -> None:
     """Run best-effort SQL startup tasks without crashing app import."""
     try:
@@ -276,6 +285,22 @@ def initialize_relational_database() -> None:
                                "ALTER TABLE roadmaps ADD COLUMN topic_name VARCHAR")
                 _ensure_column(conn, inspector, "roadmaps", "last_opened",
                                "ALTER TABLE roadmaps ADD COLUMN last_opened TIMESTAMPTZ DEFAULT NOW()")
+                _ensure_column(conn, inspector, "roadmaps", "generation_status",
+                               "ALTER TABLE roadmaps ADD COLUMN generation_status VARCHAR DEFAULT 'completed' NOT NULL")
+                _ensure_column(conn, inspector, "roadmaps", "generation_error",
+                               "ALTER TABLE roadmaps ADD COLUMN generation_error TEXT")
+                _ensure_column(conn, inspector, "roadmaps", "request_fingerprint",
+                               "ALTER TABLE roadmaps ADD COLUMN request_fingerprint VARCHAR")
+                _ensure_statement(
+                    conn,
+                    "CREATE INDEX IF NOT EXISTS ix_roadmaps_user_generation_status ON roadmaps (user_id, generation_status)",
+                    "roadmaps user/status index",
+                )
+                _ensure_statement(
+                    conn,
+                    "CREATE INDEX IF NOT EXISTS ix_roadmaps_request_fingerprint ON roadmaps (request_fingerprint)",
+                    "roadmaps request fingerprint index",
+                )
 
             if "opportunities" in table_names:
                 _ensure_column(conn, inspector, "opportunities", "category",

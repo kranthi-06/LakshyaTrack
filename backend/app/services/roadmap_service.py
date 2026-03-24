@@ -39,6 +39,80 @@ async def generate_roadmap(
     If topic_name is provided, it's used as the learning topic (custom roadmap).
     Difficulty can be 'Beginner', 'Intermediate', or 'Advanced' to bias the content.
     """
+    try:
+        roadmap_data = {
+            "levels": [
+                {
+                    "name": "Beginner",
+                    "pass_threshold": 70,
+                    "skills": []
+                },
+                {
+                    "name": "Intermediate",
+                    "pass_threshold": 80,
+                    "skills": []
+                },
+                {
+                    "name": "Advanced",
+                    "pass_threshold": 85,
+                    "skills": []
+                }
+            ]
+        }
+
+        # Deactivate ALL existing roadmaps for this user so only the new one is active
+        db.query(Roadmap).filter(
+            Roadmap.user_id == user_id,
+            Roadmap.is_active == True
+        ).update({"is_active": False})
+
+        # Persist to database as pending
+        roadmap = Roadmap(
+            user_id=user_id,
+            target_role=target_role,
+            topic_name=topic_name or target_role,
+            current_skills=current_skills,
+            skill_gaps=skill_gaps,
+            roadmap_data=roadmap_data, # skeleton
+            is_active=True,
+            generation_status="pending",
+            last_opened=datetime.now(timezone.utc),
+        )
+        db.add(roadmap)
+        db.flush()
+        db.refresh(roadmap)
+        
+        roadmap_id = str(roadmap.id)
+        if commit:
+            db.commit()
+
+        return {
+            "id": roadmap_id,
+            "target_role": target_role,
+            "topic_name": roadmap.topic_name,
+            "roadmap_data": roadmap_data,
+            "generation_status": "pending",
+            "created_at": str(roadmap.created_at)
+        }
+    except Exception as e:
+        logger.error("Roadmap initial creation error: %s", sanitize_for_logging(str(e)))
+        if commit:
+            db.rollback()
+        raise
+
+
+async def generate_roadmap_background(
+    roadmap_id: str,
+    target_role: str,
+    current_skills: List[str],
+    skill_gaps: List[str],
+    topic_name: Optional[str],
+    difficulty: Optional[str],
+) -> None:
+    """Background task to generate the roadmap data and update the database."""
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    
     system_prompt = (
         "You are an expert career coach and curriculum designer. "
         "You build structured learning roadmaps for tech professionals. "
@@ -113,7 +187,6 @@ async def generate_roadmap(
             system_prompt
         )
 
-        # Use safe_json_parse for robust JSON extraction
         roadmap_data = safe_json_parse(response)
         if roadmap_data is None:
             raise ValueError("AI returned invalid JSON for roadmap")
@@ -128,49 +201,23 @@ async def generate_roadmap(
                 else:
                     skill["status"] = "locked"
 
-        # Deactivate ALL existing roadmaps for this user so only the new one is active
-        db.query(Roadmap).filter(
-            Roadmap.user_id == user_id,
-            Roadmap.is_active == True
-        ).update({"is_active": False})
-
-        # Persist to database
-        roadmap = Roadmap(
-            user_id=user_id,
-            target_role=target_role,
-            topic_name=topic_name or target_role,
-            current_skills=current_skills,
-            skill_gaps=skill_gaps,
-            roadmap_data=roadmap_data,
-            is_active=True,
-            last_opened=datetime.now(timezone.utc),
-        )
-        db.add(roadmap)
-        db.flush()
-        db.refresh(roadmap)
-        if commit:
+        from sqlalchemy.orm.attributes import flag_modified
+        roadmap = db.query(Roadmap).filter(Roadmap.id == roadmap_id).with_for_update().first()
+        if roadmap:
+            roadmap.roadmap_data = roadmap_data
+            roadmap.generation_status = "completed"
+            flag_modified(roadmap, "roadmap_data")
             db.commit()
 
-        return {
-            "id": str(roadmap.id),
-            "target_role": target_role,
-            "topic_name": roadmap.topic_name,
-            "roadmap_data": roadmap_data,
-            "created_at": str(roadmap.created_at)
-        }
-
-    except json.JSONDecodeError as e:
-        logger.error("Failed to parse roadmap JSON: %s", sanitize_for_logging(str(e)))
-        if commit:
-            db.rollback()
-        raise ValueError(f"AI returned invalid JSON: {str(e)}")
     except Exception as e:
-        logger.error("Roadmap generation error: %s", sanitize_for_logging(str(e)))
-        if commit:
-            db.rollback()
-        raise
-
-
+        logger.error("Background roadmap generation failed: %s", sanitize_for_logging(str(e)))
+        roadmap = db.query(Roadmap).filter(Roadmap.id == roadmap_id).with_for_update().first()
+        if roadmap:
+            roadmap.generation_status = "failed"
+            roadmap.generation_error = str(e)
+            db.commit()
+    finally:
+        db.close()
 def get_user_roadmap(user_id: str, db: Session) -> Optional[dict]:
     """Get the active roadmap for a user."""
     roadmap = db.query(Roadmap).filter(
@@ -199,6 +246,7 @@ def get_user_roadmap(user_id: str, db: Session) -> Optional[dict]:
         "current_skills": roadmap.current_skills,
         "skill_gaps": roadmap.skill_gaps,
         "roadmap_data": roadmap.roadmap_data,
+        "generation_status": roadmap.generation_status,
         "created_at": str(roadmap.created_at),
         "updated_at": str(roadmap.updated_at)
     }
@@ -216,6 +264,7 @@ def get_all_user_roadmaps(user_id: str, db: Session) -> list:
             "target_role": r.target_role,
             "topic_name": r.topic_name or r.target_role,
             "is_active": r.is_active,
+            "generation_status": r.generation_status,
             "created_at": str(r.created_at),
             "last_opened": str(r.last_opened) if r.last_opened else str(r.created_at),
         }
@@ -250,6 +299,7 @@ def set_active_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
         "target_role": roadmap.target_role,
         "topic_name": roadmap.topic_name or roadmap.target_role,
         "roadmap_data": roadmap.roadmap_data,
+        "generation_status": roadmap.generation_status,
         "created_at": str(roadmap.created_at),
         "updated_at": str(roadmap.updated_at)
     }

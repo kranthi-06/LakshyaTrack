@@ -35,6 +35,7 @@ import {
     getAllRoadmaps,
     setActiveRoadmap,
     deleteRoadmap as deleteRoadmapApi,
+    getRoadmapStatus,
 } from '../services/careerPlatform';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import PremiumGate from '../components/PremiumGate';
@@ -300,9 +301,9 @@ export default function CareerIntelligence() {
     useEffect(() => {
         if (!roadmapRestoreAttempted || !resolved || isGenerating) return;
         if (roadmapLimitReached && !roadmapData) {
-            redirectToRoadmapUpgrade(
-                'You have already used your roadmap slot. Upgrade your plan or use a quick access pass to create a new roadmap.',
-            );
+            redirectToRoadmapUpgrade({
+                message: 'You have already used your roadmap slot. Upgrade your plan or use a quick access pass to create a new roadmap.',
+            });
         }
     }, [roadmapRestoreAttempted, resolved, isGenerating, roadmapLimitReached, roadmapData, redirectToRoadmapUpgrade]);
 
@@ -328,6 +329,18 @@ export default function CareerIntelligence() {
             setIsGenerating(true);
             setStep('roadmap');
 
+            const pollStatus = async (id: string, initialDelay = 1000): Promise<any> => {
+                let attempts = 0;
+                while (attempts < 30) { // 30s max
+                    await new Promise(r => setTimeout(r, initialDelay));
+                    const stat = await getRoadmapStatus(id);
+                    if (stat.generation_status === 'completed') return stat;
+                    if (stat.generation_status === 'failed') throw new Error(stat.error || 'Generation failed');
+                    attempts++;
+                }
+                throw new Error('Timeout waiting for generation');
+            };
+
             try {
                 const role = jobRoles.find(r => r.title === roleTitle);
                 const res = await generateRoadmap(
@@ -335,10 +348,16 @@ export default function CareerIntelligence() {
                     role?.skills || [],
                     []
                 );
+                
+                let finalRes = res;
+                if (res.generation_status === 'pending') {
+                     finalRes = await pollStatus(res.id);
+                }
+
                 await refreshUsage();
-                setRoadmapData(res.roadmap_data);
+                setRoadmapData(finalRes.roadmap_data);
                 setRoadmapId(res.id);
-                setActiveTopicName(res.topic_name || roleTitle);
+                setActiveTopicName(finalRes.topic_name || roleTitle);
                 await fetchAllRoadmaps(true);
             } catch (error) {
                 const limitInfo = extractLimitExceededError(error);
@@ -389,6 +408,18 @@ export default function CareerIntelligence() {
             setStep('roadmap');
             setSelectedRole(newTopic.trim());
 
+            const pollStatus = async (id: string, initialDelay = 1000): Promise<any> => {
+                let attempts = 0;
+                while (attempts < 30) {
+                    await new Promise(r => setTimeout(r, initialDelay));
+                    const stat = await getRoadmapStatus(id);
+                    if (stat.generation_status === 'completed') return stat;
+                    if (stat.generation_status === 'failed') throw new Error(stat.error || 'Generation failed');
+                    attempts++;
+                }
+                throw new Error('Timeout waiting for generation');
+            };
+
             try {
                 const res = await generateRoadmap(
                     newTopic.trim(),
@@ -397,10 +428,16 @@ export default function CareerIntelligence() {
                     newTopic.trim(),
                     newDifficulty || undefined
                 );
+                
+                let finalRes = res;
+                if (res.generation_status === 'pending') {
+                     finalRes = await pollStatus(res.id);
+                }
+
                 await refreshUsage();
-                setRoadmapData(res.roadmap_data);
+                setRoadmapData(finalRes.roadmap_data);
                 setRoadmapId(res.id);
-                setActiveTopicName(res.topic_name || newTopic.trim());
+                setActiveTopicName(finalRes.topic_name || newTopic.trim());
                 setSelectedRole(res.target_role);
                 await fetchAllRoadmaps(true);
             } catch (error) {

@@ -4,7 +4,7 @@ Integrates with the Plan page (CareerIntelligence).
 Supports multiple roadmaps per user with switcher.
 """
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import deps
@@ -42,6 +42,7 @@ class DeleteRoadmapRequest(BaseModel):
 @router.post("/generate")
 async def generate_roadmap(
     request: RoadmapRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(deps.get_db),
     current_user=Depends(require_usage_limit("plan_count")),
 ) -> Any:
@@ -57,13 +58,25 @@ async def generate_roadmap(
             difficulty=request.difficulty,
             commit=False,
         )
+        
+        # Start the background task
+        background_tasks.add_task(
+            roadmap_service.generate_roadmap_background,
+            roadmap_id=result["id"],
+            target_role=request.target_role,
+            current_skills=request.current_skills,
+            skill_gaps=request.skill_gaps,
+            topic_name=request.topic_name,
+            difficulty=request.difficulty,
+        )
+        
         sync_usage_counts(db, current_user.id, counters=["roadmap"])
         db.commit()
 
         return result
     except LimitExceededError as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=e.detail) from e
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=e.detail) from e
     except ValueError as e:
         db.rollback()
         logger.warning("Roadmap validation failed: %s", str(e))
@@ -86,6 +99,30 @@ async def create_roadmap_alias(
         db=db,
         current_user=current_user,
     )
+
+
+@router.get("/{roadmap_id}/status")
+async def get_roadmap_status(
+    roadmap_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """Check the background generation status of a roadmap."""
+    from app.models.career import Roadmap
+    roadmap = db.query(Roadmap).filter(
+        Roadmap.id == roadmap_id,
+        Roadmap.user_id == current_user.id
+    ).first()
+    
+    if not roadmap:
+        raise HTTPException(status_code=404, detail="Roadmap not found")
+        
+    return {
+        "id": str(roadmap.id),
+        "generation_status": roadmap.generation_status,
+        "roadmap_data": roadmap.roadmap_data if roadmap.generation_status == "completed" else None,
+        "error": roadmap.generation_error if roadmap.generation_status == "failed" else None
+    }
 
 
 @router.get("/active")

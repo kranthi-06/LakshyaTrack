@@ -46,6 +46,9 @@ class Roadmap(Base):
     #   ]
     # }
     is_active = Column(Boolean, default=True)
+    generation_status = Column(String, default="completed", nullable=False, index=True)
+    generation_error = Column(Text, nullable=True)
+    request_fingerprint = Column(String, nullable=True, index=True)
     last_opened = Column(DateTime(timezone=True), server_default=func.now())  # When the user last opened this roadmap
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

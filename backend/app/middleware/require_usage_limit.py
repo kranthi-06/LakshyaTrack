@@ -37,7 +37,7 @@ def require_usage_limit(counter_name: str):
                 detail["limit"],
             )
             raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail=detail,
             )
 

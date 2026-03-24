@@ -31,7 +31,7 @@ PLAN_LIMITS: Dict[str, Dict[str, float]] = {
     "PROFESSIONAL": {
         "resumeStorage": 20,
         "weeklyInterviews": 30,
-        "roadmap": 15,
+        "roadmap": 20,
         "resumeEditsMonthly": 50,
     },
     "ULTIMATE": {
@@ -59,6 +59,7 @@ PLAN_TO_API_NAME = {
 }
 
 API_NAME_TO_PLAN = {api_name: plan for plan, api_name in PLAN_TO_API_NAME.items()}
+API_NAME_TO_PLAN["pro"] = "PROFESSIONAL"
 
 CANONICAL_COUNTERS = {
     "resumeStorage": {

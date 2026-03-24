@@ -40,6 +40,11 @@ export const generateRoadmap = async (
     return res.data;
 };
 
+export const getRoadmapStatus = async (roadmapId: string) => {
+    const res = await api.get(`/roadmap/${roadmapId}/status`);
+    return res.data;
+};
+
 export const getActiveRoadmap = async (options: { bypassCache?: boolean } = {}) => {
     return cachedRequest(
         CACHE_KEYS.activeRoadmap,

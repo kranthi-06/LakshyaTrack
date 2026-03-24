@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.plan_limits import (
@@ -28,14 +28,18 @@ from app.core.plan_limits import (
 )
 from app.models.career import Roadmap
 from app.models.resume import SavedResume
+from app.models.subscription import UserMicroPurchase
 from app.models.usage import UserUsage
-from app.services.subscription_service import get_user_stage
+from app.services.subscription_service import get_user_stage, invalidate_subscription_cache
 
 logger = logging.getLogger(__name__)
 
 WEEKLY_RESET_WINDOW = timedelta(days=7)
 MONTHLY_RESET_WINDOW = timedelta(days=30)
 STORAGE_BASED_COUNTERS = {"resumeStorage", "roadmap"}
+COUNTER_BONUS_FEATURE_KEYS = {
+    "roadmap": "roadmap_generate",
+}
 
 
 @dataclass
@@ -70,6 +74,66 @@ def _counter_display_name(counter_key: str) -> str:
     return str(CANONICAL_COUNTERS[counter_key]["display_name"])
 
 
+def _counter_feature_key(counter_key: str) -> Optional[str]:
+    return COUNTER_BONUS_FEATURE_KEYS.get(counter_key)
+
+
+def _get_bonus_credits(db: Session, user_id: uuid.UUID, counter_key: str) -> int:
+    feature_key = _counter_feature_key(counter_key)
+    if not feature_key:
+        return 0
+
+    now = _utc_now()
+    return int(
+        db.query(func.count(UserMicroPurchase.id))
+        .filter(
+            UserMicroPurchase.user_id == user_id,
+            UserMicroPurchase.feature_key == feature_key,
+            UserMicroPurchase.status == "active",
+            UserMicroPurchase.used == False,
+            or_(
+                UserMicroPurchase.expires_at.is_(None),
+                UserMicroPurchase.expires_at > now,
+            ),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def _consume_bonus_credit(db: Session, user_id: uuid.UUID, counter_key: str) -> bool:
+    feature_key = _counter_feature_key(counter_key)
+    if not feature_key:
+        return False
+
+    now = _utc_now()
+    purchase = (
+        db.query(UserMicroPurchase)
+        .filter(
+            UserMicroPurchase.user_id == user_id,
+            UserMicroPurchase.feature_key == feature_key,
+            UserMicroPurchase.status == "active",
+            UserMicroPurchase.used == False,
+            or_(
+                UserMicroPurchase.expires_at.is_(None),
+                UserMicroPurchase.expires_at > now,
+            ),
+        )
+        .order_by(UserMicroPurchase.created_at.asc())
+        .with_for_update()
+        .first()
+    )
+
+    if purchase is None:
+        return False
+
+    purchase.used = True
+    purchase.status = "used"
+    db.flush()
+    invalidate_subscription_cache(user_id)
+    return True
+
+
 def _get_reset_deadline(counter_key: str, usage: UserUsage) -> Optional[datetime]:
     if counter_key == "weeklyInterviews" and usage.last_reset_weekly:
         return _ensure_aware(usage.last_reset_weekly) + WEEKLY_RESET_WINDOW
@@ -83,21 +147,26 @@ def _build_status(
     counter_key: str,
     current: int,
     limit: float,
+    bonus_limit: int,
     plan_key: str,
     stage: int,
     usage: UserUsage,
 ) -> Dict[str, Any]:
-    limit_value = serialize_limit(limit)
-    remaining = -1 if limit == UNLIMITED else max(0, int(limit) - current)
+    effective_limit = limit if limit == UNLIMITED else limit + max(0, bonus_limit)
+    limit_value = serialize_limit(effective_limit)
+    remaining = -1 if effective_limit == UNLIMITED else max(0, int(effective_limit) - current)
     reset_at = _get_reset_deadline(counter_key, usage)
 
     return {
-        "allowed": limit == UNLIMITED or current < limit,
+        "allowed": effective_limit == UNLIMITED or current < effective_limit,
         "current": current,
         "limit": limit_value,
+        "base_limit": serialize_limit(limit),
+        "bonus_limit": int(max(0, bonus_limit)),
         "remaining": remaining,
         "counter": get_legacy_counter(counter_key),
         "counter_key": counter_key,
+        "feature_key": _counter_feature_key(counter_key),
         "display_name": _counter_display_name(counter_key),
         "plan": get_api_plan_name(plan_key),
         "plan_key": plan_key,
@@ -107,15 +176,26 @@ def _build_status(
 
 
 def build_limit_exceeded_detail(status_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    feature_key = status_snapshot.get("feature_key")
+    default_message = "You reached your plan limit. Upgrade your plan."
+    if feature_key == "roadmap_generate":
+        default_message = (
+            "You reached your roadmap limit. Upgrade your plan or unlock one more roadmap."
+        )
+
     return {
-        "code": "LIMIT_EXCEEDED",
-        "error": "LIMIT_EXCEEDED",
-        "message": "You reached your limit. Upgrade your plan.",
+        "code": "PLAN_LIMIT",
+        "type": "PLAN_LIMIT",
+        "error": "PLAN_LIMIT",
+        "message": default_message,
         "counter": status_snapshot["counter"],
         "counter_key": status_snapshot["counter_key"],
+        "feature_key": feature_key,
         "display_name": status_snapshot["display_name"],
         "current": status_snapshot["current"],
         "limit": status_snapshot["limit"],
+        "base_limit": status_snapshot.get("base_limit"),
+        "bonus_limit": status_snapshot.get("bonus_limit", 0),
         "remaining": status_snapshot["remaining"],
         "plan": status_snapshot["plan"],
         "stage": status_snapshot["stage"],
@@ -207,7 +287,10 @@ def sync_usage_counts(
     if "roadmap" in counter_keys:
         usage_record.plan_count = int(
             db.query(func.count(Roadmap.id))
-            .filter(Roadmap.user_id == user_id)
+            .filter(
+                Roadmap.user_id == user_id,
+                Roadmap.generation_status != "failed",
+            )
             .scalar()
             or 0
         )
@@ -232,11 +315,13 @@ def check_limit(
     field_name = get_usage_field(counter_key)
     current = int(getattr(snapshot.usage, field_name, 0) or 0)
     limit = PLAN_LIMITS[snapshot.plan_key][counter_key]
+    bonus_limit = _get_bonus_credits(db, user_id, counter_key)
 
     return _build_status(
         counter_key=counter_key,
         current=current,
         limit=limit,
+        bonus_limit=bonus_limit,
         plan_key=snapshot.plan_key,
         stage=snapshot.stage,
         usage=snapshot.usage,
@@ -281,17 +366,24 @@ def consume_usage(
     field_name = get_usage_field(counter_key)
     current = int(getattr(snapshot.usage, field_name, 0) or 0)
     limit = PLAN_LIMITS[snapshot.plan_key][counter_key]
+    bonus_limit = _get_bonus_credits(db, user_id, counter_key)
 
     preflight = _build_status(
         counter_key=counter_key,
         current=current,
         limit=limit,
+        bonus_limit=bonus_limit,
         plan_key=snapshot.plan_key,
         stage=snapshot.stage,
         usage=snapshot.usage,
     )
-    if not preflight["allowed"]:
+    if not preflight["allowed"] or (
+        preflight["limit"] != -1 and (current + amount) > int(preflight["limit"])
+    ):
         raise LimitExceededError(build_limit_exceeded_detail(preflight))
+
+    if limit != UNLIMITED and current >= int(limit):
+        _consume_bonus_credit(db, user_id, counter_key)
 
     setattr(snapshot.usage, field_name, current + amount)
     db.flush()
@@ -300,6 +392,7 @@ def consume_usage(
         counter_key=counter_key,
         current=current + amount,
         limit=limit,
+        bonus_limit=_get_bonus_credits(db, user_id, counter_key),
         plan_key=snapshot.plan_key,
         stage=snapshot.stage,
         usage=snapshot.usage,
@@ -349,11 +442,13 @@ def get_usage_status(
         field_name = get_usage_field(counter_key)
         current = int(getattr(usage, field_name, 0) or 0)
         limit = PLAN_LIMITS[snapshot.plan_key][counter_key]
+        bonus_limit = _get_bonus_credits(db, user_id, counter_key)
         legacy_counter = get_legacy_counter(counter_key)
         status_snapshot = _build_status(
             counter_key=counter_key,
             current=current,
             limit=limit,
+            bonus_limit=bonus_limit,
             plan_key=snapshot.plan_key,
             stage=snapshot.stage,
             usage=usage,
@@ -361,9 +456,12 @@ def get_usage_status(
         counters[legacy_counter] = {
             "current": status_snapshot["current"],
             "limit": status_snapshot["limit"],
+            "base_limit": status_snapshot["base_limit"],
+            "bonus_limit": status_snapshot["bonus_limit"],
             "remaining": status_snapshot["remaining"],
             "exceeded": not status_snapshot["allowed"],
             "counter_key": counter_key,
+            "feature_key": status_snapshot.get("feature_key"),
             "display_name": status_snapshot["display_name"],
         }
         limits[counter_key] = status_snapshot["limit"]
