@@ -51,10 +51,18 @@ function useSpeechRecognition() {
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<any>(null);
+  const fullTranscriptRef = useRef('');
+  const currentSessionFinalRef = useRef('');
+  const shouldListenRef = useRef(false);
+  const startRef = useRef<() => void>();
 
   const startListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { alert('Speech recognition is not supported. Please use Chrome.'); return; }
+
+    shouldListenRef.current = true;
+    setIsListening(true);
+    currentSessionFinalRef.current = '';
 
     const recognition = new SR();
     recognition.continuous = true;
@@ -101,26 +109,57 @@ function useSpeechRecognition() {
         interimStr = interimStr.substring(finalStr.length).trim();
       }
 
-      setTranscript(finalStr);
+      currentSessionFinalRef.current = finalStr;
+
+      const combinedFinal = (fullTranscriptRef.current + ' ' + finalStr).trim();
+      setTranscript(combinedFinal);
       setInterimTranscript(interimStr);
     };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
+
+    recognition.onerror = (event: any) => {
+      const fatalErrors = ['not-allowed', 'service-not-allowed', 'network', 'aborted', 'audio-capture'];
+      if (fatalErrors.includes(event.error)) {
+        shouldListenRef.current = false;
+        setIsListening(false);
+      }
+    };
+
+    recognition.onend = () => {
+      if (currentSessionFinalRef.current) {
+        fullTranscriptRef.current = (fullTranscriptRef.current + ' ' + currentSessionFinalRef.current).trim();
+        currentSessionFinalRef.current = '';
+        setTranscript(fullTranscriptRef.current);
+      }
+
+      if (shouldListenRef.current && startRef.current) {
+        setTimeout(() => {
+          if (shouldListenRef.current && startRef.current) {
+            try { startRef.current(); } catch(e) {}
+          }
+        }, 100);
+      } else {
+        setIsListening(false);
+      }
+    };
 
     recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-    setTranscript('');
-    setInterimTranscript('');
+    try { recognition.start(); } catch(e) {}
   }, []);
 
+  useEffect(() => {
+    startRef.current = startListening;
+  }, [startListening]);
+
   const stopListening = useCallback(() => {
+    shouldListenRef.current = false;
     recognitionRef.current?.stop();
     setIsListening(false);
     setInterimTranscript('');
   }, []);
 
   const resetTranscript = useCallback(() => {
+    fullTranscriptRef.current = '';
+    currentSessionFinalRef.current = '';
     setTranscript('');
     setInterimTranscript('');
   }, []);
