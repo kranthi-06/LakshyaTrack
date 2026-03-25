@@ -137,8 +137,14 @@ const HourlyTooltip = ({ active, payload }: any) => {
 
 const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
   const peakHour = useMemo(() => {
-    return data.activeHours.reduce((max, h) => h.activity > max.activity ? h : max, data.activeHours[0]);
+    return data.activeHours.reduce(
+      (max, h) => h.activity > max.activity ? h : max,
+      data.activeHours[0] ?? { hour: 0, activity: 0 },
+    );
   }, [data.activeHours]);
+  const streakHealthScore = data.predictedStreakBreak
+    ? Math.max(0, Math.round(data.consistencyScore * 0.5))
+    : Math.max(0, Math.min(100, data.consistencyScore));
 
   return (
     <motion.div
@@ -175,7 +181,7 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
         <ScoreGauge value={data.consistencyScore} label="Consistency" color="#10b981" />
         <ScoreGauge value={Math.min(100, Math.round(data.growthRate * 5))} label="Growth Rate" color="#6366f1" />
         <ScoreGauge
-          value={data.predictedStreakBreak ? 35 : 85}
+          value={streakHealthScore}
           label="Streak Health"
           color={data.predictedStreakBreak ? '#ef4444' : '#f59e0b'}
         />
@@ -217,7 +223,8 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
       {/* Suggested focus areas */}
       <div className="mb-5">
         <div className="text-xs text-white/40 mb-2 font-medium">Suggested Focus Areas</div>
-        <div className="flex gap-2 flex-wrap">
+        {data.suggestedFocusAreas.length > 0 ? (
+          <div className="flex gap-2 flex-wrap">
           {data.suggestedFocusAreas.map((area, i) => (
             <motion.span
               key={area}
@@ -234,15 +241,26 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
               {area}
             </motion.span>
           ))}
-        </div>
+          </div>
+        ) : (
+          <div className="text-sm text-white/35">
+            Focus recommendations will appear once more real learning activity is available.
+          </div>
+        )}
       </div>
 
       {/* Insight cards */}
       <div className="space-y-3">
         <div className="text-xs text-white/40 font-medium mb-2">AI-Powered Insights</div>
-        {data.insights.map((insight, i) => (
-          <InsightCard key={insight.id} insight={insight} index={i} />
-        ))}
+        {data.insights.length > 0 ? (
+          data.insights.map((insight, i) => (
+            <InsightCard key={insight.id} insight={insight} index={i} />
+          ))
+        ) : (
+          <div className="text-sm text-white/35">
+            Insights will appear after enough real usage patterns have been collected.
+          </div>
+        )}
       </div>
     </motion.div>
   );

@@ -41,6 +41,11 @@ const StreakDisplay = memo(function StreakDisplay({ data }: Props) {
 
     ? Math.round((data.currentStreak / data.longestStreak) * 100)
     : 0;
+  const activeHistoryDays = data.streakHistory.filter(h => h.active).length;
+  const historyLength = data.streakHistory.length;
+  const consistencyPercent = historyLength > 0
+    ? Math.round((activeHistoryDays / historyLength) * 100)
+    : 0;
 
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -183,13 +188,13 @@ const StreakDisplay = memo(function StreakDisplay({ data }: Props) {
         </div>
         <div className="text-center">
           <div className="text-lg font-bold text-emerald-400">
-            {data.streakHistory.filter(h => h.active).length}/{data.streakHistory.length}
+            {activeHistoryDays}/{historyLength}
           </div>
           <div className="text-xs text-white/40">Last 30 Days</div>
         </div>
         <div className="text-center">
           <div className="text-lg font-bold text-cyan-400">
-            {Math.round((data.streakHistory.filter(h => h.active).length / data.streakHistory.length) * 100)}%
+            {consistencyPercent}%
           </div>
           <div className="text-xs text-white/40">Consistency</div>
         </div>

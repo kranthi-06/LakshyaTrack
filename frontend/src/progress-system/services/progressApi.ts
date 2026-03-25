@@ -17,6 +17,7 @@ import type {
   IntelligenceData,
   ProgressDashboardData,
   Badge,
+  BadgeRarity,
   TopicBubble,
 } from '../types';
 
@@ -33,6 +34,7 @@ interface CacheEntry<T> {
 
 const _cache = new Map<string, CacheEntry<any>>();
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
+const DASHBOARD_TTL = 10 * 1000;
 
 function getCached<T>(key: string): T | null {
   const entry = _cache.get(key);
@@ -55,6 +57,273 @@ export function invalidateCache(prefix?: string): void {
   for (const key of _cache.keys()) {
     if (key.startsWith(prefix)) _cache.delete(key);
   }
+}
+
+const DEFAULT_ACTIVE_HOURS = Array.from({ length: 24 }, (_, hour) => ({ hour, activity: 0 }));
+const DEFAULT_WEEKLY_ACTIVITY = Array.from({ length: 7 }, () => 0);
+const BADGE_REQUIREMENT_LABELS: Record<string, string> = {
+  first_flame: '3-day streak',
+  week_warrior: '7-day streak',
+  fortnight_fighter: '14-day streak',
+  monthly_master: '30-day streak',
+  century_legend: '100-day streak',
+  quiz_starter: '1 quiz passed',
+  quiz_apprentice: '10 quizzes passed',
+  quiz_master: '50 quizzes passed',
+  first_interview: '1 mock interview',
+  interview_pro: '10 mock interviews',
+  interview_expert: '25 mock interviews',
+  resume_builder: '1 resume built',
+  roadmap_explorer: '1 roadmap generated',
+  career_strategist: '5 roadmaps generated',
+};
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function normalizeContributionData(raw: Partial<ContributionData> | Record<string, unknown> | undefined): ContributionData {
+  const year = asNumber((raw as any)?.year, new Date().getFullYear());
+  const contributions = Array.isArray((raw as any)?.contributions)
+    ? (raw as any).contributions.map((entry: any) => ({
+      date: asString(entry?.date),
+      count: asNumber(entry?.count),
+      level: Math.max(0, Math.min(4, asNumber(entry?.level))) as DailyContribution['level'],
+    }))
+    : [];
+
+  return {
+    contributions,
+    totalContributions: asNumber((raw as any)?.totalContributions),
+    longestStreak: asNumber((raw as any)?.longestStreak),
+    currentStreak: asNumber((raw as any)?.currentStreak),
+    year,
+  };
+}
+
+function normalizeProblemStats(raw: Partial<ProblemSolvingStats> | Record<string, unknown> | undefined): ProblemSolvingStats {
+  const difficulty = (raw as any)?.difficulty ?? {};
+  const makeBucket = (key: 'easy' | 'medium' | 'hard') => ({
+    solved: asNumber(difficulty?.[key]?.solved),
+    total: asNumber(difficulty?.[key]?.total),
+  });
+
+  return {
+    totalSolved: asNumber((raw as any)?.totalSolved),
+    totalAvailable: asNumber((raw as any)?.totalAvailable),
+    acceptanceRate: asNumber((raw as any)?.acceptanceRate),
+    totalSubmissions: asNumber((raw as any)?.totalSubmissions),
+    difficulty: {
+      easy: makeBucket('easy'),
+      medium: makeBucket('medium'),
+      hard: makeBucket('hard'),
+    },
+    recentSubmissions: Array.isArray((raw as any)?.recentSubmissions)
+      ? (raw as any).recentSubmissions.map((entry: any) => ({
+        id: asString(entry?.id),
+        title: asString(entry?.title, 'Untitled Submission'),
+        difficulty: (['easy', 'medium', 'hard'].includes(entry?.difficulty) ? entry.difficulty : 'medium') as 'easy' | 'medium' | 'hard',
+        status: (['accepted', 'wrong_answer', 'time_limit', 'runtime_error'].includes(entry?.status) ? entry.status : 'accepted') as 'accepted' | 'wrong_answer' | 'time_limit' | 'runtime_error',
+        timestamp: asString(entry?.timestamp, new Date(0).toISOString()),
+        language: asString(entry?.language, 'N/A'),
+      }))
+      : [],
+  };
+}
+
+function normalizeActivitySummary(raw: Partial<ActivitySummary> | Record<string, unknown> | undefined): ActivitySummary {
+  return {
+    totalSessions: asNumber((raw as any)?.totalSessions),
+    avgSessionDuration: asNumber((raw as any)?.avgSessionDuration),
+    totalActiveTime: asNumber((raw as any)?.totalActiveTime),
+    totalIdleTime: asNumber((raw as any)?.totalIdleTime),
+    mostVisitedPages: Array.isArray((raw as any)?.mostVisitedPages)
+      ? (raw as any).mostVisitedPages.map((entry: any) => ({
+        page: asString(entry?.page, 'Unknown'),
+        count: asNumber(entry?.count),
+      }))
+      : [],
+    mostUsedFeatures: Array.isArray((raw as any)?.mostUsedFeatures)
+      ? (raw as any).mostUsedFeatures.map((entry: any) => ({
+        feature: asString(entry?.feature, 'Unknown'),
+        count: asNumber(entry?.count),
+      }))
+      : [],
+    activeDays: asNumber((raw as any)?.activeDays),
+  };
+}
+
+function normalizeTimeAnalytics(raw: Partial<TimeAnalyticsData> | Record<string, unknown> | undefined): TimeAnalyticsData {
+  return {
+    dailyUsage: Array.isArray((raw as any)?.dailyUsage)
+      ? (raw as any).dailyUsage.map((entry: any) => ({
+        date: asString(entry?.date),
+        totalMinutes: asNumber(entry?.totalMinutes),
+        activeMinutes: asNumber(entry?.activeMinutes),
+      }))
+      : [],
+    weeklyTrends: Array.isArray((raw as any)?.weeklyTrends)
+      ? (raw as any).weeklyTrends.map((entry: any) => ({
+        week: asString(entry?.week),
+        weekStart: asString(entry?.weekStart),
+        totalHours: asNumber(entry?.totalHours),
+        avgDailyMinutes: asNumber(entry?.avgDailyMinutes),
+      }))
+      : [],
+    featureTimeSpent: Array.isArray((raw as any)?.featureTimeSpent)
+      ? (raw as any).featureTimeSpent.map((entry: any) => ({
+        feature: asString(entry?.feature),
+        minutes: asNumber(entry?.minutes),
+        percentage: asNumber(entry?.percentage),
+        color: asString(entry?.color, '#94a3b8'),
+      }))
+      : [],
+    totalHoursThisWeek: asNumber((raw as any)?.totalHoursThisWeek),
+    totalHoursThisMonth: asNumber((raw as any)?.totalHoursThisMonth),
+    avgDailyMinutes: asNumber((raw as any)?.avgDailyMinutes),
+    peakHour: asNumber((raw as any)?.peakHour),
+    peakDay: asString((raw as any)?.peakDay, 'No activity yet'),
+  };
+}
+
+function normalizeTopicMap(raw: Partial<TopicMapData> | Record<string, unknown> | undefined): TopicMapData {
+  const topics = Array.isArray((raw as any)?.topics)
+    ? (raw as any).topics.map((entry: any, index: number) => ({
+      id: asString(entry?.id, `topic-${index}`),
+      name: asString(entry?.name, 'Untitled Topic'),
+      category: asString(entry?.category, 'General'),
+      problemsSolved: asNumber(entry?.problemsSolved ?? entry?.problems_solved),
+      timeSpentMinutes: asNumber(entry?.timeSpentMinutes ?? entry?.time_spent_minutes),
+      proficiencyLevel: (['beginner', 'intermediate', 'advanced', 'expert'].includes(entry?.proficiencyLevel ?? entry?.proficiency_level)
+        ? (entry?.proficiencyLevel ?? entry?.proficiency_level)
+        : 'beginner') as TopicBubble['proficiencyLevel'],
+      proficiencyScore: asNumber(entry?.proficiencyScore ?? entry?.proficiency_score),
+      color: asString(entry?.color, '#6366f1'),
+      size: asNumber(entry?.size, 30),
+    }))
+    : [];
+
+  return {
+    topics,
+    totalTopics: asNumber((raw as any)?.totalTopics, topics.length),
+    strongestTopic: asString((raw as any)?.strongestTopic),
+    weakestTopic: asString((raw as any)?.weakestTopic),
+  };
+}
+
+function normalizeStreak(raw: Partial<StreakData> | Record<string, unknown> | undefined): StreakData {
+  const weeklyActivity = Array.isArray((raw as any)?.weeklyActivity)
+    ? (raw as any).weeklyActivity.map((entry: any) => asNumber(entry))
+    : [];
+  const streakHistory = Array.isArray((raw as any)?.streakHistory)
+    ? (raw as any).streakHistory.map((entry: any) => ({
+      date: asString(entry?.date),
+      active: Boolean(entry?.active),
+    }))
+    : [];
+
+  return {
+    currentStreak: asNumber((raw as any)?.currentStreak ?? (raw as any)?.current_streak),
+    longestStreak: asNumber((raw as any)?.longestStreak ?? (raw as any)?.longest_streak),
+    lastActiveDate: asString((raw as any)?.lastActiveDate ?? (raw as any)?.last_active_date) || null,
+    streakHistory: streakHistory.length > 0 ? streakHistory : Array.from({ length: 30 }, () => ({ date: '', active: false })),
+    isAtRisk: Boolean((raw as any)?.isAtRisk ?? (raw as any)?.is_at_risk),
+    hoursUntilReset: asNumber((raw as any)?.hoursUntilReset ?? (raw as any)?.hours_until_reset, 24),
+    totalActiveDays: asNumber((raw as any)?.totalActiveDays ?? (raw as any)?.total_active_days),
+    weeklyActivity: weeklyActivity.length > 0 ? [...weeklyActivity, ...DEFAULT_WEEKLY_ACTIVITY].slice(0, 7) : DEFAULT_WEEKLY_ACTIVITY,
+  };
+}
+
+function normalizeBadge(raw: Record<string, unknown>, fallbackIndex: number): Badge {
+  const id = asString((raw as any)?.id ?? (raw as any)?.badge_id, `badge-${fallbackIndex}`);
+  return {
+    id,
+    name: asString((raw as any)?.name, 'Badge'),
+    description: asString((raw as any)?.description, 'Achievement in progress'),
+    icon: asString((raw as any)?.icon, '🏆'),
+    category: (['streak', 'problems', 'quizzes', 'interviews', 'career', 'consistency', 'mastery', 'special'].includes((raw as any)?.category)
+      ? (raw as any)?.category
+      : 'special') as Badge['category'],
+    rarity: (['common', 'rare', 'epic', 'legendary'].includes((raw as any)?.rarity)
+      ? (raw as any)?.rarity
+      : 'common') as BadgeRarity,
+    isUnlocked: Boolean((raw as any)?.isUnlocked ?? (raw as any)?.is_unlocked),
+    unlockedAt: asString((raw as any)?.unlockedAt ?? (raw as any)?.unlocked_at) || null,
+    progress: asNumber((raw as any)?.progress),
+    requirement: asString((raw as any)?.requirement, BADGE_REQUIREMENT_LABELS[id] ?? asString((raw as any)?.description, 'Keep going')),
+    requirementValue: asNumber((raw as any)?.requirementValue ?? (raw as any)?.requirement_value, 1),
+    currentValue: asNumber((raw as any)?.currentValue ?? (raw as any)?.current_value),
+  };
+}
+
+function normalizeBadges(raw: Partial<BadgeSystemData> | Record<string, unknown> | undefined): BadgeSystemData {
+  const badges = Array.isArray((raw as any)?.badges)
+    ? (raw as any).badges.map((entry: any, index: number) => normalizeBadge(entry, index))
+    : [];
+  const recentlyUnlockedRaw = Array.isArray((raw as any)?.recentlyUnlocked ?? (raw as any)?.recently_unlocked)
+    ? ((raw as any)?.recentlyUnlocked ?? (raw as any)?.recently_unlocked)
+    : [];
+  const nextToUnlockRaw = (raw as any)?.nextToUnlock ?? (raw as any)?.next_to_unlock;
+
+  return {
+    badges,
+    totalUnlocked: asNumber((raw as any)?.totalUnlocked ?? (raw as any)?.total_unlocked, badges.filter((badge) => badge.isUnlocked).length),
+    totalBadges: asNumber((raw as any)?.totalBadges ?? (raw as any)?.total_badges, badges.length),
+    recentlyUnlocked: recentlyUnlockedRaw.map((entry: any, index: number) => normalizeBadge(entry, index)),
+    nextToUnlock: nextToUnlockRaw ? normalizeBadge(nextToUnlockRaw, 0) : null,
+  };
+}
+
+function normalizeIntelligence(raw: Partial<IntelligenceData> | Record<string, unknown> | undefined): IntelligenceData {
+  const activeHours = Array.isArray((raw as any)?.activeHours)
+    ? (raw as any).activeHours.map((entry: any, hour: number) => ({
+      hour: asNumber(entry?.hour, hour),
+      activity: asNumber(entry?.activity),
+    }))
+    : [];
+
+  return {
+    insights: Array.isArray((raw as any)?.insights)
+      ? (raw as any).insights.map((entry: any, index: number) => ({
+        id: asString(entry?.id, `insight-${index}`),
+        type: (['pattern', 'suggestion', 'warning', 'achievement', 'prediction'].includes(entry?.type)
+          ? entry.type
+          : 'pattern') as IntelligenceData['insights'][number]['type'],
+        title: asString(entry?.title, 'Insight'),
+        description: asString(entry?.description),
+        icon: asString(entry?.icon, '🧠'),
+        priority: (['low', 'medium', 'high'].includes(entry?.priority) ? entry.priority : 'medium') as IntelligenceData['insights'][number]['priority'],
+        actionable: Boolean(entry?.actionable),
+        action: asString(entry?.action) || undefined,
+        metadata: entry?.metadata,
+      }))
+      : [],
+    activeHours: activeHours.length > 0 ? activeHours : DEFAULT_ACTIVE_HOURS,
+    consistencyScore: asNumber((raw as any)?.consistencyScore),
+    growthRate: asNumber((raw as any)?.growthRate),
+    predictedStreakBreak: Boolean((raw as any)?.predictedStreakBreak),
+    suggestedFocusAreas: Array.isArray((raw as any)?.suggestedFocusAreas)
+      ? (raw as any).suggestedFocusAreas.map((entry: any) => asString(entry)).filter(Boolean)
+      : [],
+  };
+}
+
+export function normalizeDashboardData(raw: Partial<ProgressDashboardData> | Record<string, unknown> | undefined): ProgressDashboardData {
+  return {
+    contributions: normalizeContributionData((raw as any)?.contributions),
+    problemSolving: normalizeProblemStats((raw as any)?.problemSolving),
+    activity: normalizeActivitySummary((raw as any)?.activity),
+    timeAnalytics: normalizeTimeAnalytics((raw as any)?.timeAnalytics),
+    topicMap: normalizeTopicMap((raw as any)?.topicMap),
+    streak: normalizeStreak((raw as any)?.streak),
+    badges: normalizeBadges((raw as any)?.badges),
+    intelligence: normalizeIntelligence((raw as any)?.intelligence),
+    lastUpdated: asString((raw as any)?.lastUpdated, new Date().toISOString()),
+  };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -80,10 +349,11 @@ export async function fetchDashboard(forceRefresh = false): Promise<ProgressDash
 
   try {
     const { data } = await api.get(`${PE_BASE}/dashboard`);
-    setCache('dashboard', data, 5 * 60 * 1000);
-    return data;
+    const normalized = normalizeDashboardData(data);
+    setCache('dashboard', normalized, DASHBOARD_TTL);
+    return normalized;
   } catch (error) {
-    console.warn('[ProgressEngine] Dashboard API failed, using mock data:', error);
+    console.warn('[ProgressEngine] Dashboard API failed, using empty fallback data:', error);
     return getProgressDashboardData(true);
   }
 }
@@ -93,7 +363,9 @@ export async function fetchDashboard(forceRefresh = false): Promise<ProgressDash
 export async function fetchContributions(year?: number): Promise<ContributionData> {
   const y = year || new Date().getFullYear();
   try {
-    return await apiGet(`/contributions?year=${y}`, `contributions:${y}`, 10 * 60 * 1000);
+    return normalizeContributionData(
+      await apiGet(`/contributions?year=${y}`, `contributions:${y}`, 10 * 60 * 1000),
+    );
   } catch {
     return generateContributions(y);
   }
@@ -101,7 +373,7 @@ export async function fetchContributions(year?: number): Promise<ContributionDat
 
 export async function fetchProblemStats(): Promise<ProblemSolvingStats> {
   try {
-    return await apiGet('/problems', 'problems', 5 * 60 * 1000);
+    return normalizeProblemStats(await apiGet('/problems', 'problems', 5 * 60 * 1000));
   } catch {
     return generateProblemSolvingStats();
   }
@@ -109,7 +381,7 @@ export async function fetchProblemStats(): Promise<ProblemSolvingStats> {
 
 export async function fetchActivity(): Promise<ActivitySummary> {
   try {
-    return await apiGet('/activity', 'activity', 5 * 60 * 1000);
+    return normalizeActivitySummary(await apiGet('/activity', 'activity', 5 * 60 * 1000));
   } catch {
     return generateActivitySummary();
   }
@@ -117,7 +389,9 @@ export async function fetchActivity(): Promise<ActivitySummary> {
 
 export async function fetchTimeAnalytics(): Promise<TimeAnalyticsData> {
   try {
-    return await apiGet('/time-analytics', 'time-analytics', 5 * 60 * 1000);
+    return normalizeTimeAnalytics(
+      await apiGet('/time-analytics', 'time-analytics', 5 * 60 * 1000),
+    );
   } catch {
     return generateTimeAnalytics();
   }
@@ -125,7 +399,7 @@ export async function fetchTimeAnalytics(): Promise<TimeAnalyticsData> {
 
 export async function fetchTopicMap(): Promise<TopicMapData> {
   try {
-    return await apiGet('/topics', 'topics', 10 * 60 * 1000);
+    return normalizeTopicMap(await apiGet('/topics', 'topics', 10 * 60 * 1000));
   } catch {
     return generateTopicMap();
   }
@@ -133,7 +407,7 @@ export async function fetchTopicMap(): Promise<TopicMapData> {
 
 export async function fetchStreak(): Promise<StreakData> {
   try {
-    return await apiGet('/streak', 'streak', 60 * 1000); // shorter TTL for streak
+    return normalizeStreak(await apiGet('/streak', 'streak', 60 * 1000));
   } catch {
     return generateStreakData();
   }
@@ -151,7 +425,7 @@ export async function touchStreak(): Promise<StreakData> {
 
 export async function fetchBadges(): Promise<BadgeSystemData> {
   try {
-    return await apiGet('/badges', 'badges', 10 * 60 * 1000);
+    return normalizeBadges(await apiGet('/badges', 'badges', 10 * 60 * 1000));
   } catch {
     return generateBadges();
   }
@@ -159,7 +433,7 @@ export async function fetchBadges(): Promise<BadgeSystemData> {
 
 export async function fetchIntelligence(): Promise<IntelligenceData> {
   try {
-    return await apiGet('/intelligence', 'intelligence', 10 * 60 * 1000);
+    return normalizeIntelligence(await apiGet('/intelligence', 'intelligence', 10 * 60 * 1000));
   } catch {
     return generateIntelligence();
   }
@@ -229,14 +503,13 @@ function generateContributions(year: number): ContributionData {
 }
 
 function generateProblemSolvingStats(): ProblemSolvingStats {
-  // Empty — all data comes from real quiz_attempts + interview_sessions
   return {
-    totalSolved: 0, totalAvailable: 100,
+    totalSolved: 0, totalAvailable: 0,
     acceptanceRate: 0, totalSubmissions: 0,
     difficulty: {
-      easy: { solved: 0, total: 50 },      // Beginner quizzes
-      medium: { solved: 0, total: 80 },    // Intermediate quizzes
-      hard: { solved: 0, total: 40 },      // Advanced quizzes
+      easy: { solved: 0, total: 0 },
+      medium: { solved: 0, total: 0 },
+      hard: { solved: 0, total: 0 },
     },
     recentSubmissions: [],
   };
@@ -246,22 +519,8 @@ function generateActivitySummary(): ActivitySummary {
   return {
     totalSessions: 0, avgSessionDuration: 0,
     totalActiveTime: 0, totalIdleTime: 0,
-    mostVisitedPages: [
-      { page: 'Quizzes', count: 0 },
-      { page: 'Interview Simulator', count: 0 },
-      { page: 'Resume Studio', count: 0 },
-      { page: 'Learning Roadmaps', count: 0 },
-      { page: 'English Coach', count: 0 },
-      { page: 'Reasoning', count: 0 },
-    ],
-    mostUsedFeatures: [
-      { feature: 'Quiz Solving', count: 0 },
-      { feature: 'Mock Interviews', count: 0 },
-      { feature: 'Resume Analysis', count: 0 },
-      { feature: 'Roadmap Generation', count: 0 },
-      { feature: 'AI Chat', count: 0 },
-      { feature: 'English Practice', count: 0 },
-    ],
+    mostVisitedPages: [],
+    mostUsedFeatures: [],
     activeDays: 0,
   };
 }
@@ -272,31 +531,25 @@ function generateTimeAnalytics(): TimeAnalyticsData {
   }));
   return {
     dailyUsage, weeklyTrends: [],
-    featureTimeSpent: [
-      { feature: 'Quizzes', minutes: 0, percentage: 25, color: '#10b981' },
-      { feature: 'Mock Interviews', minutes: 0, percentage: 25, color: '#6366f1' },
-      { feature: 'Resume Building', minutes: 0, percentage: 25, color: '#f59e0b' },
-      { feature: 'Learning Roadmaps', minutes: 0, percentage: 25, color: '#ef4444' },
-    ],
+    featureTimeSpent: [],
     totalHoursThisWeek: 0, totalHoursThisMonth: 0,
-    avgDailyMinutes: 0, peakHour: 20, peakDay: 'Not available',
+    avgDailyMinutes: 0, peakHour: 0, peakDay: 'No activity yet',
   };
 }
 
 function generateTopicMap(): TopicMapData {
-  // Empty — will be populated from quiz_attempts.skill_name
   return {
     topics: [],
     totalTopics: 0,
-    strongestTopic: 'Take quizzes to discover',
-    weakestTopic: 'Take quizzes to discover',
+    strongestTopic: '',
+    weakestTopic: '',
   };
 }
 
 function generateStreakData(): StreakData {
   return {
     currentStreak: 0, longestStreak: 0,
-    lastActiveDate: formatDate(new Date()),
+    lastActiveDate: null,
     streakHistory: Array.from({ length: 30 }, (_, i) => ({
       date: formatDate(daysAgo(29 - i)), active: false,
     })),
@@ -306,34 +559,21 @@ function generateStreakData(): StreakData {
 }
 
 function generateBadges(): BadgeSystemData {
-  // LakshyaTrack platform badges
-  const allBadges: Badge[] = [
-    { id: 'b1', name: 'First Flame', description: 'Maintain a 3-day login streak', icon: '🔥', category: 'streak', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '3-day streak', requirementValue: 3, currentValue: 0 },
-    { id: 'b2', name: 'Week Warrior', description: '7-day login streak', icon: '⚡', category: 'streak', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '7-day streak', requirementValue: 7, currentValue: 0 },
-    { id: 'b3', name: 'Quiz Starter', description: 'Pass your first quiz', icon: '📝', category: 'quizzes', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 quiz passed', requirementValue: 1, currentValue: 0 },
-    { id: 'b4', name: 'Quiz Apprentice', description: 'Pass 10 quizzes', icon: '🎯', category: 'quizzes', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '10 quizzes passed', requirementValue: 10, currentValue: 0 },
-    { id: 'b5', name: 'Interview Ready', description: 'Complete your first mock interview', icon: '🎤', category: 'interviews', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 mock interview', requirementValue: 1, currentValue: 0 },
-    { id: 'b6', name: 'Interview Pro', description: 'Complete 10 mock interviews', icon: '🏆', category: 'interviews', rarity: 'rare', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '10 interviews', requirementValue: 10, currentValue: 0 },
-    { id: 'b7', name: 'Resume Builder', description: 'Create your first resume', icon: '📄', category: 'career', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 resume', requirementValue: 1, currentValue: 0 },
-    { id: 'b8', name: 'Roadmap Explorer', description: 'Generate a learning roadmap', icon: '🗺️', category: 'career', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 roadmap', requirementValue: 1, currentValue: 0 },
-  ];
   return {
-    badges: allBadges, totalUnlocked: 0, totalBadges: allBadges.length,
-    recentlyUnlocked: [], nextToUnlock: allBadges[0],
+    badges: [],
+    totalUnlocked: 0,
+    totalBadges: 0,
+    recentlyUnlocked: [],
+    nextToUnlock: null,
   };
 }
 
 function generateIntelligence(): IntelligenceData {
   const activeHours = Array.from({ length: 24 }, (_, hour) => ({ hour, activity: 0 }));
   return {
-    insights: [
-      { id: 'i1', type: 'suggestion', title: 'Get Started with Quizzes', description: 'Take your first quiz to start tracking your learning progress on LakshyaTrack.', icon: '📝', priority: 'high', actionable: true, action: 'Go to Quizzes' },
-      { id: 'i2', type: 'suggestion', title: 'Try a Mock Interview', description: 'Practice with our AI-powered interview simulator to build confidence.', icon: '🎤', priority: 'high', actionable: true, action: 'Start Interview' },
-      { id: 'i3', type: 'suggestion', title: 'Build Your Resume', description: 'Head to Resume Studio and create a professional ATS-optimized resume.', icon: '📄', priority: 'medium', actionable: true, action: 'Go to Resume Studio' },
-      { id: 'i4', type: 'suggestion', title: 'Create a Learning Roadmap', description: 'Generate a personalized skill roadmap based on your target role.', icon: '🗺️', priority: 'medium', actionable: true, action: 'Generate Roadmap' },
-    ],
+    insights: [],
     activeHours, consistencyScore: 0, growthRate: 0,
-    predictedStreakBreak: false, suggestedFocusAreas: ['Take Quizzes', 'Practice Interviews', 'Build Resume'],
+    predictedStreakBreak: false, suggestedFocusAreas: [],
   };
 }
 

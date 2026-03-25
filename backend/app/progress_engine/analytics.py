@@ -23,7 +23,7 @@ from app.db.mongodb import get_collection
 from app.db.session import SessionLocal
 from app.models.career import (
     QuizAttempt, InterviewSession, MultiStageInterview,
-    Roadmap, ProgressSnapshot,
+    Roadmap, ProgressSnapshot, UserActivityDay,
 )
 from app.models.resume import SavedResume
 from app.models.user import User, Profile
@@ -40,6 +40,374 @@ def _get_db() -> Session:
     return SessionLocal()
 
 
+MEANINGFUL_ACTIVITY_EVENT_TYPES = frozenset({
+    "PROBLEM_SOLVED",
+    "CODE_EXECUTED",
+})
+
+FEATURE_EVENT_LABELS = {
+    "QUIZ_COMPLETED": "Quizzes",
+    "INTERVIEW_COMPLETED": "Mock Interviews",
+    "ROADMAP_GENERATED": "Roadmaps",
+    "RESUME_ANALYZED": "Resume Building",
+    "PROBLEM_SOLVED": "Problem Solving",
+    "CODE_EXECUTED": "Code Practice",
+}
+
+
+def _safe_utc_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def _feature_from_page(page_name: Optional[str]) -> Optional[str]:
+    page = (page_name or "").strip()
+    if not page:
+        return None
+
+    lower = page.lower()
+    if "quiz" in lower:
+        return "Quizzes"
+    if "interview" in lower:
+        return "Mock Interviews"
+    if "resume" in lower:
+        return "Resume Building"
+    if "career" in lower or "roadmap" in lower:
+        return "Roadmaps"
+    if "progress" in lower:
+        return "Progress Dashboard"
+    if "dashboard" in lower:
+        return "Dashboard"
+    if "learning" in lower:
+        return "Learning Hub"
+    if "english" in lower:
+        return "English Coach"
+    if "reasoning" in lower:
+        return "Reasoning"
+    if "job" in lower or "opportunit" in lower:
+        return "Opportunities"
+    return page
+
+
+def _feature_from_event(event_type: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    meta = metadata or {}
+    if event_type == "PAGE_VISIT":
+        return _feature_from_page(str(meta.get("page") or ""))
+    if event_type == "FEATURE_USED":
+        feature = str(meta.get("feature") or "").strip()
+        return feature or None
+    return FEATURE_EVENT_LABELS.get(event_type)
+
+
+def _load_raw_events(
+    user_id: str,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    event_types: Optional[set[str]] = None,
+) -> List[Dict[str, Any]]:
+    col = get_collection("pe_events")
+    if col is None:
+        return []
+
+    query: Dict[str, Any] = {"user_id": user_id}
+    if start or end:
+        query["timestamp"] = {}
+        if start is not None:
+            query["timestamp"]["$gte"] = start
+        if end is not None:
+            query["timestamp"]["$lte"] = end
+    if event_types:
+        query["event_type"] = {"$in": sorted(event_types)}
+
+    events = list(col.find(query, sort=[("timestamp", 1)]))
+    return [event for event in events if _safe_utc_datetime(event.get("timestamp"))]
+
+
+def _build_session_metrics(
+    events: List[Dict[str, Any]],
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    current_time = now or datetime.now(timezone.utc)
+    sessions_by_id: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+
+    for event in events:
+        session_id = str(event.get("session_id") or event.get("event_id") or event.get("_id"))
+        sessions_by_id[session_id].append(event)
+
+    sessions: List[Dict[str, Any]] = []
+    page_counts: Counter[str] = Counter()
+    feature_counts: Counter[str] = Counter()
+    feature_minutes: Dict[str, float] = defaultdict(float)
+    active_hours: Counter[int] = Counter()
+    active_dates: set[date] = set()
+    daily_usage: Dict[str, Dict[str, float]] = defaultdict(lambda: {"totalMinutes": 0.0, "activeMinutes": 0.0})
+
+    for session_id, session_events in sessions_by_id.items():
+        sorted_events = sorted(
+            session_events,
+            key=lambda item: _safe_utc_datetime(item.get("timestamp")) or current_time,
+        )
+        timestamps = [_safe_utc_datetime(item.get("timestamp")) for item in sorted_events]
+        timestamps = [ts for ts in timestamps if ts is not None]
+        if not timestamps:
+            continue
+
+        start_time = timestamps[0]
+        last_time = timestamps[-1]
+        has_explicit_end = any((event.get("event_type") or "").upper() == "SESSION_END" for event in sorted_events)
+        end_time = last_time
+        if not has_explicit_end and (current_time - last_time) <= timedelta(minutes=15):
+            end_time = current_time
+
+        state = "active"
+        cursor = start_time
+        current_page: Optional[str] = None
+        current_feature: Optional[str] = None
+        active_minutes = 0.0
+        idle_minutes = 0.0
+
+        for index, event in enumerate(sorted_events):
+            ts = _safe_utc_datetime(event.get("timestamp"))
+            if ts is None:
+                continue
+
+            event_type = str(event.get("event_type") or "").upper()
+            metadata = event.get("metadata") or {}
+
+            if event_type != "IDLE":
+                active_hours[ts.hour] += 1
+
+            if event_type in FEATURE_EVENT_LABELS or event_type == "PAGE_VISIT":
+                active_dates.add(ts.date())
+
+            if index > 0 and ts > cursor:
+                duration_minutes = (ts - cursor).total_seconds() / 60
+                if state == "active":
+                    active_minutes += duration_minutes
+                    feature_label = current_feature or _feature_from_page(current_page) or "General"
+                    feature_minutes[feature_label] += duration_minutes
+                else:
+                    idle_minutes += duration_minutes
+
+            if event_type == "PAGE_VISIT":
+                page_name = str(metadata.get("page") or "Unknown Page").strip() or "Unknown Page"
+                page_counts[page_name] += 1
+                current_page = page_name
+                page_feature = _feature_from_page(page_name)
+                if page_feature:
+                    current_feature = page_feature
+                    feature_counts[page_feature] += 1
+                state = "active"
+            else:
+                feature_label = _feature_from_event(event_type, metadata)
+                if feature_label:
+                    feature_counts[feature_label] += 1
+                    current_feature = feature_label
+
+                if event_type == "IDLE":
+                    state = "idle"
+                elif event_type in {
+                    "ACTIVE",
+                    "SESSION_START",
+                    "SESSION_END",
+                    "FEATURE_USED",
+                    *FEATURE_EVENT_LABELS.keys(),
+                }:
+                    state = "active"
+
+            cursor = ts
+
+        if end_time > cursor:
+            duration_minutes = (end_time - cursor).total_seconds() / 60
+            if state == "active":
+                active_minutes += duration_minutes
+                feature_label = current_feature or _feature_from_page(current_page) or "General"
+                feature_minutes[feature_label] += duration_minutes
+            else:
+                idle_minutes += duration_minutes
+
+        total_minutes = round(active_minutes + idle_minutes, 1)
+        session_date = start_time.date().isoformat()
+        daily_usage[session_date]["totalMinutes"] += total_minutes
+        daily_usage[session_date]["activeMinutes"] += round(active_minutes, 1)
+        active_dates.add(start_time.date())
+
+        sessions.append({
+            "session_id": session_id,
+            "start": start_time,
+            "end": end_time,
+            "duration_minutes": total_minutes,
+            "active_minutes": round(active_minutes, 1),
+            "idle_minutes": round(idle_minutes, 1),
+        })
+
+    return {
+        "sessions": sessions,
+        "page_counts": page_counts,
+        "feature_counts": feature_counts,
+        "feature_minutes": feature_minutes,
+        "active_hours": active_hours,
+        "active_dates": active_dates,
+        "daily_usage": daily_usage,
+    }
+
+
+def _get_meaningful_activity_counts(
+    user_id: str,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+) -> Dict[str, int]:
+    activity_map: Dict[str, int] = defaultdict(int)
+    db = _get_db()
+
+    def _apply_time_filters(query, column):
+        if start is not None:
+            query = query.filter(column >= start)
+        if end is not None:
+            query = query.filter(column <= end)
+        return query
+
+    try:
+        quiz_rows = _apply_time_filters(
+            db.query(
+                sql_func.date(QuizAttempt.attempted_at).label("d"),
+                sql_func.count().label("c"),
+            ).filter(QuizAttempt.user_id == user_id),
+            QuizAttempt.attempted_at,
+        ).group_by(sql_func.date(QuizAttempt.attempted_at)).all()
+
+        interview_rows = _apply_time_filters(
+            db.query(
+                sql_func.date(InterviewSession.completed_at).label("d"),
+                sql_func.count().label("c"),
+            ).filter(InterviewSession.user_id == user_id),
+            InterviewSession.completed_at,
+        ).group_by(sql_func.date(InterviewSession.completed_at)).all()
+
+        multistage_rows = _apply_time_filters(
+            db.query(
+                sql_func.date(MultiStageInterview.completed_at).label("d"),
+                sql_func.count().label("c"),
+            ).filter(
+                MultiStageInterview.user_id == user_id,
+                MultiStageInterview.is_completed == True,
+                MultiStageInterview.completed_at.isnot(None),
+            ),
+            MultiStageInterview.completed_at,
+        ).group_by(sql_func.date(MultiStageInterview.completed_at)).all()
+
+        roadmap_rows = _apply_time_filters(
+            db.query(
+                sql_func.date(Roadmap.created_at).label("d"),
+                sql_func.count().label("c"),
+            ).filter(Roadmap.user_id == user_id),
+            Roadmap.created_at,
+        ).group_by(sql_func.date(Roadmap.created_at)).all()
+
+        resume_rows = _apply_time_filters(
+            db.query(
+                sql_func.date(SavedResume.created_at).label("d"),
+                sql_func.count().label("c"),
+            ).filter(SavedResume.user_id == user_id),
+            SavedResume.created_at,
+        ).group_by(sql_func.date(SavedResume.created_at)).all()
+
+        presence_rows = _apply_time_filters(
+            db.query(
+                sql_func.date(UserActivityDay.activity_date).label("d"),
+            ).filter(UserActivityDay.user_id == user_id),
+            UserActivityDay.activity_date,
+        ).group_by(sql_func.date(UserActivityDay.activity_date)).all()
+    finally:
+        db.close()
+
+    for rows in [quiz_rows, interview_rows, multistage_rows, roadmap_rows, resume_rows]:
+        for row in rows:
+            if row.d:
+                activity_map[str(row.d)] += int(row.c or 0)
+
+    for row in presence_rows:
+        if row.d:
+            activity_map[str(row.d)] = max(activity_map[str(row.d)], 1)
+
+    event_rows = _load_raw_events(user_id, start=start, end=end, event_types=set(MEANINGFUL_ACTIVITY_EVENT_TYPES))
+    for event in event_rows:
+        ts = _safe_utc_datetime(event.get("timestamp"))
+        if ts is not None:
+            activity_map[ts.date().isoformat()] += 1
+
+    return activity_map
+
+
+def _compute_streak_metrics(user_id: str) -> Dict[str, Any]:
+    counts = _get_meaningful_activity_counts(user_id)
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - timedelta(days=1)
+    active_dates = sorted(date.fromisoformat(day) for day, count in counts.items() if count > 0)
+
+    longest_streak = 0
+    running = 0
+    previous_day: Optional[date] = None
+    for active_day in active_dates:
+        if previous_day and active_day == previous_day + timedelta(days=1):
+            running += 1
+        else:
+            running = 1
+        longest_streak = max(longest_streak, running)
+        previous_day = active_day
+
+    reference_day: Optional[date] = None
+    if counts.get(today.isoformat(), 0) > 0:
+        reference_day = today
+    elif counts.get(yesterday.isoformat(), 0) > 0:
+        reference_day = yesterday
+
+    current_streak = 0
+    while reference_day and counts.get(reference_day.isoformat(), 0) > 0:
+        current_streak += 1
+        reference_day -= timedelta(days=1)
+
+    now = datetime.now(timezone.utc)
+    hours_left = max(0, 24 - now.hour - (1 if now.minute > 0 else 0))
+
+    streak_history = []
+    for offset in range(29, -1, -1):
+        day = today - timedelta(days=offset)
+        streak_history.append({
+            "date": day.isoformat(),
+            "active": counts.get(day.isoformat(), 0) > 0,
+        })
+
+    weekly_activity = []
+    for offset in range(6, -1, -1):
+        day = today - timedelta(days=offset)
+        weekly_activity.append(int(counts.get(day.isoformat(), 0)))
+
+    last_active_date = active_dates[-1].isoformat() if active_dates else None
+
+    return {
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "last_active_date": last_active_date,
+        "is_at_risk": current_streak > 0 and counts.get(today.isoformat(), 0) == 0 and hours_left <= 6,
+        "hours_until_reset": hours_left,
+        "total_active_days": len(active_dates),
+        "weekly_activity": weekly_activity,
+        "streak_history": streak_history,
+    }
+
+
 # ══════════════════════════════════════════════════════════════
 # 1. CONTRIBUTION HEATMAP — Real login/activity data
 # ══════════════════════════════════════════════════════════════
@@ -51,78 +419,9 @@ def get_contributions(user_id: str, year: int) -> Dict:
     if cached:
         return cached
 
-    db = _get_db()
-    try:
-        # Get activity from quiz_attempts (real quizzes taken)
-        quiz_dates = db.query(
-            sql_func.date(QuizAttempt.attempted_at).label("d"),
-            sql_func.count().label("c"),
-        ).filter(
-            QuizAttempt.user_id == user_id,
-            sql_func.extract("year", QuizAttempt.attempted_at) == year,
-        ).group_by(sql_func.date(QuizAttempt.attempted_at)).all()
-
-        # Get activity from interview_sessions
-        interview_dates = db.query(
-            sql_func.date(InterviewSession.completed_at).label("d"),
-            sql_func.count().label("c"),
-        ).filter(
-            InterviewSession.user_id == user_id,
-            sql_func.extract("year", InterviewSession.completed_at) == year,
-        ).group_by(sql_func.date(InterviewSession.completed_at)).all()
-
-        # Get activity from multistage_interviews
-        ms_dates = db.query(
-            sql_func.date(MultiStageInterview.created_at).label("d"),
-            sql_func.count().label("c"),
-        ).filter(
-            MultiStageInterview.user_id == user_id,
-            sql_func.extract("year", MultiStageInterview.created_at) == year,
-        ).group_by(sql_func.date(MultiStageInterview.created_at)).all()
-
-        # Get activity from roadmap creations
-        roadmap_dates = db.query(
-            sql_func.date(Roadmap.created_at).label("d"),
-            sql_func.count().label("c"),
-        ).filter(
-            Roadmap.user_id == user_id,
-            sql_func.extract("year", Roadmap.created_at) == year,
-        ).group_by(sql_func.date(Roadmap.created_at)).all()
-
-        # Get activity from resume saves
-        resume_dates = db.query(
-            sql_func.date(SavedResume.created_at).label("d"),
-            sql_func.count().label("c"),
-        ).filter(
-            SavedResume.user_id == user_id,
-            sql_func.extract("year", SavedResume.created_at) == year,
-        ).group_by(sql_func.date(SavedResume.created_at)).all()
-
-    finally:
-        db.close()
-
-    # Also get event-based activity from MongoDB
-    events_col = get_collection("pe_events")
-    event_map: Dict[str, int] = {}
-    if events_col is not None:
-        start = datetime(year, 1, 1, tzinfo=timezone.utc)
-        end = datetime(year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
-        pipeline = [
-            {"$match": {"user_id": user_id, "timestamp": {"$gte": start, "$lte": end}}},
-            {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}}, "count": {"$sum": 1}}},
-        ]
-        for r in events_col.aggregate(pipeline):
-            event_map[r["_id"]] = r["count"]
-
-    # Merge all activity counts by date
-    activity_map: Dict[str, int] = defaultdict(int)
-    for rows in [quiz_dates, interview_dates, ms_dates, roadmap_dates, resume_dates]:
-        for row in rows:
-            if row.d:
-                activity_map[str(row.d)] += int(row.c)
-
-    for d_str, cnt in event_map.items():
-        activity_map[d_str] += cnt
+    start_dt = datetime(year, 1, 1, tzinfo=timezone.utc)
+    end_dt = datetime(year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    activity_map = _get_meaningful_activity_counts(user_id, start=start_dt, end=end_dt)
 
     # Build contribution array
     start_date = date(year, 1, 1)
@@ -172,7 +471,7 @@ def get_contributions(user_id: str, year: int) -> Dict:
 # ══════════════════════════════════════════════════════════════
 
 def get_problem_stats(user_id: str) -> Dict:
-    """Get REAL quiz & interview analytics from PostgreSQL."""
+    """Get real quiz/problem submission analytics from production data sources."""
     cache_key = f"learning:{user_id}"
     cached = redis_client.cache_json_get(cache_key)
     if cached:
@@ -180,90 +479,90 @@ def get_problem_stats(user_id: str) -> Dict:
 
     db = _get_db()
     try:
-        # Quizzes
         quizzes = db.query(QuizAttempt).filter(QuizAttempt.user_id == user_id).all()
         total_quizzes = len(quizzes)
         quizzes_passed = sum(1 for q in quizzes if q.passed)
-        quiz_avg = round(sum(q.score for q in quizzes) / max(total_quizzes, 1), 1)
-
-        # Interviews
-        interviews = db.query(InterviewSession).filter(InterviewSession.user_id == user_id).all()
-        total_interviews = len(interviews)
-
-        # Multi-stage interviews
-        ms_interviews = db.query(MultiStageInterview).filter(
-            MultiStageInterview.user_id == user_id
-        ).all()
-        total_ms = len(ms_interviews)
-        ms_completed = sum(1 for m in ms_interviews if m.is_completed)
-
-        # Roadmaps
-        roadmaps = db.query(Roadmap).filter(Roadmap.user_id == user_id).all()
-        total_roadmaps = len(roadmaps)
-        active_roadmaps = sum(1 for r in roadmaps if r.is_active)
-
-        # Resumes
-        resumes = db.query(SavedResume).filter(SavedResume.user_id == user_id).count()
-
-        # Total "solved" = quizzes passed + interviews done + roadmaps generated + resumes built
-        total_solved = quizzes_passed + total_interviews + total_ms + total_roadmaps + resumes
-
-        # Quiz difficulty breakdown by level
-        easy_quizzes = sum(1 for q in quizzes if q.level and q.level.lower() == "beginner" and q.passed)
-        medium_quizzes = sum(1 for q in quizzes if q.level and q.level.lower() == "intermediate" and q.passed)
-        hard_quizzes = sum(1 for q in quizzes if q.level and q.level.lower() == "advanced" and q.passed)
-
-        # Recent activity (last 15 items)
         recent_quizzes = db.query(QuizAttempt).filter(
             QuizAttempt.user_id == user_id
-        ).order_by(QuizAttempt.attempted_at.desc()).limit(10).all()
-
-        recent_ints = db.query(InterviewSession).filter(
-            InterviewSession.user_id == user_id
-        ).order_by(InterviewSession.completed_at.desc()).limit(5).all()
-
+        ).order_by(QuizAttempt.attempted_at.desc()).limit(15).all()
     finally:
         db.close()
 
-    # Build recent submissions from real data
+    problem_events = _load_raw_events(user_id, event_types={"PROBLEM_SOLVED"})
+    direct_problem_submissions = len(problem_events)
+
+    difficulty = {
+        "easy": {"solved": 0, "total": 0},
+        "medium": {"solved": 0, "total": 0},
+        "hard": {"solved": 0, "total": 0},
+    }
+
+    def _normalize_quiz_difficulty(level: Optional[str]) -> str:
+        normalized = (level or "").strip().lower()
+        if normalized == "beginner":
+            return "easy"
+        if normalized == "advanced":
+            return "hard"
+        return "medium"
+
+    for quiz in quizzes:
+        bucket = _normalize_quiz_difficulty(quiz.level)
+        difficulty[bucket]["total"] += 1
+        if quiz.passed:
+            difficulty[bucket]["solved"] += 1
+
+    for event in problem_events:
+        metadata = event.get("metadata") or {}
+        bucket = str(metadata.get("difficulty") or "medium").strip().lower()
+        if bucket not in difficulty:
+            bucket = "medium"
+        difficulty[bucket]["total"] += 1
+        difficulty[bucket]["solved"] += 1
+
     recent_submissions = []
     for q in recent_quizzes:
         recent_submissions.append({
             "id": str(q.id),
             "title": f"Quiz: {q.skill_name}",
-            "difficulty": q.level.lower() if q.level else "intermediate",
+            "difficulty": _normalize_quiz_difficulty(q.level),
             "status": "accepted" if q.passed else "wrong_answer",
             "timestamp": q.attempted_at.isoformat() if q.attempted_at else "",
-            "language": f"Score: {q.score}%",
+            "language": f"Score {round(q.score or 0)}%",
         })
-    for iv in recent_ints:
+
+    recent_problem_events = sorted(
+        problem_events,
+        key=lambda item: _safe_utc_datetime(item.get("timestamp")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )[:15]
+    for event in recent_problem_events:
+        metadata = event.get("metadata") or {}
+        ts = _safe_utc_datetime(event.get("timestamp"))
+        raw_difficulty = str(metadata.get("difficulty") or "medium").strip().lower()
+        problem_difficulty = raw_difficulty if raw_difficulty in difficulty else "medium"
         recent_submissions.append({
-            "id": str(iv.id),
-            "title": f"Interview: {iv.position}",
-            "difficulty": "advanced",
-            "status": "accepted" if iv.verdict and "pass" in iv.verdict.lower() else "wrong_answer",
-            "timestamp": iv.completed_at.isoformat() if iv.completed_at else "",
-            "language": f"Score: {iv.technical_score or 0}%",
+            "id": str(event.get("event_id") or event.get("_id")),
+            "title": str(metadata.get("title") or metadata.get("topic") or "Solved Problem"),
+            "difficulty": problem_difficulty,
+            "status": "accepted",
+            "timestamp": ts.isoformat() if ts else "",
+            "language": str(metadata.get("language") or "Practice"),
         })
     recent_submissions.sort(key=lambda x: x["timestamp"], reverse=True)
 
+    total_submissions = total_quizzes + direct_problem_submissions
+    total_solved = quizzes_passed + direct_problem_submissions
+
     result = {
         "totalSolved": total_solved,
-        "totalAvailable": total_solved + 100,  # dynamic
-        "acceptanceRate": round((quizzes_passed / max(total_quizzes, 1)) * 100, 1),
-        "totalSubmissions": total_quizzes + total_interviews + total_ms,
-        "difficulty": {
-            "easy": {"solved": easy_quizzes, "total": max(easy_quizzes + 20, 50)},
-            "medium": {"solved": medium_quizzes, "total": max(medium_quizzes + 30, 80)},
-            "hard": {"solved": hard_quizzes, "total": max(hard_quizzes + 15, 40)},
-        },
+        "totalAvailable": total_submissions,
+        "acceptanceRate": round((total_solved / max(total_submissions, 1)) * 100, 1),
+        "totalSubmissions": total_submissions,
+        "difficulty": difficulty,
         "recentSubmissions": recent_submissions[:15],
-        # Extra LakshyaTrack-specific stats
         "_platform": {
-            "quizzes": {"total": total_quizzes, "passed": quizzes_passed, "avg_score": quiz_avg},
-            "interviews": {"total": total_interviews, "multistage": total_ms, "ms_completed": ms_completed},
-            "roadmaps": {"total": total_roadmaps, "active": active_roadmaps},
-            "resumes": resumes,
+            "quizzes": {"total": total_quizzes, "passed": quizzes_passed},
+            "problems": {"total": direct_problem_submissions, "solved": direct_problem_submissions},
         },
     }
 
@@ -276,81 +575,36 @@ def get_problem_stats(user_id: str) -> Dict:
 # ══════════════════════════════════════════════════════════════
 
 def get_activity_summary(user_id: str) -> Dict:
-    """Get REAL activity from PostgreSQL counts."""
+    """Get activity summary from real tracked session and page data."""
     cache_key = f"activity:{user_id}"
     cached = redis_client.cache_json_get(cache_key)
     if cached:
         return cached
 
-    db = _get_db()
-    try:
-        quiz_count = db.query(QuizAttempt).filter(QuizAttempt.user_id == user_id).count()
-        interview_count = db.query(InterviewSession).filter(InterviewSession.user_id == user_id).count()
-        ms_count = db.query(MultiStageInterview).filter(MultiStageInterview.user_id == user_id).count()
-        roadmap_count = db.query(Roadmap).filter(Roadmap.user_id == user_id).count()
-        resume_count = db.query(SavedResume).filter(SavedResume.user_id == user_id).count()
+    events = _load_raw_events(user_id)
+    metrics = _build_session_metrics(events)
+    sessions = metrics["sessions"]
+    durations = [session["duration_minutes"] for session in sessions if session["duration_minutes"] > 0]
+    total_active = round(sum(session["active_minutes"] for session in sessions), 1)
+    total_idle = round(sum(session["idle_minutes"] for session in sessions), 1)
 
-        # Active days = distinct days with any activity
-        quiz_days = db.query(sql_func.distinct(sql_func.date(QuizAttempt.attempted_at))).filter(
-            QuizAttempt.user_id == user_id).count()
-        int_days = db.query(sql_func.distinct(sql_func.date(InterviewSession.completed_at))).filter(
-            InterviewSession.user_id == user_id).count()
-
-        total_sessions = quiz_count + interview_count + ms_count
-    finally:
-        db.close()
-
-    # Get event-based page visits
-    events_col = get_collection("pe_events")
-    page_visits = []
-    feature_usage = []
-    if events_col is not None:
-        # Page visits
-        page_pipe = [
-            {"$match": {"user_id": user_id, "event_type": "PAGE_VISIT"}},
-            {"$group": {"_id": "$metadata.page", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 6},
-        ]
-        page_visits = [{"page": r["_id"] or "Home", "count": r["count"]} for r in events_col.aggregate(page_pipe)]
-
-        # Feature usage
-        feat_pipe = [
-            {"$match": {"user_id": user_id, "event_type": "FEATURE_USED"}},
-            {"$group": {"_id": "$metadata.feature", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 6},
-        ]
-        feature_usage = [{"feature": r["_id"] or "General", "count": r["count"]} for r in events_col.aggregate(feat_pipe)]
-
-    # If no tracked data yet, show platform features
-    if not page_visits:
-        page_visits = [
-            {"page": "Quizzes", "count": quiz_count},
-            {"page": "Interview Simulator", "count": interview_count + ms_count},
-            {"page": "Resume Studio", "count": resume_count},
-            {"page": "Learning Roadmaps", "count": roadmap_count},
-            {"page": "Progress Dashboard", "count": 1},
-            {"page": "English Coach", "count": 0},
-        ]
-    if not feature_usage:
-        feature_usage = [
-            {"feature": "Quiz Solving", "count": quiz_count},
-            {"feature": "Mock Interviews", "count": interview_count},
-            {"feature": "Multi-Stage Interview", "count": ms_count},
-            {"feature": "Resume Analysis", "count": resume_count},
-            {"feature": "Roadmap Generation", "count": roadmap_count},
-            {"feature": "AI Chat", "count": 0},
-        ]
+    page_visits = [
+        {"page": page, "count": count}
+        for page, count in metrics["page_counts"].most_common(6)
+    ]
+    feature_usage = [
+        {"feature": feature, "count": count}
+        for feature, count in metrics["feature_counts"].most_common(6)
+    ]
 
     result = {
-        "totalSessions": max(total_sessions, 1),
-        "avgSessionDuration": 25,  # Will be computed from event tracking
-        "totalActiveTime": total_sessions * 25,
-        "totalIdleTime": total_sessions * 5,
-        "mostVisitedPages": sorted(page_visits, key=lambda x: x["count"], reverse=True),
-        "mostUsedFeatures": sorted(feature_usage, key=lambda x: x["count"], reverse=True),
-        "activeDays": max(quiz_days, int_days, 1),
+        "totalSessions": len(sessions),
+        "avgSessionDuration": round(sum(durations) / len(durations), 1) if durations else 0,
+        "totalActiveTime": total_active,
+        "totalIdleTime": total_idle,
+        "mostVisitedPages": page_visits,
+        "mostUsedFeatures": feature_usage,
+        "activeDays": len(metrics["active_dates"]),
     }
 
     redis_client.cache_json_set(cache_key, result, ttl_seconds=300)
@@ -362,93 +616,85 @@ def get_activity_summary(user_id: str) -> Dict:
 # ══════════════════════════════════════════════════════════════
 
 def get_time_analytics(user_id: str) -> Dict:
-    """Get time analytics from real quiz/interview timestamps."""
+    """Get time analytics from real session/page activity."""
     cache_key = f"time:{user_id}"
     cached = redis_client.cache_json_get(cache_key)
     if cached:
         return cached
 
-    db = _get_db()
-    try:
-        # Daily activity from quizzes (last 30 days)
-        cutoff_30 = datetime.now(timezone.utc) - timedelta(days=30)
-        daily_quizzes = db.query(
-            sql_func.date(QuizAttempt.attempted_at).label("d"),
-            sql_func.count().label("c"),
-        ).filter(
-            QuizAttempt.user_id == user_id,
-            QuizAttempt.attempted_at >= cutoff_30,
-        ).group_by(sql_func.date(QuizAttempt.attempted_at)).all()
+    now = datetime.now(timezone.utc)
+    cutoff_30 = now - timedelta(days=30)
+    metrics = _build_session_metrics(_load_raw_events(user_id, start=cutoff_30), now=now)
 
-        daily_interviews = db.query(
-            sql_func.date(InterviewSession.completed_at).label("d"),
-            sql_func.count().label("c"),
-        ).filter(
-            InterviewSession.user_id == user_id,
-            InterviewSession.completed_at >= cutoff_30,
-        ).group_by(sql_func.date(InterviewSession.completed_at)).all()
-    finally:
-        db.close()
-
-    # Build daily map
-    daily_map: Dict[str, int] = defaultdict(int)
-    for row in daily_quizzes:
-        if row.d:
-            daily_map[str(row.d)] += int(row.c) * 15  # ~15 min per quiz
-    for row in daily_interviews:
-        if row.d:
-            daily_map[str(row.d)] += int(row.c) * 30  # ~30 min per interview
-
-    # Build 30-day daily usage
     daily_usage = []
     for i in range(29, -1, -1):
-        d = (datetime.now(timezone.utc) - timedelta(days=i)).date()
-        total_min = daily_map.get(d.isoformat(), 0)
-        active_min = int(total_min * 0.8)
-        daily_usage.append({"date": d.isoformat(), "totalMinutes": total_min, "activeMinutes": active_min})
-
-    # Weekly trends
-    weekly_map: Dict[int, int] = defaultdict(int)
-    for d_str, mins in daily_map.items():
-        dt = date.fromisoformat(d_str)
-        weekly_map[dt.isocalendar()[1]] += mins
-
-    weekly_trends = []
-    for wk, mins in sorted(weekly_map.items()):
-        weekly_trends.append({
-            "week": f"W{wk}", "weekStart": "",
-            "totalHours": round(mins / 60, 1),
-            "avgDailyMinutes": round(mins / 7, 1),
+        day = (now - timedelta(days=i)).date().isoformat()
+        usage = metrics["daily_usage"].get(day, {"totalMinutes": 0.0, "activeMinutes": 0.0})
+        daily_usage.append({
+            "date": day,
+            "totalMinutes": round(usage["totalMinutes"], 1),
+            "activeMinutes": round(usage["activeMinutes"], 1),
         })
 
-    # Feature time distribution from real usage
-    db2 = _get_db()
-    try:
-        quiz_time = db2.query(QuizAttempt).filter(QuizAttempt.user_id == user_id).count() * 15
-        int_time = db2.query(InterviewSession).filter(InterviewSession.user_id == user_id).count() * 30
-        ms_time = db2.query(MultiStageInterview).filter(MultiStageInterview.user_id == user_id).count() * 45
-        roadmap_time = db2.query(Roadmap).filter(Roadmap.user_id == user_id).count() * 10
-        resume_time = db2.query(SavedResume).filter(SavedResume.user_id == user_id).count() * 20
-    finally:
-        db2.close()
+    weekly_map: Dict[tuple[int, int], Dict[str, float]] = defaultdict(lambda: {"minutes": 0.0, "days": 0})
+    for entry in daily_usage:
+        d_str = entry["date"]
+        mins = entry["totalMinutes"]
+        dt = date.fromisoformat(d_str)
+        week_key = (dt.isocalendar()[0], dt.isocalendar()[1])
+        weekly_map[week_key]["minutes"] += mins
+        weekly_map[week_key]["days"] += 1
 
-    total_feature_time = max(quiz_time + int_time + ms_time + roadmap_time + resume_time, 1)
-    colors = ['#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6']
-    feature_data = [
-        ("Quizzes", quiz_time, colors[0]),
-        ("Mock Interviews", int_time, colors[1]),
-        ("Multi-Stage Interviews", ms_time, colors[2]),
-        ("Roadmaps", roadmap_time, colors[3]),
-        ("Resume Building", resume_time, colors[4]),
-    ]
-    feature_time_spent = [{
-        "feature": name, "minutes": mins,
-        "percentage": round(mins / total_feature_time * 100),
-        "color": color,
-    } for name, mins, color in feature_data if mins > 0]
+    weekly_trends = []
+    for (iso_year, week_number), info in sorted(weekly_map.items()):
+        week_start = date.fromisocalendar(iso_year, week_number, 1)
+        weekly_trends.append({
+            "week": f"W{week_number}",
+            "weekStart": week_start.isoformat(),
+            "totalHours": round(info["minutes"] / 60, 1),
+            "avgDailyMinutes": round(info["minutes"] / max(info["days"], 1), 1),
+        })
+
+    feature_color_map = {
+        "Quizzes": "#10b981",
+        "Mock Interviews": "#6366f1",
+        "Resume Building": "#8b5cf6",
+        "Roadmaps": "#ef4444",
+        "Progress Dashboard": "#06b6d4",
+        "Code Practice": "#f59e0b",
+        "Problem Solving": "#f97316",
+        "Dashboard": "#14b8a6",
+        "Learning Hub": "#3b82f6",
+        "English Coach": "#ec4899",
+        "Reasoning": "#a855f7",
+        "Opportunities": "#0ea5e9",
+    }
+    total_feature_time = sum(metrics["feature_minutes"].values())
+    feature_time_spent = []
+    for feature, minutes in sorted(metrics["feature_minutes"].items(), key=lambda item: item[1], reverse=True):
+        rounded_minutes = round(minutes, 1)
+        if rounded_minutes <= 0:
+            continue
+        feature_time_spent.append({
+            "feature": feature,
+            "minutes": rounded_minutes,
+            "percentage": round((rounded_minutes / total_feature_time) * 100) if total_feature_time > 0 else 0,
+            "color": feature_color_map.get(feature, "#94a3b8"),
+        })
 
     this_week_mins = sum(d["totalMinutes"] for d in daily_usage[-7:])
     this_month_mins = sum(d["totalMinutes"] for d in daily_usage)
+
+    peak_hour = 0
+    if metrics["active_hours"]:
+        peak_hour = max(metrics["active_hours"], key=metrics["active_hours"].get)
+
+    day_totals: Dict[int, float] = defaultdict(float)
+    for entry in daily_usage:
+        dt = date.fromisoformat(entry["date"])
+        day_totals[dt.weekday()] += entry["totalMinutes"]
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    peak_day = day_names[max(day_totals, key=day_totals.get)] if day_totals and sum(day_totals.values()) > 0 else "No activity yet"
 
     result = {
         "dailyUsage": daily_usage,
@@ -457,8 +703,8 @@ def get_time_analytics(user_id: str) -> Dict:
         "totalHoursThisWeek": round(this_week_mins / 60, 1),
         "totalHoursThisMonth": round(this_month_mins / 60, 1),
         "avgDailyMinutes": round(this_month_mins / 30, 1),
-        "peakHour": _compute_peak_hour(user_id),
-        "peakDay": _compute_peak_day(daily_map),
+        "peakHour": peak_hour,
+        "peakDay": peak_day,
     }
 
     redis_client.cache_json_set(cache_key, result, ttl_seconds=300)
@@ -512,7 +758,7 @@ def _compute_peak_day(daily_map: Dict[str, int]) -> str:
 # ══════════════════════════════════════════════════════════════
 
 def get_topic_map(user_id: str) -> Dict:
-    """Skill bubble map from REAL quiz attempts by skill_name."""
+    """Skill bubble map from real topic-wise quiz/problem activity."""
     cache_key = f"topics:{user_id}"
     cached = redis_client.cache_json_get(cache_key)
     if cached:
@@ -529,61 +775,65 @@ def get_topic_map(user_id: str) -> Dict:
         ).filter(
             QuizAttempt.user_id == user_id,
         ).group_by(QuizAttempt.skill_name).all()
-
-        # Also get skills from roadmaps
-        roadmap = db.query(Roadmap).filter(
-            Roadmap.user_id == user_id, Roadmap.is_active == True
-        ).order_by(Roadmap.created_at.desc()).first()
-
-        roadmap_skills = set()
-        if roadmap and roadmap.roadmap_data:
-            for level in roadmap.roadmap_data.get("levels", []):
-                for skill in level.get("skills", []):
-                    if skill.get("status") == "completed":
-                        roadmap_skills.add(skill.get("name", ""))
     finally:
         db.close()
 
     colors = ['#6366f1', '#a855f7', '#7c3aed', '#06b6d4', '#0891b2',
               '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6']
 
-    topics = []
-    max_attempts = max((s.attempts for s in skill_stats), default=1)
-
-    for i, s in enumerate(skill_stats):
+    topic_metrics: Dict[str, Dict[str, Any]] = {}
+    for s in skill_stats:
         if not s.skill_name:
             continue
-        avg = float(s.avg_score or 0)
+        topic_metrics[s.skill_name] = {
+            "attempts": int(s.attempts or 0),
+            "score_sum": float((s.avg_score or 0) * (s.attempts or 0)),
+            "score_count": int(s.attempts or 0),
+            "problems_solved": int(s.passed or 0),
+            "time_spent_minutes": 0.0,
+        }
+
+    for event in _load_raw_events(user_id, event_types={"PROBLEM_SOLVED"}):
+        metadata = event.get("metadata") or {}
+        topic_name = str(metadata.get("topic") or metadata.get("title") or "General").strip()
+        if not topic_name:
+            topic_name = "General"
+        metrics = topic_metrics.setdefault(topic_name, {
+            "attempts": 0,
+            "score_sum": 0.0,
+            "score_count": 0,
+            "problems_solved": 0,
+            "time_spent_minutes": 0.0,
+        })
+        metrics["attempts"] += 1
+        metrics["score_sum"] += 100.0
+        metrics["score_count"] += 1
+        metrics["problems_solved"] += 1
+        if metadata.get("time_taken_seconds") is not None:
+            metrics["time_spent_minutes"] += max(float(metadata.get("time_taken_seconds") or 0) / 60, 0.0)
+
+    topics = []
+    max_activity = max(
+        (max(metric["attempts"], metric["problems_solved"], 1) for metric in topic_metrics.values()),
+        default=1,
+    )
+
+    for i, (topic_name, metric) in enumerate(topic_metrics.items()):
+        avg = round(metric["score_sum"] / max(metric["score_count"], 1), 1) if metric["score_count"] > 0 else 0.0
         prof = min(100, round(avg))
         prof_level = "beginner" if prof < 40 else "intermediate" if prof < 60 else "advanced" if prof < 80 else "expert"
 
         topics.append({
             "id": f"topic-{i}",
-            "name": s.skill_name,
-            "category": _categorize_skill(s.skill_name),
-            "problemsSolved": int(s.passed or 0),
-            "timeSpentMinutes": int(s.attempts) * 15,
+            "name": topic_name,
+            "category": _categorize_skill(topic_name),
+            "problemsSolved": metric["problems_solved"],
+            "timeSpentMinutes": round(metric["time_spent_minutes"], 1),
             "proficiencyLevel": prof_level,
             "proficiencyScore": prof,
             "color": colors[i % len(colors)],
-            "size": max(30, min(100, int(s.attempts / max(max_attempts, 1) * 100))),
+            "size": max(30, min(100, int(max(metric["attempts"], metric["problems_solved"], 1) / max_activity * 100))),
         })
-
-    # Add roadmap skills not yet quizzed
-    quizzed_names = {t["name"] for t in topics}
-    for j, skill_name in enumerate(roadmap_skills):
-        if skill_name and skill_name not in quizzed_names:
-            topics.append({
-                "id": f"roadmap-{j}",
-                "name": skill_name,
-                "category": _categorize_skill(skill_name),
-                "problemsSolved": 0,
-                "timeSpentMinutes": 0,
-                "proficiencyLevel": "beginner",
-                "proficiencyScore": 10,
-                "color": colors[(len(topics) + j) % len(colors)],
-                "size": 30,
-            })
 
     sorted_topics = sorted(topics, key=lambda t: t["proficiencyScore"], reverse=True)
 
@@ -624,26 +874,13 @@ def _categorize_skill(name: str) -> str:
 # ══════════════════════════════════════════════════════════════
 
 def get_streak_data(user_id: str) -> Dict:
-    """Get REAL streak from MongoDB user_streaks."""
+    """Get streak data computed from real activity dates."""
     cached = redis_client.get_cached_streak(user_id)
     if cached:
         return cached
 
-    streak = run_streak_update(user_id)
-
-    # Build streak history from real contribution data
-    history = []
-    contrib = get_contributions(user_id, datetime.now(timezone.utc).year)
-    contribs = contrib.get("contributions", [])
-    # Last 30 days
-    for c in contribs[-30:]:
-        history.append({"date": c["date"], "active": c["count"] > 0})
-
-    # If no contribution data, pad with empty
-    while len(history) < 30:
-        history.insert(0, {"date": "", "active": False})
-
-    streak["streakHistory"] = history
+    streak = _compute_streak_metrics(user_id)
+    streak["streakHistory"] = streak.get("streak_history", [])
     streak["lastActiveDate"] = streak.get("last_active_date")
     streak["currentStreak"] = streak.get("current_streak", 0)
     streak["longestStreak"] = streak.get("longest_streak", 0)
@@ -651,6 +888,8 @@ def get_streak_data(user_id: str) -> Dict:
     streak["hoursUntilReset"] = streak.get("hours_until_reset", 24)
     streak["totalActiveDays"] = streak.get("total_active_days", 0)
     streak["weeklyActivity"] = streak.get("weekly_activity", [0] * 7)
+
+    redis_client.cache_streak(user_id, streak)
 
     return streak
 
@@ -690,7 +929,7 @@ def _build_user_stats(user_id: str) -> Dict:
     finally:
         db.close()
 
-    streak = legacy_get_streak(user_id)
+    streak = _compute_streak_metrics(user_id)
 
     return {
         "current_streak": streak.get("current_streak", 0),
@@ -832,6 +1071,10 @@ def get_intelligence(user_id: str) -> Dict:
     if cached:
         return cached
 
+    now = datetime.now(timezone.utc)
+    thirty_days_ago = now - timedelta(days=30)
+    sixty_days_ago = now - timedelta(days=60)
+
     db = _get_db()
     try:
         quiz_count = db.query(QuizAttempt).filter(QuizAttempt.user_id == user_id).count()
@@ -847,6 +1090,16 @@ def get_intelligence(user_id: str) -> Dict:
         roadmap_count = db.query(Roadmap).filter(Roadmap.user_id == user_id).count()
         resume_count = db.query(SavedResume).filter(SavedResume.user_id == user_id).count()
 
+        recent_quiz_avg_raw = db.query(sql_func.avg(QuizAttempt.score)).filter(
+            QuizAttempt.user_id == user_id,
+            QuizAttempt.attempted_at >= thirty_days_ago,
+        ).scalar()
+        previous_quiz_avg_raw = db.query(sql_func.avg(QuizAttempt.score)).filter(
+            QuizAttempt.user_id == user_id,
+            QuizAttempt.attempted_at >= sixty_days_ago,
+            QuizAttempt.attempted_at < thirty_days_ago,
+        ).scalar()
+
         # Weak quiz topics
         weak_skills = db.query(
             QuizAttempt.skill_name,
@@ -860,8 +1113,36 @@ def get_intelligence(user_id: str) -> Dict:
     finally:
         db.close()
 
-    streak = legacy_get_streak(user_id)
+    streak = _compute_streak_metrics(user_id)
     current_str = streak.get("current_streak", 0)
+    last_active_today = streak.get("last_active_date") == now.date().isoformat()
+    active_days_last_30 = sum(1 for entry in streak.get("streak_history", []) if entry.get("active"))
+    consistency = round((active_days_last_30 / 30) * 100) if streak.get("streak_history") else 0
+
+    recent_quiz_avg = float(recent_quiz_avg_raw or 0)
+    previous_quiz_avg = float(previous_quiz_avg_raw or 0)
+    growth_rate = round(recent_quiz_avg - previous_quiz_avg, 1) if previous_quiz_avg > 0 else 0.0
+
+    active_hour_counts = Counter()
+    for event in _load_raw_events(user_id, start=thirty_days_ago):
+        ts = _safe_utc_datetime(event.get("timestamp"))
+        if ts and str(event.get("event_type") or "").upper() != "IDLE":
+            active_hour_counts[ts.hour] += 1
+
+    if not active_hour_counts:
+        db = _get_db()
+        try:
+            for (timestamp,) in db.query(QuizAttempt.attempted_at).filter(QuizAttempt.user_id == user_id).all():
+                if timestamp:
+                    active_hour_counts[timestamp.hour] += 1
+            for (timestamp,) in db.query(InterviewSession.completed_at).filter(InterviewSession.user_id == user_id).all():
+                if timestamp:
+                    active_hour_counts[timestamp.hour] += 1
+        finally:
+            db.close()
+
+    active_hours = [{"hour": hour, "activity": active_hour_counts.get(hour, 0)} for hour in range(24)]
+    predicted_streak_break = current_str > 0 and not last_active_today and streak.get("hours_until_reset", 24) <= 6
 
     insights = []
 
@@ -873,11 +1154,18 @@ def get_intelligence(user_id: str) -> Dict:
             "description": f"You've maintained a {current_str}-day streak. Keep it going!",
             "icon": "🔥", "priority": "medium", "actionable": False,
         })
+    elif predicted_streak_break:
+        insights.append({
+            "id": "streak_risk", "type": "warning",
+            "title": "Your streak is at risk today",
+            "description": "You have an active streak but no meaningful action has been recorded today yet.",
+            "icon": "⚠️", "priority": "high", "actionable": True, "action": "Take a Quiz",
+        })
     elif current_str == 0:
         insights.append({
             "id": "streak_start", "type": "warning",
             "title": "Start Your Streak Today!",
-            "description": "You haven't logged any activity today. Take a quiz or practice an interview to start building your streak.",
+            "description": "No meaningful learning activity has been recorded today yet.",
             "icon": "⚠️", "priority": "high", "actionable": True, "action": "Take a Quiz",
         })
 
@@ -933,6 +1221,15 @@ def get_intelligence(user_id: str) -> Dict:
 
     # Weak skill recommendations
     suggested_focus = [s.skill_name for s in weak_skills if s.skill_name] if weak_skills else []
+    if quiz_count == 0 and "Knowledge Checks" not in suggested_focus:
+        suggested_focus.append("Knowledge Checks")
+    if interview_count == 0 and "Mock Interviews" not in suggested_focus:
+        suggested_focus.append("Mock Interviews")
+    if resume_count == 0 and "Resume Building" not in suggested_focus:
+        suggested_focus.append("Resume Building")
+    if roadmap_count == 0 and "Learning Roadmaps" not in suggested_focus:
+        suggested_focus.append("Learning Roadmaps")
+
     if suggested_focus:
         insights.append({
             "id": "weak_skills", "type": "suggestion",
@@ -941,20 +1238,21 @@ def get_intelligence(user_id: str) -> Dict:
             "icon": "🧠", "priority": "high", "actionable": True, "action": "Practice Weak Areas",
         })
 
-    # Active hours (placeholder, will come from event tracking)
-    active_hours = [{"hour": h, "activity": 0} for h in range(24)]
-
-    # Consistency from streak
-    consistency = min(100, current_str * 3 + 20) if current_str > 0 else 10
-    growth_rate = round(quiz_avg - 50, 1) if quiz_avg > 50 else 0
+    if not insights:
+        insights.append({
+            "id": "steady_progress", "type": "pattern",
+            "title": "Steady progress detected",
+            "description": "Your recent activity is consistent across tracked learning actions.",
+            "icon": "📈", "priority": "medium", "actionable": False,
+        })
 
     result = {
         "insights": insights,
         "activeHours": active_hours,
         "consistencyScore": consistency,
         "growthRate": growth_rate,
-        "predictedStreakBreak": current_str == 0,
-        "suggestedFocusAreas": suggested_focus or ["Practice Quizzes", "Mock Interviews", "Resume Building"],
+        "predictedStreakBreak": predicted_streak_break,
+        "suggestedFocusAreas": suggested_focus[:4],
     }
 
     redis_client.cache_json_set(cache_key, result, ttl_seconds=600)

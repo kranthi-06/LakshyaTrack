@@ -27,6 +27,11 @@ import PremiumGate from '../components/PremiumGate';
 import UpgradeModal from '../components/UpgradeModal';
 import { extractLimitExceededError } from '../services/api';
 import { useUsage } from '../context/UsageContext';
+import {
+    trackCodeExecuted,
+    trackInterviewCompleted,
+    trackProblemSolved,
+} from '../progress-system/services/eventTracker';
 type InterviewStep = 'landing' | 'setup' | 'screening' | 'technical' | 'coding' | 'hr' | 'stage_result' | 'final_results';
 type InterviewMode = 'text' | 'voice';
 type InterviewPath = 'resume_screening' | 'direct_skill';
@@ -98,6 +103,7 @@ export default function Interview() {
     }>({ isOpen: false });
     const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
     const lastSpokenQuestion = useRef<string>('');
+    const solvedProblemTrackedRef = useRef(false);
 
     const currentStage = STAGES[currentStageIdx];
     const completedStages = Object.keys(stageEvals);
@@ -209,6 +215,7 @@ export default function Interview() {
                 setStageEvals({});
                 setFinalAnalysis(null);
                 setCurrentStageEval(null);
+                solvedProblemTrackedRef.current = false;
                 await fetchQuestion('screening', []);
                 setStep('screening');
             } catch (e) {
@@ -260,6 +267,7 @@ export default function Interview() {
             setCodingAttempts(0);
             setCodingTestsPassed(0);
             setCodingOutput('');
+            solvedProblemTrackedRef.current = false;
         } catch (e) {
             console.error('Coding problem error:', e);
             setCodingProblem({
@@ -269,6 +277,7 @@ export default function Interview() {
                 starter_code: { python: '# Write your solution here\n' }, difficulty: 'intermediate'
             });
             setCodingCode('# Write your solution here\n');
+            solvedProblemTrackedRef.current = false;
         }
         setIsLoading(false);
     };
@@ -315,6 +324,20 @@ export default function Interview() {
         setCodingLang(language);
         setCodingAttempts(attempts);
         setCodingTestsPassed(passed);
+        trackCodeExecuted(language);
+        if (total > 0 && passed === total && !solvedProblemTrackedRef.current) {
+            solvedProblemTrackedRef.current = true;
+            trackProblemSolved(
+                codingProblem?.title || 'Coding Problem',
+                codingProblem?.difficulty === 'easy'
+                    ? 'easy'
+                    : codingProblem?.difficulty === 'hard'
+                        ? 'hard'
+                        : 'medium',
+                skills[0] || position,
+                language,
+            );
+        }
         setCodingOutput(`✓ ${passed}/${total} test cases passed`);
     };
 
@@ -371,10 +394,12 @@ export default function Interview() {
                 stageEvals.coding || {},
                 stageEvals.hr || {}
             );
-            setFinalAnalysis(res?.analysis || {
+            const analysis = res?.analysis || {
                 overall_score: 0, verdict: 'Evaluation Complete',
                 strengths: [], weaknesses: [], overall_feedback: '', improvement_tips: []
-            });
+            };
+            setFinalAnalysis(analysis);
+            trackInterviewCompleted(position, analysis?.overall_score);
             try { await saveProgressSnapshot(0); } catch (_) { }
         } catch (e) {
             console.error('Final analysis error:', e);
@@ -423,6 +448,7 @@ export default function Interview() {
         setStageEvals({});
         setFinalAnalysis(null);
         setCurrentStageEval(null);
+        solvedProblemTrackedRef.current = false;
     };
 
     // ═══════════════════════════════════════

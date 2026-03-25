@@ -219,3 +219,22 @@ class LearningCache(Base):
     __table_args__ = (
         UniqueConstraint('skill_name', 'level', name='uq_learning_cache_skill_level'),
     )
+
+
+class UserActivityDay(Base):
+    """
+    Lightweight daily presence tracker.
+    Stores at most one row per user per UTC day after an authenticated request.
+    Used as a day-level presence signal for progress analytics.
+    """
+    __tablename__ = "user_activity_days"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_date = Column(DateTime(timezone=True), nullable=False)
+    activity_count = Column(Integer, default=1)  # Runtime writes keep this at 1 row/day.
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'activity_date', name='uq_user_activity_day'),
+    )

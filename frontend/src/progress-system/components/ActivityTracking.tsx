@@ -20,8 +20,15 @@ function formatMinutes(mins: number): string {
 }
 
 const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
-  const maxPageCount = Math.max(...data.mostVisitedPages.map(p => p.count));
-  const maxFeatureCount = Math.max(...data.mostUsedFeatures.map(f => f.count));
+  const maxPageCount = Math.max(1, ...data.mostVisitedPages.map(p => p.count));
+  const maxFeatureCount = Math.max(1, ...data.mostUsedFeatures.map(f => f.count));
+  const totalTrackedMinutes = data.totalActiveTime + data.totalIdleTime;
+  const activePercent = totalTrackedMinutes > 0
+    ? Math.round((data.totalActiveTime / totalTrackedMinutes) * 100)
+    : 0;
+  const idlePercent = totalTrackedMinutes > 0
+    ? Math.max(0, 100 - activePercent)
+    : 0;
 
   const pageColors = ['#6366f1', '#8b5cf6', '#a855f7', '#c084fc', '#d8b4fe', '#e9d5ff'];
   const featureColors = ['#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6'];
@@ -52,7 +59,7 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
           { label: 'Active Days', value: data.activeDays.toString(), icon: '📅', color: '#10b981' },
           { label: 'Active Time', value: formatMinutes(data.totalActiveTime), icon: '🟢', color: '#f59e0b' },
           { label: 'Idle Time', value: formatMinutes(data.totalIdleTime), icon: '💤', color: '#94a3b8' },
-          { label: 'Engagement', value: `${Math.round((data.totalActiveTime / (data.totalActiveTime + data.totalIdleTime)) * 100)}%`, icon: '🎯', color: '#ec4899' },
+          { label: 'Engagement', value: `${activePercent}%`, icon: '🎯', color: '#ec4899' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -78,6 +85,9 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
         <div>
           <div className="text-xs text-white/40 font-medium mb-3">Most Visited Pages</div>
           <div className="space-y-2.5">
+            {data.mostVisitedPages.length === 0 && (
+              <div className="text-xs text-white/35">No tracked page visits yet.</div>
+            )}
             {data.mostVisitedPages.map((page, i) => {
               const pct = (page.count / maxPageCount) * 100;
               return (
@@ -113,6 +123,9 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
         <div>
           <div className="text-xs text-white/40 font-medium mb-3">Most Used Features</div>
           <div className="space-y-2.5">
+            {data.mostUsedFeatures.length === 0 && (
+              <div className="text-xs text-white/35">No tracked feature usage yet.</div>
+            )}
             {data.mostUsedFeatures.map((feature, i) => {
               const pct = (feature.count / maxFeatureCount) * 100;
               return (
@@ -150,7 +163,7 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
         <div className="flex justify-between text-xs mb-2">
           <span className="text-white/40">Active vs Idle Time</span>
           <span className="text-emerald-400 text-xs font-medium">
-            {Math.round((data.totalActiveTime / (data.totalActiveTime + data.totalIdleTime)) * 100)}% active
+            {activePercent}% active
           </span>
         </div>
         <div className="h-3 rounded-full overflow-hidden flex" style={{ background: 'rgba(255,255,255,0.04)' }}>
@@ -161,7 +174,7 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
               borderRadius: '9999px 0 0 9999px',
             }}
             initial={{ width: 0 }}
-            animate={{ width: `${(data.totalActiveTime / (data.totalActiveTime + data.totalIdleTime)) * 100}%` }}
+            animate={{ width: `${activePercent}%` }}
             transition={{ duration: 1.2, ease: 'easeOut' }}
           />
           <motion.div
@@ -171,7 +184,7 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
               borderRadius: '0 9999px 9999px 0',
             }}
             initial={{ width: 0 }}
-            animate={{ width: `${(data.totalIdleTime / (data.totalActiveTime + data.totalIdleTime)) * 100}%` }}
+            animate={{ width: `${idlePercent}%` }}
             transition={{ duration: 1.2, ease: 'easeOut', delay: 0.2 }}
           />
         </div>

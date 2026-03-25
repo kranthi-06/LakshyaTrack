@@ -11,6 +11,7 @@ import {
     checkExamCooldown,
 } from '../services/careerPlatform';
 import { generateQuizQuestions } from '../services/quiz';
+import { trackQuizCompleted } from '../progress-system/services/eventTracker';
 import {
     BrainCircuit,
     Timer,
@@ -343,6 +344,26 @@ export default function Quiz() {
         });
     };
 
+    const buildQuizAnswers = () => {
+        return Object.entries(selectedAnswers).map(([idx, selected]) => ({
+            question_id: parseInt(idx),
+            selected,
+            correct: quizQuestions[parseInt(idx)].correct,
+            question_text: quizQuestions[parseInt(idx)].question
+        }));
+    };
+
+    const trackCompletedQuiz = (quizName: string, result: any, answers: ReturnType<typeof buildQuizAnswers>) => {
+        const totalQuestions = typeof result?.total === 'number' ? result.total : answers.length;
+        const score = typeof result?.score === 'number'
+            ? result.score
+            : totalQuestions > 0
+                ? Math.round((answers.filter(answer => answer.selected === answer.correct).length / totalQuestions) * 100)
+                : 0;
+
+        trackQuizCompleted(quizName, score, totalQuestions);
+    };
+
     const handleNext = async () => {
         if (currentQuestion < quizQuestions.length - 1) {
             setCurrentQuestion(prev => prev + 1);
@@ -353,12 +374,7 @@ export default function Quiz() {
 
             if (isRoadmapQuiz && roadmapSkillId && roadmapSkillName && roadmapLevel) {
                 try {
-                    const answers = Object.entries(selectedAnswers).map(([idx, selected]) => ({
-                        question_id: parseInt(idx),
-                        selected,
-                        correct: quizQuestions[parseInt(idx)].correct,
-                        question_text: quizQuestions[parseInt(idx)].question
-                    }));
+                    const answers = buildQuizAnswers();
 
                     const result = await submitSkillQuiz(
                         roadmapId,
@@ -368,6 +384,7 @@ export default function Quiz() {
                         answers
                     );
                     setQuizResult(result);
+                    trackCompletedQuiz(roadmapSkillName, result, answers);
 
                     try { await saveProgressSnapshot(0); } catch (_) { }
                 } catch (e) {
@@ -375,12 +392,7 @@ export default function Quiz() {
                 }
             } else {
                 try {
-                    const answers = Object.entries(selectedAnswers).map(([idx, selected]) => ({
-                        question_id: parseInt(idx),
-                        selected,
-                        correct: quizQuestions[parseInt(idx)].correct,
-                        question_text: quizQuestions[parseInt(idx)].question
-                    }));
+                    const answers = buildQuizAnswers();
 
                     const result = await submitSkillQuiz(
                         null,
@@ -390,6 +402,7 @@ export default function Quiz() {
                         answers
                     );
                     setQuizResult(result);
+                    trackCompletedQuiz(topic, result, answers);
 
                     try { await saveProgressSnapshot(0); } catch (_) { }
                 } catch (e) {

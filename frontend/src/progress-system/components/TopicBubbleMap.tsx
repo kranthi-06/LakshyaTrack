@@ -33,14 +33,18 @@ const PROFICIENCY_LABELS: Record<string, string> = {
 
 // Simple circle packing algorithm
 function packBubbles(topics: TopicBubble[], width: number, height: number): BubblePosition[] {
+  if (topics.length === 0) {
+    return [];
+  }
+
   const centerX = width / 2;
   const centerY = height / 2;
-  const maxSize = Math.max(...topics.map(t => t.size));
+  const maxSize = Math.max(1, ...topics.map(t => Math.max(t.size, 1)));
   const minRadius = 22;
   const maxRadius = Math.min(width, height) * 0.14;
 
   const bubbles: BubblePosition[] = topics.map(topic => {
-    const normalizedSize = topic.size / maxSize;
+    const normalizedSize = Math.max(topic.size, 1) / maxSize;
     const r = minRadius + normalizedSize * (maxRadius - minRadius);
     return { x: 0, y: 0, r, topic };
   });
@@ -151,11 +155,17 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
             <span className="text-xl">🫧</span>
             Skill Map
           </h3>
-          <p className="text-xs text-white/40 mt-1">
+          {data.topics.length > 0 ? (
+            <p className="text-xs text-white/40 mt-1">
             Strongest: <span className="text-emerald-400">{data.strongestTopic}</span>
             {' · '}
             Focus area: <span className="text-amber-400">{data.weakestTopic}</span>
-          </p>
+            </p>
+          ) : (
+            <p className="text-xs text-white/40 mt-1">
+              Complete quizzes or solve problems to build your live skill map.
+            </p>
+          )}
         </div>
 
         {/* Proficiency legend */}
@@ -189,6 +199,11 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
 
       {/* Bubble Map SVG */}
       <div ref={containerRef} className="relative rounded-xl overflow-hidden" style={{ background: 'rgba(0,0,0,0.2)' }}>
+        {filteredTopics.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/35">
+            No topic activity has been recorded for this view yet.
+          </div>
+        )}
         <svg width={dimensions.width} height={dimensions.height}>
           <defs>
             {bubbles.map(b => (

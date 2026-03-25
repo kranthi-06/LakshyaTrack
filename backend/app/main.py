@@ -46,6 +46,7 @@ from app.models.career import (
     ProgressSnapshot,
     QuizAttempt,
     Roadmap,
+    UserActivityDay,
 )
 from app.models.resume import SavedResume
 from app.models.reasoning import ReasoningQuestion, ReasoningTest, ReasoningUserProgress

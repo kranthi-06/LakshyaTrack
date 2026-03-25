@@ -22,7 +22,7 @@ _scheduler_thread: threading.Thread | None = None
 _stop_event = threading.Event()
 
 # Intervals in seconds
-FLUSH_INTERVAL = 15       # Flush event buffer every 15s
+FLUSH_INTERVAL = 5        # Flush event buffer every 5s
 AGGREGATE_INTERVAL = 300  # Run aggregation every 5min
 
 

@@ -104,7 +104,9 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
     runtime_error: { color: '#8b5cf6', label: 'Error' },
   };
 
-  const totalPercentage = ((data.totalSolved / data.totalAvailable) * 100).toFixed(1);
+  const totalPercentage = data.totalAvailable > 0
+    ? ((data.totalSolved / data.totalAvailable) * 100).toFixed(1)
+    : '0.0';
 
   return (
     <motion.div
@@ -178,7 +180,9 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
                 max={data.difficulty[diff].total}
                 color={difficultyConfig[diff].color}
                 label={difficultyConfig[diff].label}
-                sublabel={`${((data.difficulty[diff].solved / data.difficulty[diff].total) * 100).toFixed(0)}%`}
+                sublabel={data.difficulty[diff].total > 0
+                  ? `${((data.difficulty[diff].solved / data.difficulty[diff].total) * 100).toFixed(0)}%`
+                  : '0%'}
                 delay={i * 0.2}
               />
             ))}
@@ -187,7 +191,9 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
           {/* Difficulty progress bars */}
           <div className="space-y-3">
             {(['easy', 'medium', 'hard'] as const).map((diff, i) => {
-              const pct = (data.difficulty[diff].solved / data.difficulty[diff].total) * 100;
+              const pct = data.difficulty[diff].total > 0
+                ? (data.difficulty[diff].solved / data.difficulty[diff].total) * 100
+                : 0;
               return (
                 <div key={diff}>
                   <div className="flex justify-between text-xs mb-1">
@@ -216,6 +222,11 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
 
       {activeTab === 'recent' && (
         <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
+          {data.recentSubmissions.length === 0 && (
+            <div className="text-sm text-white/35 py-6 text-center">
+              No real submissions have been recorded yet.
+            </div>
+          )}
           {data.recentSubmissions.map((sub, i) => (
             <motion.div
               key={sub.id}

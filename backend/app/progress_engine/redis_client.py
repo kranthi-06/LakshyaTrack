@@ -222,17 +222,9 @@ _last_flush_time = time.time()
 
 
 def buffer_event(event: Dict):
-    """Add event to the write buffer. Auto-flushes when full."""
-    global _last_flush_time
+    """Add event to the write buffer for the background flusher."""
     with _buffer_lock:
         _event_buffer.append(event)
-        now = time.time()
-        should_flush = (
-            len(_event_buffer) >= BUFFER_MAX_SIZE
-            or (now - _last_flush_time) > BUFFER_FLUSH_INTERVAL
-        )
-    if should_flush:
-        flush_event_buffer()
 
 
 def flush_event_buffer() -> List[Dict]:
@@ -289,3 +281,23 @@ def get_cached_dashboard(user_id: str) -> Optional[Dict]:
 def invalidate_dashboard(user_id: str):
     """Invalidate cached dashboard (called after new events)."""
     cache_delete(f"dashboard:{user_id}")
+
+
+def invalidate_user_analytics(user_id: str):
+    """Invalidate all per-user analytics caches touched by Progress Intelligence."""
+    keys = [
+        f"dashboard:{user_id}",
+        f"streak:{user_id}",
+        f"learning:{user_id}",
+        f"activity:{user_id}",
+        f"time:{user_id}",
+        f"topics:{user_id}",
+        f"badges:{user_id}",
+        f"intel:{user_id}",
+    ]
+    current_year = datetime.now(timezone.utc).year
+    for year in range(current_year - 2, current_year + 1):
+        keys.append(f"contributions:{user_id}:{year}")
+
+    for key in keys:
+        cache_delete(key)

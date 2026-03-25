@@ -40,6 +40,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 const TimeAnalytics = memo(function TimeAnalytics({ data }: Props) {
   const [view, setView] = useState<'daily' | 'weekly' | 'features'>('daily');
+  const hasTrackedTime = data.dailyUsage.some(day => day.totalMinutes > 0 || day.activeMinutes > 0)
+    || data.featureTimeSpent.some(feature => feature.minutes > 0);
+  const formatHour = (hour: number) => {
+    const normalized = ((hour % 24) + 24) % 24;
+    return `${normalized % 12 || 12}${normalized >= 12 ? 'PM' : 'AM'}`;
+  };
+  const peakTimeRange = hasTrackedTime
+    ? `${formatHour(data.peakHour)} - ${formatHour((data.peakHour + 2) % 24)}`
+    : 'No activity yet';
 
   return (
     <motion.div
@@ -82,7 +91,7 @@ const TimeAnalytics = memo(function TimeAnalytics({ data }: Props) {
           { label: 'This Week', value: `${data.totalHoursThisWeek}h`, color: '#06b6d4', icon: '📅' },
           { label: 'This Month', value: `${data.totalHoursThisMonth}h`, color: '#10b981', icon: '📆' },
           { label: 'Avg/Day', value: `${data.avgDailyMinutes}m`, color: '#8b5cf6', icon: '⏰' },
-          { label: 'Peak Time', value: `${data.peakHour > 12 ? data.peakHour - 12 : data.peakHour}${data.peakHour >= 12 ? 'PM' : 'AM'}`, color: '#f59e0b', icon: '🔥' },
+          { label: 'Peak Time', value: hasTrackedTime ? formatHour(data.peakHour) : 'No data', color: '#f59e0b', icon: '🔥' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -220,6 +229,13 @@ const TimeAnalytics = memo(function TimeAnalytics({ data }: Props) {
           animate={{ opacity: 1 }}
           className="flex flex-col sm:flex-row items-center gap-6"
         >
+          {data.featureTimeSpent.length === 0 && (
+            <div className="text-sm text-white/35 py-8 text-center w-full">
+              No real feature time has been tracked yet.
+            </div>
+          )}
+          {data.featureTimeSpent.length > 0 && (
+            <>
           <div className="h-[250px] w-full sm:w-1/2">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -273,6 +289,8 @@ const TimeAnalytics = memo(function TimeAnalytics({ data }: Props) {
               </motion.div>
             ))}
           </div>
+            </>
+          )}
         </motion.div>
       )}
 
@@ -283,8 +301,7 @@ const TimeAnalytics = memo(function TimeAnalytics({ data }: Props) {
         </span>
         <span className="text-white/40">
           Peak hours: <span className="text-cyan-400 font-medium">
-            {data.peakHour > 12 ? data.peakHour - 12 : data.peakHour}{data.peakHour >= 12 ? 'PM' : 'AM'} -
-            {' '}{(data.peakHour + 2) % 24 > 12 ? (data.peakHour + 2) % 24 - 12 : (data.peakHour + 2) % 24}{(data.peakHour + 2) % 24 >= 12 ? 'PM' : 'AM'}
+            {peakTimeRange}
           </span>
         </span>
       </div>

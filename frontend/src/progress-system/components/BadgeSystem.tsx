@@ -126,6 +126,9 @@ function BadgeCard({ badge, index }: { badge: Badge; index: number }) {
 const BadgeSystem = memo(function BadgeSystem({ data }: Props) {
   const [filter, setFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const completionPercent = data.totalBadges > 0
+    ? Math.round((data.totalUnlocked / data.totalBadges) * 100)
+    : 0;
 
   const categories = ['all', ...new Set(data.badges.map(b => b.category))];
 
@@ -165,12 +168,12 @@ const BadgeSystem = memo(function BadgeSystem({ data }: Props) {
               className="h-full rounded-full"
               style={{ background: 'linear-gradient(90deg, #6366f1, #a855f7)' }}
               initial={{ width: 0 }}
-              animate={{ width: `${(data.totalUnlocked / data.totalBadges) * 100}%` }}
+              animate={{ width: `${completionPercent}%` }}
               transition={{ duration: 1.5 }}
             />
           </div>
           <span className="text-xs text-white/50">
-            {Math.round((data.totalUnlocked / data.totalBadges) * 100)}%
+            {completionPercent}%
           </span>
         </div>
       </div>

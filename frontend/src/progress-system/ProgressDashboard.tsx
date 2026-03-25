@@ -3,16 +3,16 @@
 // Now powered by real-time event-driven analytics engine
 // ══════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useCallback, Suspense, lazy, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   fetchDashboard,
   getProgressDashboardData,
   fetchContributions,
-  touchStreak,
 } from './services/progressApi';
-import { initProgressTracking, trackPageVisit } from './services/eventTracker';
+import { PROGRESS_UPDATE_EVENT } from './services/eventTracker';
 import type { ProgressDashboardData } from './types';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 // ── Lazy-loaded components for code splitting ─────────────────
 const ContributionHeatmap = lazy(() => import('./components/ContributionHeatmap'));
@@ -44,6 +44,31 @@ function SectionSkeleton() {
   );
 }
 
+function SectionFallback({ title }: { title: string }) {
+  return (
+    <div
+      className="rounded-2xl p-6"
+      style={{
+        background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
+        border: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      <div className="text-sm font-semibold text-white mb-2">{title}</div>
+      <div className="text-xs text-white/40">
+        This section hit a rendering issue. Refresh to retry.
+      </div>
+    </div>
+  );
+}
+
+function SectionBoundary({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <ErrorBoundary moduleName={title} fallback={<SectionFallback title={title} />}>
+      {children}
+    </ErrorBoundary>
+  );
+}
+
 // ── Tab Navigation ────────────────────────────────────────────
 type DashboardTab = 'overview' | 'problems' | 'skills' | 'time' | 'activity' | 'badges' | 'insights';
 
@@ -64,16 +89,24 @@ export default function ProgressDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
 
-  // Initialize event tracking & fetch real data
+  const refreshDashboard = useCallback(async (showLoading = false) => {
+    if (showLoading) {
+      setIsLoading(true);
+    }
+    try {
+      const freshData = await fetchDashboard(true);
+      setData(freshData);
+      setIsLive(true);
+    } catch {
+      setData(getProgressDashboardData(true));
+    } finally {
+      if (showLoading) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
-    // Start event tracking
-    initProgressTracking();
-    trackPageVisit('Progress Dashboard');
-
-    // Touch streak on load
-    touchStreak().catch(() => {});
-
-    // Fetch real dashboard data
     let cancelled = false;
     (async () => {
       try {
@@ -83,13 +116,17 @@ export default function ProgressDashboard() {
           setIsLive(true);
         }
       } catch {
-        // Mock data is already loaded as fallback
+        // Empty fallback data is already loaded locally.
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleYearChange = useCallback(async (year: number) => {
@@ -102,17 +139,36 @@ export default function ProgressDashboard() {
   }, []);
 
   const handleRefresh = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const freshData = await fetchDashboard(true);
-      setData(freshData);
-      setIsLive(true);
-    } catch {
-      setData(getProgressDashboardData(true));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    await refreshDashboard(true);
+  }, [refreshDashboard]);
+
+  useEffect(() => {
+    const handleExternalUpdate = () => {
+      void refreshDashboard(false);
+    };
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        void refreshDashboard(false);
+      }
+    };
+
+    window.addEventListener(PROGRESS_UPDATE_EVENT, handleExternalUpdate as EventListener);
+    window.addEventListener('focus', handleExternalUpdate);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const pollId = window.setInterval(() => {
+      if (!document.hidden) {
+        void refreshDashboard(false);
+      }
+    }, 15000);
+
+    return () => {
+      window.removeEventListener(PROGRESS_UPDATE_EVENT, handleExternalUpdate as EventListener);
+      window.removeEventListener('focus', handleExternalUpdate);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(pollId);
+    };
+  }, [refreshDashboard]);
 
   // Summary stats for the header
   const headerStats = useMemo(() => [
@@ -269,134 +325,174 @@ export default function ProgressDashboard() {
             {/* ── Overview Tab ── */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
+                <SectionBoundary title="Contribution Heatmap">
+                  <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
+                </SectionBoundary>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <StreakDisplay data={data.streak} />
-                  <ProblemSolvingStats data={data.problemSolving} />
+                  <SectionBoundary title="Streak Engine">
+                    <StreakDisplay data={data.streak} />
+                  </SectionBoundary>
+                  <SectionBoundary title="Problem Solving Stats">
+                    <ProblemSolvingStats data={data.problemSolving} />
+                  </SectionBoundary>
                 </div>
-                <ActivityTracking data={data.activity} />
+                <SectionBoundary title="Activity Tracking">
+                  <ActivityTracking data={data.activity} />
+                </SectionBoundary>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <TimeAnalytics data={data.timeAnalytics} />
-                  <TopicBubbleMap data={data.topicMap} />
+                  <SectionBoundary title="Time Analytics">
+                    <TimeAnalytics data={data.timeAnalytics} />
+                  </SectionBoundary>
+                  <SectionBoundary title="Skill Map">
+                    <TopicBubbleMap data={data.topicMap} />
+                  </SectionBoundary>
                 </div>
 
                 {/* Badge highlights */}
-                <div
-                  className="rounded-2xl p-5"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                      🏆 Recent Achievements
-                    </h3>
-                    <button
-                      onClick={() => setActiveTab('badges')}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                    >
-                      View all →
-                    </button>
-                  </div>
-                  <div className="flex gap-3 flex-wrap">
-                    {data.badges.recentlyUnlocked.map((badge, i) => (
-                      <motion.div
-                        key={badge.id}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: i * 0.1 }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                        style={{
-                          background: 'rgba(255,255,255,0.04)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                        }}
+                <SectionBoundary title="Recent Achievements">
+                  <div
+                    className="rounded-2xl p-5"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                        🏆 Recent Achievements
+                      </h3>
+                      <button
+                        onClick={() => setActiveTab('badges')}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                       >
-                        <span className="text-xl">{badge.icon}</span>
-                        <div>
-                          <div className="text-xs font-medium text-white">{badge.name}</div>
-                          <div className="text-[10px] text-white/30">{badge.description}</div>
+                        View all →
+                      </button>
+                    </div>
+                    <div className="flex gap-3 flex-wrap">
+                      {data.badges.recentlyUnlocked.length === 0 && (
+                        <div className="text-xs text-white/40">
+                          New achievements will appear here after your next milestone.
                         </div>
-                      </motion.div>
-                    ))}
+                      )}
+                      {data.badges.recentlyUnlocked.map((badge, i) => (
+                        <motion.div
+                          key={badge.id}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: i * 0.1 }}
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                          style={{
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                          }}
+                        >
+                          <span className="text-xl">{badge.icon}</span>
+                          <div>
+                            <div className="text-xs font-medium text-white">{badge.name}</div>
+                            <div className="text-[10px] text-white/30">{badge.description}</div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                </SectionBoundary>
 
                 {/* Intelligence preview */}
-                <div
-                  className="rounded-2xl p-5"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                      🧠 Quick Insights
-                    </h3>
-                    <button
-                      onClick={() => setActiveTab('insights')}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                    >
-                      View all →
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {data.intelligence.insights.slice(0, 4).map((insight, i) => (
-                      <motion.div
-                        key={insight.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                        className="flex items-center gap-2.5 p-3 rounded-xl"
-                        style={{
-                          background: 'rgba(255,255,255,0.03)',
-                          border: '1px solid rgba(255,255,255,0.05)',
-                        }}
+                <SectionBoundary title="Quick Insights">
+                  <div
+                    className="rounded-2xl p-5"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                        🧠 Quick Insights
+                      </h3>
+                      <button
+                        onClick={() => setActiveTab('insights')}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                       >
-                        <span className="text-xl">{insight.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-white truncate">{insight.title}</div>
-                          <div className="text-[10px] text-white/35 truncate">{insight.description}</div>
+                        View all →
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {data.intelligence.insights.length === 0 && (
+                        <div className="text-xs text-white/40">
+                          Insights will appear once there is enough real activity to analyze.
                         </div>
-                      </motion.div>
-                    ))}
+                      )}
+                      {data.intelligence.insights.slice(0, 4).map((insight, i) => (
+                        <motion.div
+                          key={insight.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.1 }}
+                          className="flex items-center gap-2.5 p-3 rounded-xl"
+                          style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.05)',
+                          }}
+                        >
+                          <span className="text-xl">{insight.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-white truncate">{insight.title}</div>
+                            <div className="text-[10px] text-white/35 truncate">{insight.description}</div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                </SectionBoundary>
               </div>
             )}
 
             {/* ── Problems Tab ── */}
             {activeTab === 'problems' && (
-              <ProblemSolvingStats data={data.problemSolving} />
+              <SectionBoundary title="Problem Solving Stats">
+                <ProblemSolvingStats data={data.problemSolving} />
+              </SectionBoundary>
             )}
 
             {/* ── Skills Tab ── */}
             {activeTab === 'skills' && (
-              <TopicBubbleMap data={data.topicMap} />
+              <SectionBoundary title="Skill Map">
+                <TopicBubbleMap data={data.topicMap} />
+              </SectionBoundary>
             )}
 
             {/* ── Time Tab ── */}
             {activeTab === 'time' && (
               <div className="space-y-6">
-                <TimeAnalytics data={data.timeAnalytics} />
-                <ActivityTracking data={data.activity} />
+                <SectionBoundary title="Time Analytics">
+                  <TimeAnalytics data={data.timeAnalytics} />
+                </SectionBoundary>
+                <SectionBoundary title="Activity Tracking">
+                  <ActivityTracking data={data.activity} />
+                </SectionBoundary>
               </div>
             )}
 
             {/* ── Activity Tab (NEW) ── */}
             {activeTab === 'activity' && (
-              <ActivityTimeline />
+              <SectionBoundary title="Activity Timeline">
+                <ActivityTimeline />
+              </SectionBoundary>
             )}
 
             {/* ── Badges Tab ── */}
             {activeTab === 'badges' && (
-              <BadgeSystem data={data.badges} />
+              <SectionBoundary title="Achievements">
+                <BadgeSystem data={data.badges} />
+              </SectionBoundary>
             )}
 
             {/* ── Insights Tab ── */}
             {activeTab === 'insights' && (
-              <IntelligentInsights data={data.intelligence} />
+              <SectionBoundary title="Intelligence Hub">
+                <IntelligentInsights data={data.intelligence} />
+              </SectionBoundary>
             )}
           </Suspense>
         </motion.div>

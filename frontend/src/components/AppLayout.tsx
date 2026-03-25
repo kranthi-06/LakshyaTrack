@@ -4,6 +4,11 @@ import { AppSidebar } from './AppSidebar';
 import { AnimatePresence, motion } from 'framer-motion';
 import { GraduationCap } from 'lucide-react';
 import { usePerformanceMode } from '../hooks/usePerformanceMode';
+import {
+    initProgressTracking,
+    stopProgressTracking,
+    trackPageVisit,
+} from '../progress-system/services/eventTracker';
 
 const NetworkBackground = lazy(() => import('./NetworkBackground'));
 
@@ -14,6 +19,27 @@ interface AppLayoutProps {
 }
 
 const SIDEBAR_KEY = 'vm-sidebar-collapsed';
+
+const PAGE_LABELS: Record<string, string> = {
+    '/dashboard': 'Dashboard',
+    '/resume-builder': 'Resume Builder',
+    '/evaluate': 'Skill Evaluation',
+    '/career': 'Career Intelligence',
+    '/learning': 'Learning Hub',
+    '/quiz': 'Quiz',
+    '/interview': 'Interview',
+    '/jobs': 'Jobs',
+    '/progress': 'Progress',
+    '/profile': 'Profile',
+    '/plans': 'Plans',
+    '/english': 'English Speaking',
+    '/reasoning': 'Reasoning',
+    '/progress-dashboard': 'Progress Dashboard',
+};
+
+function getPageLabel(pathname: string): string {
+    return PAGE_LABELS[pathname] || pathname.replace(/^\//, '') || 'Dashboard';
+}
 
 export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
     const [collapsed, setCollapsed] = useState(() => {
@@ -30,6 +56,17 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
     // Close mobile sidebar on route change
     useEffect(() => {
         setMobileOpen(false);
+    }, [location.pathname]);
+
+    useEffect(() => {
+        initProgressTracking();
+        return () => {
+            stopProgressTracking();
+        };
+    }, []);
+
+    useEffect(() => {
+        trackPageVisit(getPageLabel(location.pathname));
     }, [location.pathname]);
 
     // Detect mobile and small screen (debounced)

@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -16,6 +16,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/acce
 LAST_ACTIVE_WRITE_INTERVAL = timedelta(minutes=10)
 _LAST_ACTIVE_MAX_ENTRIES = 10_000  # Bound memory even with millions of users
 _last_active_flush: dict[str, datetime] = {}
+_last_daily_activity_mark: dict[str, date] = {}
 
 def _get_black_admin_emails() -> list:
     """Parse BLACK_ADMIN_EMAILS from env config."""
@@ -142,16 +143,40 @@ def get_current_user(
             or (now - last_flush) >= LAST_ACTIVE_WRITE_INTERVAL
             or (now - user.last_active_at) >= LAST_ACTIVE_WRITE_INTERVAL
         )
-        if should_flush:
-            user.last_active_at = now
-            db.add(user)
-            db.commit()
-            _last_active_flush[user_key] = now
-            # Evict oldest entries when dict grows too large (millions of users)
-            if len(_last_active_flush) > _LAST_ACTIVE_MAX_ENTRIES:
-                sorted_keys = sorted(_last_active_flush, key=_last_active_flush.get)  # type: ignore
-                for k in sorted_keys[:len(sorted_keys) // 2]:
-                    _last_active_flush.pop(k, None)
+        if should_flush or _last_daily_activity_mark.get(user_key) != now.date():
+            if should_flush:
+                user.last_active_at = now
+                db.add(user)
+                db.commit()
+                _last_active_flush[user_key] = now
+                # Evict oldest entries when dict grows too large (millions of users)
+                if len(_last_active_flush) > _LAST_ACTIVE_MAX_ENTRIES:
+                    sorted_keys = sorted(_last_active_flush, key=_last_active_flush.get)  # type: ignore
+                    for k in sorted_keys[:len(sorted_keys) // 2]:
+                        _last_active_flush.pop(k, None)
+
+            # ── TRACK DAILY ACTIVITY (powers heatmap green squares) ──
+            if _last_daily_activity_mark.get(user_key) != now.date():
+                try:
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+                    from app.models.career import UserActivityDay
+                    today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+                    stmt = pg_insert(UserActivityDay).values(
+                        user_id=user.id,
+                        activity_date=today_start,
+                        activity_count=1,
+                    ).on_conflict_do_nothing(
+                        constraint="uq_user_activity_day",
+                    )
+                    db.execute(stmt)
+                    db.commit()
+                    _last_daily_activity_mark[user_key] = now.date()
+                    if len(_last_daily_activity_mark) > _LAST_ACTIVE_MAX_ENTRIES:
+                        oldest_keys = list(_last_daily_activity_mark.keys())[:len(_last_daily_activity_mark) // 2]
+                        for key in oldest_keys:
+                            _last_daily_activity_mark.pop(key, None)
+                except Exception:
+                    db.rollback()
     except Exception:
         db.rollback()
     

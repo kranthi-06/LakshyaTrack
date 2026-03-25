@@ -17,6 +17,7 @@ Security:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -52,6 +53,17 @@ MAX_METADATA_SIZE = 4096
 
 # Dedup window
 DEDUP_WINDOW_SECONDS = 60
+
+MEANINGFUL_EVENT_TYPES = frozenset({
+    "PROBLEM_SOLVED",
+    "QUIZ_COMPLETED",
+    "INTERVIEW_COMPLETED",
+    "ROADMAP_GENERATED",
+    "RESUME_ANALYZED",
+    "CODE_EXECUTED",
+})
+
+IMMEDIATE_PERSIST_EVENT_TYPES = MEANINGFUL_EVENT_TYPES | {"SESSION_END"}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -127,8 +139,24 @@ _recent_event_ids: Dict[str, float] = {}
 
 
 def _compute_dedup_key(event: Dict) -> str:
-    """Create a fingerprint for dedup (user + type + metadata hash)."""
-    raw = f"{event['user_id']}:{event['event_type']}:{event.get('metadata', {}).get('id', '')}"
+    """Create a stable fingerprint for events that may be retried without changing event_id."""
+    timestamp = event.get("timestamp")
+    if isinstance(timestamp, datetime):
+        timestamp = timestamp.astimezone(timezone.utc).isoformat()
+    elif timestamp is None:
+        timestamp = ""
+
+    raw = json.dumps(
+        {
+            "user_id": event["user_id"],
+            "event_type": event["event_type"],
+            "session_id": event.get("session_id"),
+            "timestamp": timestamp,
+            "metadata": event.get("metadata", {}),
+        },
+        sort_keys=True,
+        default=str,
+    )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -190,8 +218,17 @@ def ingest_event(raw_event: Dict[str, Any]) -> Dict[str, Any]:
         # 4. Update real-time counters (non-blocking)
         _update_realtime_counters(event)
 
-        # 5. Invalidate cached dashboard
-        redis_client.invalidate_dashboard(event["user_id"])
+        # 5. Invalidate cached analytics so the next dashboard read is fresh
+        redis_client.invalidate_user_analytics(event["user_id"])
+
+        # 6. Persist high-signal events immediately so dashboard reads are near-real-time.
+        if event["event_type"] in IMMEDIATE_PERSIST_EVENT_TYPES:
+            flush_to_database()
+            try:
+                from .workers import run_daily_aggregation
+                run_daily_aggregation(event["user_id"])
+            except Exception:
+                logger.debug("Daily aggregation skipped after immediate persist.", exc_info=True)
 
         return {
             "status": "accepted",
@@ -234,8 +271,9 @@ def _update_realtime_counters(event: Dict):
     user_id = event["user_id"]
     event_type = event["event_type"]
 
-    # Increment daily activity
-    redis_client.incr_daily_activity(user_id)
+    # Increment daily activity only for meaningful product actions.
+    if event_type in MEANINGFUL_EVENT_TYPES:
+        redis_client.incr_daily_activity(user_id)
 
     # Track session state
     if event_type == "SESSION_START":
@@ -244,11 +282,6 @@ def _update_realtime_counters(event: Dict):
         )
     elif event_type == "SESSION_END":
         redis_client.end_active_session(event["session_id"])
-
-    # Invalidate streak cache on activity events
-    activity_events = {"PROBLEM_SOLVED", "QUIZ_COMPLETED", "FEATURE_USED", "CODE_EXECUTED"}
-    if event_type in activity_events:
-        redis_client.invalidate_streak_cache(user_id)
 
 
 # ══════════════════════════════════════════════════════════════

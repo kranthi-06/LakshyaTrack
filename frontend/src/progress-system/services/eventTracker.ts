@@ -5,6 +5,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import api from '../../services/api';
+import { invalidateCache } from './progressApi';
 
 // ── Event Types ──────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ export interface ProgressEvent {
   timestamp?: string;
   event_id?: string;
 }
+
+export const PROGRESS_UPDATE_EVENT = 'progress-intelligence:update';
 
 // ── UUID generator (no external dep) ─────────────────────────
 
@@ -62,6 +65,20 @@ let _isSessionActive = false;
 let _idleTimer: ReturnType<typeof setTimeout> | null = null;
 let _isIdle = false;
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const;
+const IMMEDIATE_FLUSH_EVENTS = new Set<ProgressEventType>([
+  'QUIZ_COMPLETED',
+  'INTERVIEW_COMPLETED',
+  'PROBLEM_SOLVED',
+  'ROADMAP_GENERATED',
+  'RESUME_ANALYZED',
+  'CODE_EXECUTED',
+  'SESSION_END',
+]);
+
+let _activityHandler: (() => void) | null = null;
+let _visibilityHandler: (() => void) | null = null;
+let _beforeUnloadHandler: (() => void) | null = null;
 
 export function getSessionId(): string {
   return _sessionId;
@@ -71,7 +88,7 @@ export function getSessionId(): string {
 
 const _eventBuffer: ProgressEvent[] = [];
 const BUFFER_MAX_SIZE = 20;
-const BUFFER_FLUSH_INTERVAL_MS = 30_000; // 30 seconds
+const BUFFER_FLUSH_INTERVAL_MS = 5_000;
 let _flushTimer: ReturnType<typeof setInterval> | null = null;
 
 async function _flushBuffer(): Promise<void> {
@@ -118,7 +135,12 @@ export function trackEvent(
 
   // Auto-flush when buffer is full
   if (_eventBuffer.length >= BUFFER_MAX_SIZE) {
-    _flushBuffer();
+    void _flushBuffer();
+  }
+
+  if (IMMEDIATE_FLUSH_EVENTS.has(eventType)) {
+    void _flushBuffer();
+    notifyProgressDataChanged(eventType);
   }
 }
 
@@ -201,6 +223,15 @@ function _resetIdleTimer(): void {
   }, IDLE_TIMEOUT_MS);
 }
 
+export function notifyProgressDataChanged(reason = 'activity'): void {
+  invalidateCache('dashboard');
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PROGRESS_UPDATE_EVENT, {
+      detail: { reason, timestamp: Date.now() },
+    }));
+  }
+}
+
 /**
  * Initialize event tracking. Call once at app startup.
  */
@@ -217,12 +248,12 @@ export function initProgressTracking(): void {
 
   // Track idle/active
   if (typeof window !== 'undefined') {
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const;
-    events.forEach((ev) => window.addEventListener(ev, _resetIdleTimer, { passive: true }));
+    _activityHandler = () => _resetIdleTimer();
+    ACTIVITY_EVENTS.forEach((ev) => window.addEventListener(ev, _activityHandler!, { passive: true }));
     _resetIdleTimer();
 
     // Flush on page unload
-    window.addEventListener('beforeunload', () => {
+    _beforeUnloadHandler = () => {
       trackEvent('SESSION_END', {});
       // Sync flush on unload (navigator.sendBeacon for reliability)
       const token = localStorage.getItem('token');
@@ -249,17 +280,19 @@ export function initProgressTracking(): void {
         }
         _eventBuffer.length = 0;
       }
-    });
+    };
+    window.addEventListener('beforeunload', _beforeUnloadHandler);
 
     // Track visibility changes (tab switch = idle)
-    document.addEventListener('visibilitychange', () => {
+    _visibilityHandler = () => {
       if (document.hidden) {
         trackEvent('IDLE', {});
       } else {
         trackEvent('ACTIVE', {});
         _resetIdleTimer();
       }
-    });
+    };
+    document.addEventListener('visibilitychange', _visibilityHandler);
   }
 }
 
@@ -270,7 +303,7 @@ export function stopProgressTracking(): void {
   if (!_isSessionActive) return;
 
   trackEvent('SESSION_END', {});
-  _flushBuffer();
+  void _flushBuffer();
 
   if (_flushTimer) {
     clearInterval(_flushTimer);
@@ -280,5 +313,17 @@ export function stopProgressTracking(): void {
     clearTimeout(_idleTimer);
     _idleTimer = null;
   }
+  if (typeof window !== 'undefined' && _activityHandler) {
+    ACTIVITY_EVENTS.forEach((ev) => window.removeEventListener(ev, _activityHandler!));
+  }
+  if (typeof document !== 'undefined' && _visibilityHandler) {
+    document.removeEventListener('visibilitychange', _visibilityHandler);
+  }
+  if (typeof window !== 'undefined' && _beforeUnloadHandler) {
+    window.removeEventListener('beforeunload', _beforeUnloadHandler);
+  }
+  _activityHandler = null;
+  _visibilityHandler = null;
+  _beforeUnloadHandler = null;
   _isSessionActive = false;
 }
