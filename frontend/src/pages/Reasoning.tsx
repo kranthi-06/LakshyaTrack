@@ -64,6 +64,63 @@ function getDifficultyColor(d: string) {
   return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
 }
 
+function splitExplanationIntoSteps(text: string): string[] {
+  const normalized = (text || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const segmented = normalized
+    .replace(/([^\n])\s+(Step\s*\d+\s*[:.-])/gi, '$1\n$2')
+    .replace(/([^\n])\s+(\d+[.)]\s+)/g, '$1\n$2');
+
+  const lines = segmented
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const steps: string[] = [];
+  let intro = '';
+
+  for (const line of lines) {
+    const match = line.match(/^(?:Step\s*\d+\s*[:.-]?\s*|(?:\d+)[.)]\s*)(.*)$/i);
+    if (match) {
+      steps.push(match[1].trim());
+      continue;
+    }
+
+    if (!steps.length) {
+      intro = intro ? `${intro} ${line}` : line;
+      continue;
+    }
+
+    const lastStepIndex = steps.length - 1;
+    steps[lastStepIndex] = `${steps[lastStepIndex]} ${line}`.trim();
+  }
+
+  if (intro && steps.length) {
+    steps[0] = `${intro} ${steps[0]}`.trim();
+  }
+
+  return steps;
+}
+
+function ExplanationBody({ text }: { text: string }) {
+  const steps = splitExplanationIntoSteps(text);
+
+  if (!steps.length) {
+    return <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">{text}</div>;
+  }
+
+  return (
+    <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-300 marker:text-slate-500">
+      {steps.map((step, index) => (
+        <li key={`${index}-${step.slice(0, 24)}`} className="pl-1">
+          {step}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════
    QUESTION CARD (Learn/Practice mode — show explanation)
    ═══════════════════════════════════════════════════════════════ */
@@ -139,7 +196,7 @@ function QuestionCard({ question, index, total, onAnswer }: {
                   {isCorrect ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                   {isCorrect ? 'Correct!' : `Incorrect — Correct answer is ${correct}`}
                 </p>
-                <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">{question.explanation}</div>
+                <ExplanationBody text={question.explanation} />
               </div>
             </motion.div>
           )}
@@ -266,9 +323,7 @@ function LearnCard({ question, index }: { question: Question; index: number }) {
                 <p className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
                   <Lightbulb className="w-4 h-4" /> Step-by-Step Solution
                 </p>
-                <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-                  {question.explanation}
-                </div>
+                <ExplanationBody text={question.explanation} />
 
                 {/* AI Explain More */}
                 <div className="pt-2 border-t border-emerald-500/10">
@@ -277,7 +332,7 @@ function LearnCard({ question, index }: { question: Question; index: number }) {
                     {aiExplaining
                       ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       : <MessageSquareText className="w-3.5 h-3.5" />}
-                    {aiExplanation ? 'AI Explanation ↓' : 'Explain More with AI'}
+                    {aiExplanation ? 'AI Explanation' : 'Explain More with AI'}
                   </button>
 
                   <AnimatePresence>
@@ -289,8 +344,8 @@ function LearnCard({ question, index }: { question: Question; index: number }) {
                         transition={{ duration: 0.25 }}
                         className="overflow-hidden"
                       >
-                        <div className="mt-3 p-3 rounded-lg bg-[#6C63FF]/5 border border-[#6C63FF]/15 text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-                          {aiExplanation}
+                        <div className="mt-3 p-3 rounded-lg bg-[#6C63FF]/5 border border-[#6C63FF]/15">
+                          <ExplanationBody text={aiExplanation} />
                         </div>
                       </motion.div>
                     )}
