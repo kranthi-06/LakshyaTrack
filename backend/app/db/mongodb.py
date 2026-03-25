@@ -20,6 +20,10 @@ REQUIRED_COLLECTIONS = (
     "reasoning_questions",
     "reasoning_tests",
     "reasoning_user_progress",
+    # Progress Engine collections
+    "pe_events",
+    "pe_daily_aggregates",
+    "pe_badges",
 )
 
 _mongo_client: Optional[MongoClient] = None

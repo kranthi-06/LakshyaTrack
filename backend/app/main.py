@@ -118,6 +118,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping background scheduler in Vercel serverless runtime.")
 
+    # 4. Progress Engine background scheduler
+    if not _is_vercel_runtime():
+        try:
+            from app.progress_engine.scheduler import start_scheduler as start_pe_scheduler
+            start_pe_scheduler()
+            logger.info("Progress Engine scheduler: OK")
+        except Exception:
+            logger.exception("Progress Engine scheduler failed to start (non-fatal).")
+
     logger.info("=== LakshyaTrack API Ready ===")
 
     yield  # ── Application runs here ──
@@ -132,6 +141,14 @@ async def lifespan(app: FastAPI):
             logger.info("Background scheduler stopped.")
         except Exception:
             pass
+
+    # Stop Progress Engine scheduler
+    try:
+        from app.progress_engine.scheduler import stop_scheduler as stop_pe_scheduler
+        stop_pe_scheduler()
+        logger.info("Progress Engine scheduler stopped.")
+    except Exception:
+        pass
 
     # Close MongoDB
     try:

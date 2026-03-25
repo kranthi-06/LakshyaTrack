@@ -1,10 +1,17 @@
 // ══════════════════════════════════════════════════════════════
 // Progress Intelligence Dashboard — Main Page Component
+// Now powered by real-time event-driven analytics engine
 // ══════════════════════════════════════════════════════════════
 
-import { useState, useMemo, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getProgressDashboardData, getContributionsByYear } from './services/progressApi';
+import {
+  fetchDashboard,
+  getProgressDashboardData,
+  fetchContributions,
+  touchStreak,
+} from './services/progressApi';
+import { initProgressTracking, trackPageVisit } from './services/eventTracker';
 import type { ProgressDashboardData } from './types';
 
 // ── Lazy-loaded components for code splitting ─────────────────
@@ -16,6 +23,7 @@ const TopicBubbleMap = lazy(() => import('./components/TopicBubbleMap'));
 const TimeAnalytics = lazy(() => import('./components/TimeAnalytics'));
 const ActivityTracking = lazy(() => import('./components/ActivityTracking'));
 const IntelligentInsights = lazy(() => import('./components/IntelligentInsights'));
+const ActivityTimeline = lazy(() => import('./components/ActivityTimeline'));
 
 // ── Section Loading Skeleton ──────────────────────────────────
 function SectionSkeleton() {
@@ -37,13 +45,14 @@ function SectionSkeleton() {
 }
 
 // ── Tab Navigation ────────────────────────────────────────────
-type DashboardTab = 'overview' | 'problems' | 'skills' | 'time' | 'badges' | 'insights';
+type DashboardTab = 'overview' | 'problems' | 'skills' | 'time' | 'activity' | 'badges' | 'insights';
 
 const TABS: { id: DashboardTab; label: string; icon: string }[] = [
   { id: 'overview', label: 'Overview', icon: '🏠' },
   { id: 'problems', label: 'Problems', icon: '🧩' },
   { id: 'skills', label: 'Skills', icon: '🫧' },
   { id: 'time', label: 'Time', icon: '⏱️' },
+  { id: 'activity', label: 'Activity', icon: '📋' },
   { id: 'badges', label: 'Badges', icon: '🏆' },
   { id: 'insights', label: 'Insights', icon: '🧠' },
 ];
@@ -52,16 +61,57 @@ const TABS: { id: DashboardTab; label: string; icon: string }[] = [
 export default function ProgressDashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [data, setData] = useState<ProgressDashboardData>(() => getProgressDashboardData());
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
 
-  const handleYearChange = useCallback((year: number) => {
-    setData(prev => ({
-      ...prev,
-      contributions: getContributionsByYear(year),
-    }));
+  // Initialize event tracking & fetch real data
+  useEffect(() => {
+    // Start event tracking
+    initProgressTracking();
+    trackPageVisit('Progress Dashboard');
+
+    // Touch streak on load
+    touchStreak().catch(() => {});
+
+    // Fetch real dashboard data
+    let cancelled = false;
+    (async () => {
+      try {
+        const realData = await fetchDashboard();
+        if (!cancelled) {
+          setData(realData);
+          setIsLive(true);
+        }
+      } catch {
+        // Mock data is already loaded as fallback
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, []);
 
-  const handleRefresh = useCallback(() => {
-    setData(getProgressDashboardData(true));
+  const handleYearChange = useCallback(async (year: number) => {
+    try {
+      const contributions = await fetchContributions(year);
+      setData(prev => ({ ...prev, contributions }));
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const freshData = await fetchDashboard(true);
+      setData(freshData);
+      setIsLive(true);
+    } catch {
+      setData(getProgressDashboardData(true));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   // Summary stats for the header
@@ -105,7 +155,7 @@ export default function ProgressDashboard() {
         transition={{ duration: 0.6 }}
         className="mb-6"
       >
-        {/* Title + refresh */}
+        {/* Title + refresh + live indicator */}
         <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
@@ -118,23 +168,30 @@ export default function ProgressDashboard() {
               </motion.span>
               Progress Intelligence
             </h1>
-            <p className="text-sm text-white/40 mt-1">
+            <p className="text-sm text-white/40 mt-1 flex items-center gap-2">
               Your performance analytics & growth insights
+              {isLive && (
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  LIVE
+                </span>
+              )}
             </p>
           </div>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={handleRefresh}
-            className="px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-all"
+            disabled={isLoading}
+            className="px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-all disabled:opacity-50"
             style={{
               background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.15))',
               border: '1px solid rgba(99,102,241,0.2)',
               color: '#a5b4fc',
             }}
           >
-            <span className="text-base">🔄</span>
-            Refresh
+            <span className={`text-base ${isLoading ? 'animate-spin' : ''}`}>🔄</span>
+            {isLoading ? 'Loading...' : 'Refresh'}
           </motion.button>
         </div>
 
@@ -212,25 +269,18 @@ export default function ProgressDashboard() {
             {/* ── Overview Tab ── */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Contribution Heatmap — full width */}
                 <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
-
-                {/* Two-column: Streak + Problem Stats */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <StreakDisplay data={data.streak} />
                   <ProblemSolvingStats data={data.problemSolving} />
                 </div>
-
-                {/* Activity Tracking */}
                 <ActivityTracking data={data.activity} />
-
-                {/* Two-column: Time Analytics + Topic Map */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <TimeAnalytics data={data.timeAnalytics} />
                   <TopicBubbleMap data={data.topicMap} />
                 </div>
 
-                {/* Badge highlights (compact) */}
+                {/* Badge highlights */}
                 <div
                   className="rounded-2xl p-5"
                   style={{
@@ -334,6 +384,11 @@ export default function ProgressDashboard() {
               </div>
             )}
 
+            {/* ── Activity Tab (NEW) ── */}
+            {activeTab === 'activity' && (
+              <ActivityTimeline />
+            )}
+
             {/* ── Badges Tab ── */}
             {activeTab === 'badges' && (
               <BadgeSystem data={data.badges} />
@@ -349,7 +404,8 @@ export default function ProgressDashboard() {
 
       {/* ── Footer ────────────────────────────────────────────── */}
       <div className="mt-8 text-center text-xs text-white/20">
-        Last updated: {new Date(data.lastUpdated).toLocaleString()} · Progress Intelligence Dashboard v1.0
+        Last updated: {new Date(data.lastUpdated).toLocaleString()} · Progress Intelligence Dashboard v2.0
+        {isLive && ' · Real-Time Engine Connected'}
       </div>
     </div>
   );

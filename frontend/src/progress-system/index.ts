@@ -11,5 +11,8 @@ export { default as TopicBubbleMap } from './components/TopicBubbleMap';
 export { default as TimeAnalytics } from './components/TimeAnalytics';
 export { default as ActivityTracking } from './components/ActivityTracking';
 export { default as IntelligentInsights } from './components/IntelligentInsights';
+export { default as ActivityTimeline } from './components/ActivityTimeline';
 export * from './types';
 export * from './services/progressApi';
+export * from './services/eventTracker';
+
