@@ -268,7 +268,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                   </motion.text>
                 )}
 
-                {/* Sub-label (problem count) */}
+                {/* Sub-label (quiz count) */}
                 {b.r > 40 && (
                   <motion.text
                     x={b.x}
@@ -283,7 +283,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                     animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.04 + 0.6 }}
                   >
-                    {b.topic.problemsSolved} solved
+                    {b.topic.problemsSolved} passed
                   </motion.text>
                 )}
               </g>
@@ -335,7 +335,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="rounded-lg p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
                   <div className="text-lg font-bold text-white">{selectedTopic.problemsSolved}</div>
-                  <div className="text-xs text-white/40">Problems</div>
+                  <div className="text-xs text-white/40">Quizzes Passed</div>
                 </div>
                 <div className="rounded-lg p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
                   <div className="text-lg font-bold text-white">
@@ -353,7 +353,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                   <div className="text-lg font-bold text-white">
                     {Math.round(selectedTopic.problemsSolved / Math.max(1, selectedTopic.timeSpentMinutes / 60) * 10) / 10}
                   </div>
-                  <div className="text-xs text-white/40">Problems/hr</div>
+                  <div className="text-xs text-white/40">Quizzes/hr</div>
                 </div>
               </div>
 

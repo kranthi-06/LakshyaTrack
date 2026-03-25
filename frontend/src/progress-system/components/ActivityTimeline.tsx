@@ -111,7 +111,7 @@ function EmptyTimeline() {
       <div className="text-5xl mb-4">📭</div>
       <h3 className="text-lg font-semibold text-white/70 mb-2">No Activity Yet</h3>
       <p className="text-sm text-white/40 max-w-xs">
-        Start solving problems, taking quizzes, or using features to see your activity here.
+        Start taking quizzes, practicing interviews, or building resumes to see your activity here.
       </p>
     </motion.div>
   );

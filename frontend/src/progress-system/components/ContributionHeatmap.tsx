@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-// GitHub-Style Contribution Heatmap Component
+// Activity Heatmap Component — LakshyaTrack Platform
 // ══════════════════════════════════════════════════════════════
 
 import { useState, useMemo, useCallback, memo } from 'react';
@@ -124,7 +124,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
         <div>
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <span className="text-xl">📊</span>
-            {data.totalContributions.toLocaleString()} contributions in {data.year}
+            {data.totalContributions.toLocaleString()} activities in {data.year}
           </h3>
         </div>
 
@@ -260,7 +260,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
           className="space-y-3"
         >
           <p className="text-sm text-white/50">
-            {monthlyTotal} contributions in {MONTH_LABELS[selectedMonth]} {data.year}
+            {monthlyTotal} activities in {MONTH_LABELS[selectedMonth]} {data.year}
           </p>
           <div className="grid grid-cols-7 gap-2">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
@@ -282,7 +282,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                   color: cell.level > 0 ? 'white' : 'rgba(255,255,255,0.2)',
                   border: `1px solid ${cell.level > 0 ? 'rgba(57,211,83,0.2)' : 'rgba(255,255,255,0.05)'}`,
                 }}
-                title={`${cell.date}: ${cell.count} contributions`}
+                title={`${cell.date}: ${cell.count} activities`}
               >
                 {new Date(cell.date).getDate()}
               </motion.div>
@@ -332,7 +332,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
             }}
           >
-            <div className="font-semibold">{tooltip.data.count} contribution{tooltip.data.count !== 1 ? 's' : ''}</div>
+            <div className="font-semibold">{tooltip.data.count} activit{tooltip.data.count !== 1 ? 'ies' : 'y'}</div>
             <div className="text-white/60 mt-0.5">
               {new Date(tooltip.data.date).toLocaleDateString('en-US', {
                 weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'

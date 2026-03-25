@@ -16,7 +16,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone, date, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func as sql_func
+from sqlalchemy import func as sql_func, Integer
 from sqlalchemy.orm import Session
 
 from app.db.mongodb import get_collection
@@ -457,12 +457,54 @@ def get_time_analytics(user_id: str) -> Dict:
         "totalHoursThisWeek": round(this_week_mins / 60, 1),
         "totalHoursThisMonth": round(this_month_mins / 60, 1),
         "avgDailyMinutes": round(this_month_mins / 30, 1),
-        "peakHour": 20,
-        "peakDay": "Wednesday",
+        "peakHour": _compute_peak_hour(user_id),
+        "peakDay": _compute_peak_day(daily_map),
     }
 
     redis_client.cache_json_set(cache_key, result, ttl_seconds=300)
     return result
+
+
+def _compute_peak_hour(user_id: str) -> int:
+    """Find the hour with most activity from real quiz/interview timestamps."""
+    db = _get_db()
+    try:
+        hour_counts: Dict[int, int] = defaultdict(int)
+        quizzes = db.query(QuizAttempt.attempted_at).filter(
+            QuizAttempt.user_id == user_id
+        ).all()
+        for (ts,) in quizzes:
+            if ts:
+                hour_counts[ts.hour] += 1
+
+        interviews = db.query(InterviewSession.completed_at).filter(
+            InterviewSession.user_id == user_id
+        ).all()
+        for (ts,) in interviews:
+            if ts:
+                hour_counts[ts.hour] += 1
+    finally:
+        db.close()
+
+    if not hour_counts:
+        return 20  # default if no data
+    return max(hour_counts, key=hour_counts.get)
+
+
+def _compute_peak_day(daily_map: Dict[str, int]) -> str:
+    """Find the day of week with most activity minutes."""
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_totals: Dict[int, int] = defaultdict(int)
+    for d_str, mins in daily_map.items():
+        try:
+            dt = date.fromisoformat(d_str)
+            day_totals[dt.weekday()] += mins
+        except (ValueError, TypeError):
+            continue
+    if not day_totals:
+        return "Not enough data"
+    peak_idx = max(day_totals, key=day_totals.get)
+    return day_names[peak_idx]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -574,8 +616,7 @@ def _categorize_skill(name: str) -> str:
     return "Technical"
 
 
-# Need Integer type for cast
-from sqlalchemy import Integer
+
 
 
 # ══════════════════════════════════════════════════════════════

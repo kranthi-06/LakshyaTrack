@@ -1,5 +1,6 @@
 // ══════════════════════════════════════════════════════════════
-// LeetCode-Style Problem Solving Analytics Component
+// Learning Analytics Component — LakshyaTrack Platform
+// Displays quiz attempts, interview sessions, and overall progress
 // ══════════════════════════════════════════════════════════════
 
 import { useState, memo } from 'react';
@@ -88,19 +89,19 @@ function CircularProgress({
 }
 
 const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'submissions'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'recent'>('overview');
 
   const difficultyConfig = {
-    easy: { color: '#10b981', label: 'Easy', bgGlow: 'rgba(16,185,129,0.1)' },
-    medium: { color: '#f59e0b', label: 'Medium', bgGlow: 'rgba(245,158,11,0.1)' },
-    hard: { color: '#ef4444', label: 'Hard', bgGlow: 'rgba(239,68,68,0.1)' },
+    easy: { color: '#10b981', label: 'Beginner', bgGlow: 'rgba(16,185,129,0.1)' },
+    medium: { color: '#f59e0b', label: 'Intermediate', bgGlow: 'rgba(245,158,11,0.1)' },
+    hard: { color: '#ef4444', label: 'Advanced', bgGlow: 'rgba(239,68,68,0.1)' },
   };
 
   const statusColors: Record<string, { color: string; label: string }> = {
-    accepted: { color: '#10b981', label: 'Accepted' },
-    wrong_answer: { color: '#ef4444', label: 'Wrong Answer' },
-    time_limit: { color: '#f59e0b', label: 'Time Limit' },
-    runtime_error: { color: '#8b5cf6', label: 'Runtime Error' },
+    accepted: { color: '#10b981', label: 'Passed' },
+    wrong_answer: { color: '#ef4444', label: 'Failed' },
+    time_limit: { color: '#f59e0b', label: 'Incomplete' },
+    runtime_error: { color: '#8b5cf6', label: 'Error' },
   };
 
   const totalPercentage = ((data.totalSolved / data.totalAvailable) * 100).toFixed(1);
@@ -120,11 +121,11 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <span className="text-xl">🧩</span>
-          Problem Solving
+          <span className="text-xl">📊</span>
+          Learning Analytics
         </h3>
         <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
-          {(['overview', 'submissions'] as const).map(tab => (
+          {(['overview', 'recent'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -145,8 +146,8 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
           {/* Main stats row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             {[
-              { label: 'Total Solved', value: data.totalSolved, color: '#6366f1', icon: '✅' },
-              { label: 'Submissions', value: data.totalSubmissions, color: '#06b6d4', icon: '📝' },
+              { label: 'Completed', value: data.totalSolved, color: '#6366f1', icon: '✅' },
+              { label: 'Attempts', value: data.totalSubmissions, color: '#06b6d4', icon: '📝' },
               { label: 'Acceptance', value: `${data.acceptanceRate}%`, color: '#10b981', icon: '🎯' },
               { label: 'Progress', value: `${totalPercentage}%`, color: '#f59e0b', icon: '📈' },
             ].map((stat, i) => (
@@ -213,7 +214,7 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
         </>
       )}
 
-      {activeTab === 'submissions' && (
+      {activeTab === 'recent' && (
         <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
           {data.recentSubmissions.map((sub, i) => (
             <motion.div
