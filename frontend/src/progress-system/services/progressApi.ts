@@ -1,4 +1,4 @@
-// ══════════════════════════════════════════════════════════════
+﻿// ══════════════════════════════════════════════════════════════
 // Progress Intelligence Dashboard — Real-Time Data Service
 // Replaces mock data with live API calls to Progress Engine.
 // Falls back to mock data when API is unavailable.
@@ -200,20 +200,9 @@ export async function fetchTimeline(
 }
 
 // ══════════════════════════════════════════════════════════════
-// MOCK DATA FALLBACKS (kept for graceful degradation)
+// FALLBACK DATA — Shown when backend API is unavailable
+// All content is LakshyaTrack-specific (no generic DSA/LeetCode)
 // ══════════════════════════════════════════════════════════════
-
-function randomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function getContributionLevel(count: number): 0 | 1 | 2 | 3 | 4 {
-  if (count === 0) return 0;
-  if (count <= 2) return 1;
-  if (count <= 5) return 2;
-  if (count <= 8) return 3;
-  return 4;
-}
 
 function formatDate(d: Date): string {
   return d.toISOString().split('T')[0];
@@ -226,165 +215,125 @@ function daysAgo(n: number): Date {
 }
 
 function generateContributions(year: number): ContributionData {
+  // Empty heatmap — shows actual activity will fill this in
   const contributions: DailyContribution[] = [];
   const startDate = new Date(year, 0, 1);
   const endDate = new Date(year, 11, 31);
   const now = new Date();
-  let total = 0;
-  let longestStreak = 0;
-  let tempStreak = 0;
 
   for (let d = new Date(startDate); d <= endDate && d <= now; d.setDate(d.getDate() + 1)) {
-    const dayOfWeek = d.getDay();
-    let count = 0;
-    const rand = Math.random();
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-      if (rand < 0.7) count = randomInt(1, 12);
-    } else {
-      if (rand < 0.35) count = randomInt(1, 6);
-    }
-    const month = d.getMonth();
-    if (month >= 1 && month <= 3) count = Math.ceil(count * 1.2);
-    if (month >= 9 && month <= 11) count = Math.ceil(count * 1.3);
-    total += count;
-    if (count > 0) { tempStreak++; longestStreak = Math.max(longestStreak, tempStreak); }
-    else { tempStreak = 0; }
-    contributions.push({ date: formatDate(new Date(d)), count, level: getContributionLevel(count) });
+    contributions.push({ date: formatDate(new Date(d)), count: 0, level: 0 });
   }
 
-  let currentStreak = 0;
-  for (let i = contributions.length - 1; i >= 0; i--) {
-    if (contributions[i].count > 0) currentStreak++; else break;
-  }
-
-  return { contributions, totalContributions: total, longestStreak, currentStreak, year };
+  return { contributions, totalContributions: 0, longestStreak: 0, currentStreak: 0, year };
 }
 
 function generateProblemSolvingStats(): ProblemSolvingStats {
-  const easySolved = randomInt(120, 200);
-  const mediumSolved = randomInt(60, 140);
-  const hardSolved = randomInt(15, 50);
-  const totalSolved = easySolved + mediumSolved + hardSolved;
-  const totalSubmissions = totalSolved + randomInt(100, 300);
-  const difficulties = ['easy', 'medium', 'hard'] as const;
-  const problemNames = ['Two Sum', 'Valid Parentheses', 'Merge Intervals', 'LRU Cache', 'Binary Tree Level Order', 'Longest Substring', 'Container With Most Water', 'Three Sum', 'Reverse Linked List', 'Maximum Subarray'];
-  const languages = ['Python', 'JavaScript', 'Java', 'C++', 'TypeScript'];
-  const recentSubmissions = Array.from({ length: 15 }, (_, i) => ({
-    id: `sub-${i}`, title: problemNames[randomInt(0, problemNames.length - 1)],
-    difficulty: difficulties[randomInt(0, 2)], status: (i < 10 ? 'accepted' : ['accepted', 'wrong_answer', 'time_limit', 'runtime_error'][randomInt(0, 3)]) as any,
-    timestamp: daysAgo(randomInt(0, 14)).toISOString(), language: languages[randomInt(0, languages.length - 1)],
-  }));
+  // Empty — all data comes from real quiz_attempts + interview_sessions
   return {
-    totalSolved, totalAvailable: 2850, acceptanceRate: Math.round((totalSolved / totalSubmissions) * 100 * 10) / 10,
-    totalSubmissions, difficulty: { easy: { solved: easySolved, total: 750 }, medium: { solved: mediumSolved, total: 1500 }, hard: { solved: hardSolved, total: 600 } },
-    recentSubmissions,
+    totalSolved: 0, totalAvailable: 100,
+    acceptanceRate: 0, totalSubmissions: 0,
+    difficulty: {
+      easy: { solved: 0, total: 50 },      // Beginner quizzes
+      medium: { solved: 0, total: 80 },    // Intermediate quizzes
+      hard: { solved: 0, total: 40 },      // Advanced quizzes
+    },
+    recentSubmissions: [],
   };
 }
 
 function generateActivitySummary(): ActivitySummary {
   return {
-    totalSessions: randomInt(150, 400), avgSessionDuration: randomInt(25, 90),
-    totalActiveTime: randomInt(5000, 15000), totalIdleTime: randomInt(500, 2000),
-    mostVisitedPages: [{ page: 'Quiz', count: randomInt(80, 200) }, { page: 'Interview', count: randomInt(60, 150) }, { page: 'Resume Builder', count: randomInt(40, 120) }, { page: 'Career Intelligence', count: randomInt(30, 100) }, { page: 'Learning Hub', count: randomInt(20, 80) }, { page: 'Reasoning', count: randomInt(15, 60) }],
-    mostUsedFeatures: [{ feature: 'Quiz Solving', count: randomInt(100, 300) }, { feature: 'Mock Interview', count: randomInt(50, 150) }, { feature: 'Resume Analysis', count: randomInt(30, 100) }, { feature: 'Code Execution', count: randomInt(40, 120) }, { feature: 'AI Chat', count: randomInt(60, 200) }, { feature: 'Roadmap', count: randomInt(20, 80) }],
-    activeDays: randomInt(80, 250),
+    totalSessions: 0, avgSessionDuration: 0,
+    totalActiveTime: 0, totalIdleTime: 0,
+    mostVisitedPages: [
+      { page: 'Quizzes', count: 0 },
+      { page: 'Interview Simulator', count: 0 },
+      { page: 'Resume Studio', count: 0 },
+      { page: 'Learning Roadmaps', count: 0 },
+      { page: 'English Coach', count: 0 },
+      { page: 'Reasoning', count: 0 },
+    ],
+    mostUsedFeatures: [
+      { feature: 'Quiz Solving', count: 0 },
+      { feature: 'Mock Interviews', count: 0 },
+      { feature: 'Resume Analysis', count: 0 },
+      { feature: 'Roadmap Generation', count: 0 },
+      { feature: 'AI Chat', count: 0 },
+      { feature: 'English Practice', count: 0 },
+    ],
+    activeDays: 0,
   };
 }
 
 function generateTimeAnalytics(): TimeAnalyticsData {
-  const dailyUsage = Array.from({ length: 30 }, (_, i) => {
-    const totalMinutes = randomInt(10, 180);
-    return { date: formatDate(daysAgo(29 - i)), totalMinutes, activeMinutes: Math.round(totalMinutes * (0.6 + Math.random() * 0.3)) };
-  });
-  const weeklyTrends = Array.from({ length: 12 }, (_, i) => ({
-    week: `W${i + 1}`, weekStart: formatDate(daysAgo((11 - i) * 7)),
-    totalHours: Math.round((randomInt(5, 25) + Math.random()) * 10) / 10, avgDailyMinutes: randomInt(20, 120),
+  const dailyUsage = Array.from({ length: 30 }, (_, i) => ({
+    date: formatDate(daysAgo(29 - i)), totalMinutes: 0, activeMinutes: 0,
   }));
-  const featureColors = ['#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-  const features = ['Quiz & Problems', 'Interviews', 'Resume Building', 'Learning', 'Code Practice', 'AI Tools'];
-  const totalMins = randomInt(3000, 8000);
-  let remaining = 100;
-  const featureTimeSpent = features.map((feature, i) => {
-    const pct = i === features.length - 1 ? remaining : randomInt(8, Math.min(35, remaining - (features.length - i - 1) * 5));
-    remaining -= pct;
-    return { feature, minutes: Math.round(totalMins * pct / 100), percentage: pct, color: featureColors[i] };
-  });
   return {
-    dailyUsage, weeklyTrends, featureTimeSpent,
-    totalHoursThisWeek: Math.round((randomInt(8, 25) + Math.random()) * 10) / 10,
-    totalHoursThisMonth: Math.round((randomInt(40, 120) + Math.random()) * 10) / 10,
-    avgDailyMinutes: randomInt(30, 120), peakHour: randomInt(19, 23),
-    peakDay: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][randomInt(0, 4)],
+    dailyUsage, weeklyTrends: [],
+    featureTimeSpent: [
+      { feature: 'Quizzes', minutes: 0, percentage: 25, color: '#10b981' },
+      { feature: 'Mock Interviews', minutes: 0, percentage: 25, color: '#6366f1' },
+      { feature: 'Resume Building', minutes: 0, percentage: 25, color: '#f59e0b' },
+      { feature: 'Learning Roadmaps', minutes: 0, percentage: 25, color: '#ef4444' },
+    ],
+    totalHoursThisWeek: 0, totalHoursThisMonth: 0,
+    avgDailyMinutes: 0, peakHour: 20, peakDay: 'Not available',
   };
 }
 
 function generateTopicMap(): TopicMapData {
-  const topicsData = [
-    { name: 'Arrays', category: 'DSA', color: '#6366f1' }, { name: 'Trees', category: 'DSA', color: '#a855f7' },
-    { name: 'Graphs', category: 'DSA', color: '#7c3aed' }, { name: 'Dynamic Programming', category: 'DSA', color: '#6d28d9' },
-    { name: 'React', category: 'Web', color: '#06b6d4' }, { name: 'Node.js', category: 'Web', color: '#0891b2' },
-    { name: 'Python', category: 'AI/ML', color: '#10b981' }, { name: 'SQL', category: 'Database', color: '#f59e0b' },
-    { name: 'System Design', category: 'Architecture', color: '#ef4444' },
-  ];
-  const topics: TopicBubble[] = topicsData.map((t, i) => {
-    const problemsSolved = randomInt(5, 80);
-    const proficiencyScore = randomInt(20, 95);
-    return {
-      id: `topic-${i}`, name: t.name, category: t.category, problemsSolved,
-      timeSpentMinutes: randomInt(60, 1200),
-      proficiencyLevel: (proficiencyScore < 30 ? 'beginner' : proficiencyScore < 55 ? 'intermediate' : proficiencyScore < 80 ? 'advanced' : 'expert') as TopicBubble['proficiencyLevel'],
-      proficiencyScore, color: t.color, size: Math.max(30, Math.min(100, problemsSolved * 1.2)),
-    };
-  });
-  const sorted = [...topics].sort((a, b) => b.proficiencyScore - a.proficiencyScore);
-  return { topics, totalTopics: topics.length, strongestTopic: sorted[0].name, weakestTopic: sorted[sorted.length - 1].name };
+  // Empty — will be populated from quiz_attempts.skill_name
+  return {
+    topics: [],
+    totalTopics: 0,
+    strongestTopic: 'Take quizzes to discover',
+    weakestTopic: 'Take quizzes to discover',
+  };
 }
 
 function generateStreakData(): StreakData {
-  const currentStreak = randomInt(5, 45);
-  const longestStreak = Math.max(currentStreak, randomInt(30, 90));
-  const now = new Date();
-  const hoursLeft = 24 - now.getHours() + (now.getMinutes() > 0 ? -1 : 0);
   return {
-    currentStreak, longestStreak, lastActiveDate: formatDate(new Date()),
-    streakHistory: Array.from({ length: 30 }, (_, i) => ({ date: formatDate(daysAgo(29 - i)), active: i >= (30 - currentStreak) ? true : Math.random() > 0.3 })),
-    isAtRisk: hoursLeft < 6, hoursUntilReset: Math.max(0, hoursLeft),
-    totalActiveDays: randomInt(120, 300), weeklyActivity: Array.from({ length: 7 }, () => randomInt(1, 15)),
+    currentStreak: 0, longestStreak: 0,
+    lastActiveDate: formatDate(new Date()),
+    streakHistory: Array.from({ length: 30 }, (_, i) => ({
+      date: formatDate(daysAgo(29 - i)), active: false,
+    })),
+    isAtRisk: false, hoursUntilReset: 24,
+    totalActiveDays: 0, weeklyActivity: [0, 0, 0, 0, 0, 0, 0],
   };
 }
 
 function generateBadges(): BadgeSystemData {
+  // LakshyaTrack platform badges
   const allBadges: Badge[] = [
-    { id: 'b1', name: 'First Flame', description: 'Maintain a 3-day streak', icon: '🔥', category: 'streak', rarity: 'common', isUnlocked: true, unlockedAt: daysAgo(60).toISOString(), progress: 100, requirement: '3-day streak', requirementValue: 3, currentValue: 3 },
-    { id: 'b2', name: 'Week Warrior', description: 'Maintain a 7-day streak', icon: '⚡', category: 'streak', rarity: 'common', isUnlocked: true, unlockedAt: daysAgo(45).toISOString(), progress: 100, requirement: '7-day streak', requirementValue: 7, currentValue: 7 },
-    { id: 'b3', name: 'Fortnight Fighter', description: 'Maintain a 14-day streak', icon: '💫', category: 'streak', rarity: 'rare', isUnlocked: true, unlockedAt: daysAgo(30).toISOString(), progress: 100, requirement: '14-day streak', requirementValue: 14, currentValue: 14 },
-    { id: 'b4', name: 'Monthly Master', description: 'Maintain a 30-day streak', icon: '🌟', category: 'streak', rarity: 'epic', isUnlocked: true, unlockedAt: daysAgo(10).toISOString(), progress: 100, requirement: '30-day streak', requirementValue: 30, currentValue: 30 },
-    { id: 'b5', name: 'Century Legend', description: 'Maintain a 100-day streak', icon: '👑', category: 'streak', rarity: 'legendary', isUnlocked: false, unlockedAt: null, progress: 42, requirement: '100-day streak', requirementValue: 100, currentValue: 42 },
-    { id: 'b6', name: 'Problem Starter', description: 'Solve 10 problems', icon: '🎯', category: 'problems', rarity: 'common', isUnlocked: true, unlockedAt: daysAgo(90).toISOString(), progress: 100, requirement: '10 problems', requirementValue: 10, currentValue: 10 },
-    { id: 'b7', name: 'Century Club', description: 'Solve 100 problems', icon: '💎', category: 'problems', rarity: 'rare', isUnlocked: true, unlockedAt: daysAgo(40).toISOString(), progress: 100, requirement: '100 problems', requirementValue: 100, currentValue: 100 },
-    { id: 'b8', name: 'Grandmaster', description: 'Solve 500 problems', icon: '🏆', category: 'problems', rarity: 'legendary', isUnlocked: false, unlockedAt: null, progress: 36, requirement: '500 problems', requirementValue: 500, currentValue: 180 },
+    { id: 'b1', name: 'First Flame', description: 'Maintain a 3-day login streak', icon: '🔥', category: 'streak', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '3-day streak', requirementValue: 3, currentValue: 0 },
+    { id: 'b2', name: 'Week Warrior', description: '7-day login streak', icon: '⚡', category: 'streak', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '7-day streak', requirementValue: 7, currentValue: 0 },
+    { id: 'b3', name: 'Quiz Starter', description: 'Pass your first quiz', icon: '📝', category: 'quizzes', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 quiz passed', requirementValue: 1, currentValue: 0 },
+    { id: 'b4', name: 'Quiz Apprentice', description: 'Pass 10 quizzes', icon: '🎯', category: 'quizzes', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '10 quizzes passed', requirementValue: 10, currentValue: 0 },
+    { id: 'b5', name: 'Interview Ready', description: 'Complete your first mock interview', icon: '🎤', category: 'interviews', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 mock interview', requirementValue: 1, currentValue: 0 },
+    { id: 'b6', name: 'Interview Pro', description: 'Complete 10 mock interviews', icon: '🏆', category: 'interviews', rarity: 'rare', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '10 interviews', requirementValue: 10, currentValue: 0 },
+    { id: 'b7', name: 'Resume Builder', description: 'Create your first resume', icon: '📄', category: 'career', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 resume', requirementValue: 1, currentValue: 0 },
+    { id: 'b8', name: 'Roadmap Explorer', description: 'Generate a learning roadmap', icon: '🗺️', category: 'career', rarity: 'common', isUnlocked: false, unlockedAt: null, progress: 0, requirement: '1 roadmap', requirementValue: 1, currentValue: 0 },
   ];
-  const unlocked = allBadges.filter(b => b.isUnlocked);
-  const locked = allBadges.filter(b => !b.isUnlocked).sort((a, b) => b.progress - a.progress);
   return {
-    badges: allBadges, totalUnlocked: unlocked.length, totalBadges: allBadges.length,
-    recentlyUnlocked: unlocked.slice(0, 3), nextToUnlock: locked[0] || null,
+    badges: allBadges, totalUnlocked: 0, totalBadges: allBadges.length,
+    recentlyUnlocked: [], nextToUnlock: allBadges[0],
   };
 }
 
 function generateIntelligence(): IntelligenceData {
-  const activeHours = Array.from({ length: 24 }, (_, hour) => ({
-    hour, activity: hour >= 9 && hour <= 23 ? randomInt(10, 100) * (hour >= 19 && hour <= 22 ? 2 : 1) : randomInt(0, 15),
-  }));
+  const activeHours = Array.from({ length: 24 }, (_, hour) => ({ hour, activity: 0 }));
   return {
     insights: [
-      { id: 'i1', type: 'pattern', title: 'Night Owl Pattern', description: 'You are most productive between 8 PM and 11 PM.', icon: '🦉', priority: 'medium', actionable: false },
-      { id: 'i2', type: 'suggestion', title: 'Focus on Hard Problems', description: "You've mastered easy problems. Challenge yourself with hard-level problems.", icon: '🎯', priority: 'high', actionable: true, action: 'Start a Hard Problem' },
-      { id: 'i3', type: 'achievement', title: 'Consistency Rising!', description: "You've been active for 14+ consecutive days. Top 5% of learners.", icon: '🔥', priority: 'medium', actionable: false },
-      { id: 'i4', type: 'warning', title: 'Streak at Risk', description: "Complete at least one task to maintain your streak!", icon: '⚠️', priority: 'high', actionable: true, action: 'Solve a Problem' },
+      { id: 'i1', type: 'suggestion', title: 'Get Started with Quizzes', description: 'Take your first quiz to start tracking your learning progress on LakshyaTrack.', icon: '📝', priority: 'high', actionable: true, action: 'Go to Quizzes' },
+      { id: 'i2', type: 'suggestion', title: 'Try a Mock Interview', description: 'Practice with our AI-powered interview simulator to build confidence.', icon: '🎤', priority: 'high', actionable: true, action: 'Start Interview' },
+      { id: 'i3', type: 'suggestion', title: 'Build Your Resume', description: 'Head to Resume Studio and create a professional ATS-optimized resume.', icon: '📄', priority: 'medium', actionable: true, action: 'Go to Resume Studio' },
+      { id: 'i4', type: 'suggestion', title: 'Create a Learning Roadmap', description: 'Generate a personalized skill roadmap based on your target role.', icon: '🗺️', priority: 'medium', actionable: true, action: 'Generate Roadmap' },
     ],
-    activeHours, consistencyScore: randomInt(65, 92), growthRate: Math.round((randomInt(5, 25) + Math.random()) * 10) / 10,
-    predictedStreakBreak: Math.random() > 0.7, suggestedFocusAreas: ['Graph Algorithms', 'Dynamic Programming', 'System Design'],
+    activeHours, consistencyScore: 0, growthRate: 0,
+    predictedStreakBreak: false, suggestedFocusAreas: ['Take Quizzes', 'Practice Interviews', 'Build Resume'],
   };
 }
 

@@ -223,47 +223,57 @@ def _count_active_days(user_id: str) -> int:
 # 4. BADGE EVALUATOR — Check & unlock achievements
 # ══════════════════════════════════════════════════════════════
 
-# Badge definitions (rules engine)
+# Badge definitions — LakshyaTrack Platform Achievements
 BADGE_RULES = [
+    # Streak badges
     {"id": "first_flame", "name": "First Flame", "icon": "🔥", "category": "streak", "rarity": "common",
-     "description": "Maintain a 3-day streak", "check": lambda s: s.get("current_streak", 0) >= 3, "requirement_value": 3,
+     "description": "Maintain a 3-day login streak", "check": lambda s: s.get("current_streak", 0) >= 3, "requirement_value": 3,
      "current_value_key": "current_streak"},
     {"id": "week_warrior", "name": "Week Warrior", "icon": "⚡", "category": "streak", "rarity": "common",
-     "description": "Maintain a 7-day streak", "check": lambda s: s.get("current_streak", 0) >= 7, "requirement_value": 7,
+     "description": "Maintain a 7-day login streak", "check": lambda s: s.get("current_streak", 0) >= 7, "requirement_value": 7,
      "current_value_key": "current_streak"},
     {"id": "fortnight_fighter", "name": "Fortnight Fighter", "icon": "💫", "category": "streak", "rarity": "rare",
-     "description": "Maintain a 14-day streak", "check": lambda s: s.get("current_streak", 0) >= 14, "requirement_value": 14,
+     "description": "Maintain a 14-day streak on LakshyaTrack", "check": lambda s: s.get("current_streak", 0) >= 14, "requirement_value": 14,
      "current_value_key": "current_streak"},
     {"id": "monthly_master", "name": "Monthly Master", "icon": "🌟", "category": "streak", "rarity": "epic",
-     "description": "Maintain a 30-day streak", "check": lambda s: s.get("current_streak", 0) >= 30, "requirement_value": 30,
+     "description": "30 consecutive days on LakshyaTrack", "check": lambda s: s.get("current_streak", 0) >= 30, "requirement_value": 30,
      "current_value_key": "current_streak"},
     {"id": "century_legend", "name": "Century Legend", "icon": "👑", "category": "streak", "rarity": "legendary",
-     "description": "Maintain a 100-day streak", "check": lambda s: s.get("longest_streak", 0) >= 100, "requirement_value": 100,
+     "description": "100-day streak — true dedication!", "check": lambda s: s.get("longest_streak", 0) >= 100, "requirement_value": 100,
      "current_value_key": "longest_streak"},
-    {"id": "problem_starter", "name": "Problem Starter", "icon": "🎯", "category": "problems", "rarity": "common",
-     "description": "Solve 10 problems", "check": lambda s: s.get("problems_solved", 0) >= 10, "requirement_value": 10,
-     "current_value_key": "problems_solved"},
-    {"id": "half_century", "name": "Half Century", "icon": "🏅", "category": "problems", "rarity": "common",
-     "description": "Solve 50 problems", "check": lambda s: s.get("problems_solved", 0) >= 50, "requirement_value": 50,
-     "current_value_key": "problems_solved"},
-    {"id": "century_club", "name": "Century Club", "icon": "💎", "category": "problems", "rarity": "rare",
-     "description": "Solve 100 problems", "check": lambda s: s.get("problems_solved", 0) >= 100, "requirement_value": 100,
-     "current_value_key": "problems_solved"},
-    {"id": "problem_slayer", "name": "Problem Slayer", "icon": "⚔️", "category": "problems", "rarity": "epic",
-     "description": "Solve 250 problems", "check": lambda s: s.get("problems_solved", 0) >= 250, "requirement_value": 250,
-     "current_value_key": "problems_solved"},
-    {"id": "grandmaster", "name": "Grandmaster", "icon": "🏆", "category": "problems", "rarity": "legendary",
-     "description": "Solve 500 problems", "check": lambda s: s.get("problems_solved", 0) >= 500, "requirement_value": 500,
-     "current_value_key": "problems_solved"},
-    {"id": "early_bird", "name": "Early Bird", "icon": "🌅", "category": "consistency", "rarity": "common",
-     "description": "Log in before 7 AM", "check": lambda s: s.get("early_logins", 0) >= 1, "requirement_value": 1,
-     "current_value_key": "early_logins"},
-    {"id": "night_owl", "name": "Night Owl", "icon": "🦉", "category": "consistency", "rarity": "common",
-     "description": "Active past midnight", "check": lambda s: s.get("late_sessions", 0) >= 1, "requirement_value": 1,
-     "current_value_key": "late_sessions"},
-    {"id": "speed_demon", "name": "Speed Demon", "icon": "⏱️", "category": "mastery", "rarity": "epic",
-     "description": "Solve 5 problems in one session", "check": lambda s: s.get("max_problems_session", 0) >= 5,
-     "requirement_value": 5, "current_value_key": "max_problems_session"},
+
+    # Quiz badges
+    {"id": "quiz_starter", "name": "Quiz Starter", "icon": "📝", "category": "quizzes", "rarity": "common",
+     "description": "Pass your first quiz", "check": lambda s: s.get("quizzes_passed", 0) >= 1, "requirement_value": 1,
+     "current_value_key": "quizzes_passed"},
+    {"id": "quiz_apprentice", "name": "Quiz Apprentice", "icon": "🎯", "category": "quizzes", "rarity": "common",
+     "description": "Pass 10 quizzes", "check": lambda s: s.get("quizzes_passed", 0) >= 10, "requirement_value": 10,
+     "current_value_key": "quizzes_passed"},
+    {"id": "quiz_master", "name": "Quiz Master", "icon": "💎", "category": "quizzes", "rarity": "rare",
+     "description": "Pass 50 quizzes", "check": lambda s: s.get("quizzes_passed", 0) >= 50, "requirement_value": 50,
+     "current_value_key": "quizzes_passed"},
+
+    # Interview badges
+    {"id": "first_interview", "name": "Interview Ready", "icon": "🎤", "category": "interviews", "rarity": "common",
+     "description": "Complete your first mock interview", "check": lambda s: s.get("interviews_done", 0) >= 1, "requirement_value": 1,
+     "current_value_key": "interviews_done"},
+    {"id": "interview_pro", "name": "Interview Pro", "icon": "🏆", "category": "interviews", "rarity": "rare",
+     "description": "Complete 10 mock interviews", "check": lambda s: s.get("interviews_done", 0) >= 10, "requirement_value": 10,
+     "current_value_key": "interviews_done"},
+    {"id": "interview_expert", "name": "Interview Expert", "icon": "⚔️", "category": "interviews", "rarity": "epic",
+     "description": "Complete 25 mock interviews", "check": lambda s: s.get("interviews_done", 0) >= 25, "requirement_value": 25,
+     "current_value_key": "interviews_done"},
+
+    # Resume & Roadmap badges
+    {"id": "resume_builder", "name": "Resume Builder", "icon": "📄", "category": "career", "rarity": "common",
+     "description": "Create your first resume", "check": lambda s: s.get("resumes_built", 0) >= 1, "requirement_value": 1,
+     "current_value_key": "resumes_built"},
+    {"id": "roadmap_explorer", "name": "Roadmap Explorer", "icon": "🗺️", "category": "career", "rarity": "common",
+     "description": "Generate your first learning roadmap", "check": lambda s: s.get("roadmaps_created", 0) >= 1, "requirement_value": 1,
+     "current_value_key": "roadmaps_created"},
+    {"id": "career_strategist", "name": "Career Strategist", "icon": "🏅", "category": "career", "rarity": "rare",
+     "description": "Generate 5 learning roadmaps", "check": lambda s: s.get("roadmaps_created", 0) >= 5, "requirement_value": 5,
+     "current_value_key": "roadmaps_created"},
 ]
 
 

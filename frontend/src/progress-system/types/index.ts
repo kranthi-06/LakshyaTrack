@@ -144,7 +144,7 @@ export interface Badge {
   name: string;
   description: string;
   icon: string;
-  category: 'streak' | 'problems' | 'consistency' | 'mastery' | 'special';
+  category: 'streak' | 'problems' | 'quizzes' | 'interviews' | 'career' | 'consistency' | 'mastery' | 'special';
   rarity: BadgeRarity;
   isUnlocked: boolean;
   unlockedAt: string | null;
