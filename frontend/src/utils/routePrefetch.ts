@@ -24,6 +24,7 @@ const pageImporters: Record<string, Importer> = {
     '/english': () => import('../pages/EnglishSpeaking'),
     '/reasoning': () => import('../pages/Reasoning'),
     '/admin/questions': () => import('../pages/AdminQuestionUpload'),
+    '/progress-dashboard': () => import('../progress-system/ProgressDashboard'),
 };
 
 const preloadedRoutes = new Set<string>();
