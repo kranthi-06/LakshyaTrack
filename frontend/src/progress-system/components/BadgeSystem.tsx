@@ -52,7 +52,7 @@ function BadgeCard({ badge, index }: { badge: Badge; index: number }) {
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 200 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative rounded-xl p-4 cursor-pointer transition-all duration-300 group"
+      className="relative rounded-[20px] p-4 cursor-pointer transition-all duration-300 group hover:-translate-y-1"
       style={{
         background: badge.isUnlocked
           ? `linear-gradient(135deg, ${rarity.bg}, transparent)`
@@ -144,7 +144,7 @@ const BadgeSystem = memo(function BadgeSystem({ data }: Props) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
-      className="rounded-2xl p-6 overflow-hidden"
+      className="rounded-[24px] p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]"
       style={{
         background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
         border: '1px solid rgba(255,255,255,0.08)',

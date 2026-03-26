@@ -11,6 +11,16 @@ interface Props {
   data: IntelligenceData;
 }
 
+interface HourlyTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    payload?: {
+      hour: number;
+      activity: number;
+    };
+  }>;
+}
+
 const INSIGHT_CONFIG: Record<InsightType, { bg: string; border: string; accent: string }> = {
   pattern: {
     bg: 'rgba(99,102,241,0.06)',
@@ -47,7 +57,7 @@ function InsightCard({ insight, index }: { insight: Insight; index: number }) {
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.1 }}
-      className="rounded-xl p-4 transition-all duration-300 hover:scale-[1.01]"
+      className="rounded-[20px] p-5 transition-all duration-300 hover:scale-[1.02]"
       style={{
         background: config.bg,
         border: `1px solid ${config.border}`,
@@ -121,9 +131,10 @@ function ScoreGauge({ value, label, color, size = 90 }: { value: number; label: 
   );
 }
 
-const HourlyTooltip = ({ active, payload }: any) => {
+const HourlyTooltip = ({ active, payload }: HourlyTooltipProps) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  if (!d) return null;
   return (
     <div className="px-3 py-2 rounded-lg text-xs"
       style={{ background: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.15)' }}>
@@ -151,7 +162,7 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.35 }}
-      className="rounded-2xl p-6 overflow-hidden"
+      className="rounded-[24px] p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]"
       style={{
         background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
         border: '1px solid rgba(255,255,255,0.08)',
@@ -159,7 +170,7 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h3 className="text-lg font-semibold text-white flex items-center gap-2">
           <span className="text-xl">🧠</span>
           Intelligence Hub
@@ -190,20 +201,20 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
       {/* Activity by hour chart */}
       <div className="mb-6">
         <div className="text-xs text-white/40 mb-3 font-medium">Activity by Hour of Day</div>
-        <div className="h-[120px]">
+        <div className="h-[132px] rounded-[18px] border border-white/6 bg-slate-950/25 px-2 py-2">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data.activeHours} margin={{ top: 0, right: 0, bottom: 0, left: -10 }}>
+            <BarChart data={data.activeHours} margin={{ top: 0, right: 0, bottom: 0, left: -10 }} barCategoryGap="28%">
               <XAxis
                 dataKey="hour"
-                tickFormatter={(h) => h % 4 === 0 ? `${h > 12 ? h - 12 : h || 12}${h >= 12 ? 'p' : 'a'}` : ''}
+                tickFormatter={(h) => h % 3 === 0 ? `${h > 12 ? h - 12 : h || 12}${h >= 12 ? 'p' : 'a'}` : ''}
                 stroke="rgba(255,255,255,0.1)"
-                tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 9 }}
+                tick={{ fill: 'rgba(255,255,255,0.28)', fontSize: 9 }}
                 tickLine={false}
                 axisLine={false}
               />
               <YAxis hide />
               <Tooltip content={<HourlyTooltip />} />
-              <Bar dataKey="activity" radius={[2, 2, 0, 0]} maxBarSize={14}>
+              <Bar dataKey="activity" radius={[3, 3, 0, 0]} maxBarSize={12}>
                 {data.activeHours.map((entry, i) => (
                   <Cell
                     key={i}

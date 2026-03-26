@@ -1,7 +1,3 @@
-// ══════════════════════════════════════════════════════════════
-// Interactive Topic / Skill Bubble Map Component (D3-style SVG)
-// ══════════════════════════════════════════════════════════════
-
 import { useState, useMemo, useRef, useEffect, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TopicMapData, TopicBubble } from '../types';
@@ -14,6 +10,12 @@ interface BubblePosition {
   x: number;
   y: number;
   r: number;
+  topic: TopicBubble;
+}
+
+interface BubbleTooltipState {
+  x: number;
+  y: number;
   topic: TopicBubble;
 }
 
@@ -31,7 +33,66 @@ const PROFICIENCY_LABELS: Record<string, string> = {
   expert: 'Expert',
 };
 
-// Simple circle packing algorithm
+const EDGE_PADDING = 18;
+const BUBBLE_PADDING = 12;
+const cardClassName =
+  'rounded-[24px] p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]';
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function splitLabel(label: string, maxChars: number, maxLines: number) {
+  const lines: string[] = [];
+  let remaining = label.trim();
+
+  for (let lineIndex = 0; lineIndex < maxLines && remaining; lineIndex += 1) {
+    if (remaining.length <= maxChars) {
+      lines.push(remaining);
+      remaining = '';
+      break;
+    }
+
+    const slice = remaining.slice(0, maxChars + 1);
+    const lastSpace = slice.lastIndexOf(' ');
+    const cut = lastSpace > maxChars * 0.55 ? lastSpace : maxChars;
+    let line = remaining.slice(0, cut).trim();
+    remaining = remaining.slice(cut).trim();
+
+    if (lineIndex === maxLines - 1 && remaining) {
+      line = `${line.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+      remaining = '';
+    }
+
+    lines.push(line);
+  }
+
+  return lines.filter(Boolean);
+}
+
+function getBubbleLabelLayout(label: string, radius: number) {
+  if (radius < 28) {
+    return { lines: [] as string[], fontSize: 0, subtitleSize: 0, titleStartY: 0, subtitleY: 0, showSubtitle: false };
+  }
+
+  const fontSize = clamp(Math.floor(radius / 4), 9, 18);
+  const maxCharsPerLine = clamp(Math.floor((radius * 1.6) / (fontSize * 0.58)), 4, 14);
+  const maxLines = radius >= 52 ? 2 : 1;
+  const lines = splitLabel(label, maxCharsPerLine, maxLines);
+  const showSubtitle = radius >= 60;
+  const titleStartY = showSubtitle ? -(fontSize * (lines.length > 1 ? 0.5 : 0.22)) : lines.length > 1 ? -(fontSize * 0.34) : 0;
+  const subtitleY = titleStartY + lines.length * (fontSize * 0.88) + 7;
+
+  return {
+    lines,
+    fontSize,
+    subtitleSize: clamp(Math.round(fontSize * 0.62), 9, 12),
+    titleStartY,
+    subtitleY,
+    showSubtitle,
+  };
+}
+
 function packBubbles(topics: TopicBubble[], width: number, height: number): BubblePosition[] {
   if (topics.length === 0) {
     return [];
@@ -39,101 +100,133 @@ function packBubbles(topics: TopicBubble[], width: number, height: number): Bubb
 
   const centerX = width / 2;
   const centerY = height / 2;
-  const maxSize = Math.max(1, ...topics.map(t => Math.max(t.size, 1)));
-  const minRadius = 22;
-  const maxRadius = Math.min(width, height) * 0.14;
+  const maxSize = Math.max(1, ...topics.map((topic) => Math.max(topic.size, 1)));
+  const minRadius = width < 700 ? 28 : 32;
+  const maxRadius = Math.min(width, height) * 0.16;
 
-  const bubbles: BubblePosition[] = topics.map(topic => {
-    const normalizedSize = Math.max(topic.size, 1) / maxSize;
-    const r = minRadius + normalizedSize * (maxRadius - minRadius);
-    return { x: 0, y: 0, r, topic };
-  });
+  const bubbles: BubblePosition[] = topics
+    .map((topic) => {
+      const normalizedSize = Math.max(topic.size, 1) / maxSize;
+      const radius = minRadius + normalizedSize * (maxRadius - minRadius);
+      return {
+        x: centerX,
+        y: centerY,
+        r: radius,
+        topic,
+      };
+    })
+    .sort((left, right) => right.r - left.r);
 
-  // Sort by size descending for better packing
-  bubbles.sort((a, b) => b.r - a.r);
-
-  // Place bubbles using spiral layout
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  bubbles.forEach((bubble, i) => {
-    if (i === 0) {
+  bubbles.forEach((bubble, index) => {
+    if (index === 0) {
       bubble.x = centerX;
       bubble.y = centerY;
       return;
     }
 
-    const angle = i * goldenAngle;
-    const spiralRadius = Math.sqrt(i) * (maxRadius * 0.8);
-    let x = centerX + Math.cos(angle) * spiralRadius;
-    let y = centerY + Math.sin(angle) * spiralRadius;
+    const angle = index * goldenAngle;
+    const orbit = Math.sqrt(index) * (maxRadius * 0.92);
+    bubble.x = centerX + Math.cos(angle) * orbit;
+    bubble.y = centerY + Math.sin(angle) * orbit;
+  });
 
-    // Collision resolution
-    let attempts = 0;
-    while (attempts < 50) {
-      let hasCollision = false;
-      for (let j = 0; j < i; j++) {
-        const dx = x - bubbles[j].x;
-        const dy = y - bubbles[j].y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const minDist = bubble.r + bubbles[j].r + 4;
+  for (let iteration = 0; iteration < 120; iteration += 1) {
+    for (let first = 0; first < bubbles.length; first += 1) {
+      for (let second = first + 1; second < bubbles.length; second += 1) {
+        const left = bubbles[first];
+        const right = bubbles[second];
+        const dx = right.x - left.x;
+        const dy = right.y - left.y;
+        const distance = Math.hypot(dx, dy) || 0.0001;
+        const minDistance = left.r + right.r + BUBBLE_PADDING;
 
-        if (dist < minDist) {
-          hasCollision = true;
-          const overlap = minDist - dist;
-          const nx = dx / (dist || 1);
-          const ny = dy / (dist || 1);
-          x += nx * (overlap * 0.6);
-          y += ny * (overlap * 0.6);
+        if (distance < minDistance) {
+          const overlap = (minDistance - distance) / 2;
+          const nx = dx / distance;
+          const ny = dy / distance;
+
+          if (first !== 0) {
+            left.x -= nx * overlap;
+            left.y -= ny * overlap;
+          }
+
+          right.x += nx * overlap;
+          right.y += ny * overlap;
         }
       }
-      if (!hasCollision) break;
-      attempts++;
     }
 
-    // Clamp to bounds
-    bubble.x = Math.max(bubble.r + 5, Math.min(width - bubble.r - 5, x));
-    bubble.y = Math.max(bubble.r + 5, Math.min(height - bubble.r - 5, y));
-  });
+    bubbles.forEach((bubble, index) => {
+      const pullStrength = index === 0 ? 0.012 : 0.022;
+      bubble.x += (centerX - bubble.x) * pullStrength;
+      bubble.y += (centerY - bubble.y) * pullStrength;
+      bubble.x = clamp(bubble.x, bubble.r + EDGE_PADDING, width - bubble.r - EDGE_PADDING);
+      bubble.y = clamp(bubble.y, bubble.r + EDGE_PADDING, height - bubble.r - EDGE_PADDING);
+    });
+  }
 
   return bubbles;
 }
 
 const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
+  const [dimensions, setDimensions] = useState({ width: 600, height: 420 });
   const [selectedTopic, setSelectedTopic] = useState<TopicBubble | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hoveredTopic, setHoveredTopic] = useState<BubbleTooltipState | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(entries => {
-      for (const entry of entries) {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const observer = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
         setDimensions({
           width: entry.contentRect.width,
-          height: Math.max(350, entry.contentRect.width * 0.6),
+          height: Math.max(380, entry.contentRect.width * 0.62),
         });
-      }
+      });
     });
-    obs.observe(el);
-    return () => obs.disconnect();
+
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
 
-  const categories = useMemo(() => {
-    return ['all', ...new Set(data.topics.map(t => t.category))];
-  }, [data.topics]);
+  const categories = useMemo(() => ['all', ...new Set(data.topics.map((topic) => topic.category))], [data.topics]);
 
   const filteredTopics = useMemo(() => {
     if (categoryFilter === 'all') return data.topics;
-    return data.topics.filter(t => t.category === categoryFilter);
+    return data.topics.filter((topic) => topic.category === categoryFilter);
   }, [data.topics, categoryFilter]);
 
-  const bubbles = useMemo(() => {
-    return packBubbles(filteredTopics, dimensions.width, dimensions.height);
-  }, [filteredTopics, dimensions]);
+  const bubbles = useMemo(
+    () => packBubbles(filteredTopics, dimensions.width, dimensions.height),
+    [filteredTopics, dimensions],
+  );
 
   const handleBubbleClick = useCallback((topic: TopicBubble) => {
-    setSelectedTopic(prev => prev?.id === topic.id ? null : topic);
+    setSelectedTopic((previous) => (previous?.id === topic.id ? null : topic));
+  }, []);
+
+  const handleBubbleHover = useCallback((event: React.MouseEvent<SVGCircleElement>, topic: TopicBubble) => {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) {
+      return;
+    }
+
+    setHoveredId(topic.id);
+    setHoveredTopic({
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top - 12,
+      topic,
+    });
+  }, []);
+
+  const handleBubbleLeave = useCallback(() => {
+    setHoveredId(null);
+    setHoveredTopic(null);
   }, []);
 
   return (
@@ -141,173 +234,207 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
-      className="rounded-2xl p-6 overflow-hidden"
+      className={cardClassName}
       style={{
         background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
         border: '1px solid rgba(255,255,255,0.08)',
         backdropFilter: 'blur(20px)',
       }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-white">
             <span className="text-xl">🫧</span>
             Skill Map
           </h3>
           {data.topics.length > 0 ? (
-            <p className="text-xs text-white/40 mt-1">
-            Strongest: <span className="text-emerald-400">{data.strongestTopic}</span>
-            {' · '}
-            Focus area: <span className="text-amber-400">{data.weakestTopic}</span>
+            <p className="mt-1 text-xs text-white/40">
+              Strongest: <span className="text-emerald-400">{data.strongestTopic}</span>
+              {' · '}
+              Focus area: <span className="text-amber-400">{data.weakestTopic}</span>
             </p>
           ) : (
-            <p className="text-xs text-white/40 mt-1">
+            <p className="mt-1 text-xs text-white/40">
               Complete quizzes or solve problems to build your live skill map.
             </p>
           )}
         </div>
 
-        {/* Proficiency legend */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {Object.entries(PROFICIENCY_LABELS).map(([key, label]) => (
             <div key={key} className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: PROFICIENCY_COLORS[key] }} />
+              <div className="h-2.5 w-2.5 rounded-full" style={{ background: PROFICIENCY_COLORS[key] }} />
               <span className="text-xs text-white/40">{label}</span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Category filter */}
-      <div className="flex gap-1.5 mb-4 flex-wrap">
-        {categories.map(cat => (
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {categories.map((category) => (
           <button
-            key={cat}
-            onClick={() => { setCategoryFilter(cat); setSelectedTopic(null); }}
-            className="px-3 py-1 text-xs rounded-full transition-all"
+            key={category}
+            type="button"
+            onClick={() => {
+              setCategoryFilter(category);
+              setSelectedTopic(null);
+            }}
+            className="rounded-full px-3 py-1 text-xs transition-all"
             style={{
-              background: categoryFilter === cat ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
-              color: categoryFilter === cat ? '#818cf8' : 'rgba(255,255,255,0.5)',
-              border: `1px solid ${categoryFilter === cat ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.06)'}`,
+              background: categoryFilter === category ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
+              color: categoryFilter === category ? '#818cf8' : 'rgba(255,255,255,0.5)',
+              border: `1px solid ${categoryFilter === category ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.06)'}`,
             }}
           >
-            {cat === 'all' ? 'All Topics' : cat}
+            {category === 'all' ? 'All Topics' : category}
           </button>
         ))}
       </div>
 
-      {/* Bubble Map SVG */}
-      <div ref={containerRef} className="relative rounded-xl overflow-hidden" style={{ background: 'rgba(0,0,0,0.2)' }}>
+      <div
+        ref={containerRef}
+        className="relative overflow-hidden rounded-[22px] border border-white/6 bg-slate-950/35 p-3"
+        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03)' }}
+      >
         {filteredTopics.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/35">
             No topic activity has been recorded for this view yet.
           </div>
         )}
+
         <svg width={dimensions.width} height={dimensions.height}>
           <defs>
-            {bubbles.map(b => (
-              <radialGradient key={`grad-${b.topic.id}`} id={`bubbleGrad-${b.topic.id}`}>
-                <stop offset="0%" stopColor={PROFICIENCY_COLORS[b.topic.proficiencyLevel]} stopOpacity="0.3" />
-                <stop offset="70%" stopColor={PROFICIENCY_COLORS[b.topic.proficiencyLevel]} stopOpacity="0.15" />
-                <stop offset="100%" stopColor={PROFICIENCY_COLORS[b.topic.proficiencyLevel]} stopOpacity="0.05" />
+            {bubbles.map((bubble) => (
+              <radialGradient key={`gradient-${bubble.topic.id}`} id={`bubbleGrad-${bubble.topic.id}`}>
+                <stop offset="0%" stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]} stopOpacity="0.32" />
+                <stop offset="72%" stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]} stopOpacity="0.14" />
+                <stop offset="100%" stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]} stopOpacity="0.04" />
               </radialGradient>
+            ))}
+            {bubbles.map((bubble) => (
+              <clipPath key={`clip-${bubble.topic.id}`} id={`bubbleClip-${bubble.topic.id}`}>
+                <circle cx={bubble.x} cy={bubble.y} r={bubble.r - 6} />
+              </clipPath>
             ))}
           </defs>
 
-          {bubbles.map((b, i) => {
-            const isHovered = hoveredId === b.topic.id;
-            const isSelected = selectedTopic?.id === b.topic.id;
-            const profColor = PROFICIENCY_COLORS[b.topic.proficiencyLevel];
+          {bubbles.map((bubble, index) => {
+            const isHovered = hoveredId === bubble.topic.id;
+            const isSelected = selectedTopic?.id === bubble.topic.id;
+            const proficiencyColor = PROFICIENCY_COLORS[bubble.topic.proficiencyLevel];
+            const labelLayout = getBubbleLabelLayout(bubble.topic.name, bubble.r);
 
             return (
-              <g key={b.topic.id}>
-                {/* Glow effect */}
+              <g key={bubble.topic.id}>
                 <motion.circle
-                  cx={b.x}
-                  cy={b.y}
-                  r={b.r + 4}
+                  cx={bubble.x}
+                  cy={bubble.y}
+                  r={bubble.r + 6}
                   fill="none"
-                  stroke={profColor}
+                  stroke={proficiencyColor}
                   strokeWidth={isSelected ? 2 : 0}
-                  strokeOpacity={0.4}
-                  initial={{ r: 0, opacity: 0 }}
-                  animate={{
-                    r: b.r + (isHovered ? 6 : 4),
-                    opacity: isSelected || isHovered ? 1 : 0,
-                  }}
-                  transition={{ duration: 0.3 }}
+                  strokeOpacity={0.35}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: isHovered || isSelected ? 1 : 0 }}
+                  transition={{ duration: 0.25 }}
                 />
 
-                {/* Main bubble */}
                 <motion.circle
-                  cx={b.x}
-                  cy={b.y}
-                  fill={`url(#bubbleGrad-${b.topic.id})`}
-                  stroke={profColor}
-                  strokeWidth={isHovered || isSelected ? 2 : 1}
-                  strokeOpacity={isHovered || isSelected ? 0.7 : 0.3}
+                  cx={bubble.x}
+                  cy={bubble.y}
+                  fill={`url(#bubbleGrad-${bubble.topic.id})`}
+                  stroke={proficiencyColor}
+                  strokeWidth={isHovered || isSelected ? 2.2 : 1.1}
+                  strokeOpacity={isHovered || isSelected ? 0.75 : 0.3}
                   className="cursor-pointer"
                   initial={{ r: 0, opacity: 0 }}
                   animate={{
-                    r: isHovered ? b.r * 1.08 : b.r,
+                    r: isHovered ? bubble.r * 1.03 : bubble.r,
                     opacity: 1,
                   }}
                   transition={{
-                    r: { duration: 0.8, delay: i * 0.04, type: 'spring', stiffness: 200, damping: 15 },
-                    opacity: { duration: 0.5, delay: i * 0.04 },
+                    r: { duration: 0.7, delay: index * 0.03, type: 'spring', stiffness: 220, damping: 16 },
+                    opacity: { duration: 0.45, delay: index * 0.03 },
                   }}
-                  onMouseEnter={() => setHoveredId(b.topic.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  onClick={() => handleBubbleClick(b.topic)}
-                  style={{ filter: isHovered ? `drop-shadow(0 0 12px ${profColor}60)` : 'none' }}
-                />
+                  onMouseEnter={(event) => handleBubbleHover(event, bubble.topic)}
+                  onMouseMove={(event) => handleBubbleHover(event, bubble.topic)}
+                  onMouseLeave={handleBubbleLeave}
+                  onClick={() => handleBubbleClick(bubble.topic)}
+                  style={{
+                    filter: isHovered ? `drop-shadow(0 0 16px ${proficiencyColor}55)` : 'none',
+                  }}
+                >
+                  <title>{bubble.topic.name}</title>
+                </motion.circle>
 
-                {/* Label */}
-                {b.r > 28 && (
-                  <motion.text
-                    x={b.x}
-                    y={b.y - (b.r > 40 ? 6 : 0)}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="white"
-                    fontSize={Math.max(9, Math.min(13, b.r * 0.32))}
-                    fontWeight="600"
-                    fontFamily="Inter, sans-serif"
-                    className="pointer-events-none select-none"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.04 + 0.5 }}
-                  >
-                    {b.topic.name}
-                  </motion.text>
-                )}
+                {labelLayout.lines.length > 0 && (
+                  <g clipPath={`url(#bubbleClip-${bubble.topic.id})`} className="pointer-events-none select-none">
+                    {labelLayout.lines.map((line, lineIndex) => (
+                      <motion.text
+                        key={`${bubble.topic.id}-${lineIndex}`}
+                        x={bubble.x}
+                        y={bubble.y + labelLayout.titleStartY + lineIndex * (labelLayout.fontSize * 0.92)}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill="#f8fafc"
+                        fontSize={labelLayout.fontSize}
+                        fontWeight="600"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: index * 0.03 + 0.45 }}
+                      >
+                        {line}
+                      </motion.text>
+                    ))}
 
-                {/* Sub-label (quiz count) */}
-                {b.r > 40 && (
-                  <motion.text
-                    x={b.x}
-                    y={b.y + 12}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="rgba(255,255,255,0.45)"
-                    fontSize="10"
-                    fontFamily="Inter, sans-serif"
-                    className="pointer-events-none select-none"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.04 + 0.6 }}
-                  >
-                    {b.topic.problemsSolved} passed
-                  </motion.text>
+                    {labelLayout.showSubtitle && (
+                      <motion.text
+                        x={bubble.x}
+                        y={bubble.y + labelLayout.subtitleY}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill="rgba(255,255,255,0.52)"
+                        fontSize={labelLayout.subtitleSize}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: index * 0.03 + 0.55 }}
+                      >
+                        {bubble.topic.problemsSolved} solved
+                      </motion.text>
+                    )}
+                  </g>
                 )}
               </g>
             );
           })}
         </svg>
+
+        <AnimatePresence>
+          {hoveredTopic && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94 }}
+              className="pointer-events-none absolute z-20 rounded-xl px-3 py-2 text-xs"
+              style={{
+                left: hoveredTopic.x,
+                top: hoveredTopic.y,
+                transform: 'translate(-50%, -100%)',
+                background: 'rgba(0,0,0,0.92)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: 'white',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+              }}
+            >
+              <div className="font-semibold text-white">{hoveredTopic.topic.name}</div>
+              <div className="mt-1 text-white/60">
+                {hoveredTopic.topic.problemsSolved} solved · {Math.round(hoveredTopic.topic.timeSpentMinutes / 60)}h spent
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Detail Panel */}
       <AnimatePresence>
         {selectedTopic && (
           <motion.div
@@ -317,18 +444,18 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
             className="overflow-hidden"
           >
             <div
-              className="p-4 rounded-xl"
+              className="rounded-[22px] p-4"
               style={{
-                background: `linear-gradient(135deg, ${PROFICIENCY_COLORS[selectedTopic.proficiencyLevel]}10, transparent)`,
-                border: `1px solid ${PROFICIENCY_COLORS[selectedTopic.proficiencyLevel]}25`,
+                background: `linear-gradient(135deg, ${PROFICIENCY_COLORS[selectedTopic.proficiencyLevel]}12, transparent)`,
+                border: `1px solid ${PROFICIENCY_COLORS[selectedTopic.proficiencyLevel]}26`,
               }}
             >
-              <div className="flex items-start justify-between mb-3">
+              <div className="mb-3 flex items-start justify-between">
                 <div>
-                  <h4 className="text-base font-semibold text-white flex items-center gap-2">
+                  <h4 className="flex items-center gap-2 text-base font-semibold text-white">
                     {selectedTopic.name}
                     <span
-                      className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      className="rounded-full px-2 py-0.5 text-xs font-medium"
                       style={{
                         background: `${PROFICIENCY_COLORS[selectedTopic.proficiencyLevel]}20`,
                         color: PROFICIENCY_COLORS[selectedTopic.proficiencyLevel],
@@ -337,50 +464,55 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                       {PROFICIENCY_LABELS[selectedTopic.proficiencyLevel]}
                     </span>
                   </h4>
-                  <p className="text-xs text-white/40 mt-0.5">Category: {selectedTopic.category}</p>
+                  <p className="mt-0.5 text-xs text-white/40">Category: {selectedTopic.category}</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setSelectedTopic(null)}
-                  className="text-white/40 hover:text-white transition-colors text-lg"
+                  className="text-lg text-white/40 transition-colors hover:text-white"
                 >
                   ×
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="rounded-lg p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl bg-white/[0.04] p-3 text-center">
                   <div className="text-lg font-bold text-white">{selectedTopic.problemsSolved}</div>
-                  <div className="text-xs text-white/40">Quizzes Passed</div>
+                  <div className="text-xs text-white/40">Solved</div>
                 </div>
-                <div className="rounded-lg p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <div className="rounded-xl bg-white/[0.04] p-3 text-center">
                   <div className="text-lg font-bold text-white">
                     {Math.round(selectedTopic.timeSpentMinutes / 60)}h
                   </div>
                   <div className="text-xs text-white/40">Time Spent</div>
                 </div>
-                <div className="rounded-lg p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                  <div className="text-lg font-bold" style={{ color: PROFICIENCY_COLORS[selectedTopic.proficiencyLevel] }}>
+                <div className="rounded-xl bg-white/[0.04] p-3 text-center">
+                  <div
+                    className="text-lg font-bold"
+                    style={{ color: PROFICIENCY_COLORS[selectedTopic.proficiencyLevel] }}
+                  >
                     {selectedTopic.proficiencyScore}%
                   </div>
                   <div className="text-xs text-white/40">Proficiency</div>
                 </div>
-                <div className="rounded-lg p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <div className="rounded-xl bg-white/[0.04] p-3 text-center">
                   <div className="text-lg font-bold text-white">
-                    {Math.round(selectedTopic.problemsSolved / Math.max(1, selectedTopic.timeSpentMinutes / 60) * 10) / 10}
+                    {Math.round(
+                      (selectedTopic.problemsSolved / Math.max(1, selectedTopic.timeSpentMinutes / 60)) * 10,
+                    ) / 10}
                   </div>
-                  <div className="text-xs text-white/40">Quizzes/hr</div>
+                  <div className="text-xs text-white/40">Solved / hr</div>
                 </div>
               </div>
 
-              {/* Proficiency bar */}
-              <div className="mt-3">
-                <div className="flex justify-between text-xs mb-1">
+              <div className="mt-4">
+                <div className="mb-1 flex items-center justify-between text-xs">
                   <span className="text-white/40">Proficiency Score</span>
                   <span style={{ color: PROFICIENCY_COLORS[selectedTopic.proficiencyLevel] }}>
                     {selectedTopic.proficiencyScore}/100
                   </span>
                 </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                <div className="h-2 rounded-full overflow-hidden bg-white/[0.06]">
                   <motion.div
                     className="h-full rounded-full"
                     style={{ background: PROFICIENCY_COLORS[selectedTopic.proficiencyLevel] }}

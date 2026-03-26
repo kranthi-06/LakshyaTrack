@@ -38,7 +38,7 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.15 }}
-      className="rounded-2xl p-6 overflow-hidden"
+      className="rounded-[24px] p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]"
       style={{
         background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
         border: '1px solid rgba(255,255,255,0.08)',
@@ -66,7 +66,8 @@ const ActivityTracking = memo(function ActivityTracking({ data }: Props) {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 + i * 0.05 }}
-            className="rounded-xl p-3 text-center"
+            whileHover={{ scale: 1.02 }}
+            className="rounded-[20px] p-4 text-center transition-all duration-300"
             style={{
               background: `${stat.color}06`,
               border: `1px solid ${stat.color}12`,

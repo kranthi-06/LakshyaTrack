@@ -54,7 +54,7 @@ const StreakDisplay = memo(function StreakDisplay({ data }: Props) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.2 }}
-      className="rounded-2xl p-6 overflow-hidden relative"
+      className="rounded-[24px] p-5 overflow-hidden relative transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]"
       style={{
         background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
         border: '1px solid rgba(255,255,255,0.08)',

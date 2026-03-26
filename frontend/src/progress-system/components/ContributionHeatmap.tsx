@@ -1,8 +1,4 @@
-// ══════════════════════════════════════════════════════════════
-// Activity Heatmap Component — LakshyaTrack Platform
-// ══════════════════════════════════════════════════════════════
-
-import { useState, useMemo, useCallback, memo } from 'react';
+import { useState, useMemo, useCallback, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ContributionData, DailyContribution, HeatmapView } from '../types';
 
@@ -11,96 +7,110 @@ interface Props {
   onYearChange?: (year: number) => void;
 }
 
-const CELL_SIZE = 13;
-const CELL_GAP = 3;
+const CELL_SIZE = 12;
+const CELL_GAP = 4;
 const TOTAL_CELL = CELL_SIZE + CELL_GAP;
 
-const LEVEL_COLORS = {
-  0: 'rgba(255,255,255,0.04)',
-  1: '#0e4429',
-  2: '#006d32',
-  3: '#26a641',
-  4: '#39d353',
+const LEVEL_COLORS: Record<DailyContribution['level'], string> = {
+  0: 'rgba(148,163,184,0.10)',
+  1: '#163c2d',
+  2: '#1e6648',
+  3: '#22a06b',
+  4: '#4ade80',
 };
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 
-function getWeekNumber(date: Date): number {
-  const start = new Date(date.getFullYear(), 0, 1);
-  const dayOfYear = Math.floor((date.getTime() - start.getTime()) / 86400000);
-  const startDay = start.getDay();
-  return Math.floor((dayOfYear + startDay) / 7);
-}
+const cardClassName =
+  'relative rounded-[24px] p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]';
 
 const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChange }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<HeatmapView>('yearly');
   const [tooltip, setTooltip] = useState<{ x: number; y: number; data: DailyContribution } | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const currentYear = new Date().getFullYear();
   const years = [currentYear, currentYear - 1, currentYear - 2];
 
-  // Group contributions by week for the grid
   const grid = useMemo(() => {
     const weeks: (DailyContribution | null)[][] = [];
     let currentWeek: (DailyContribution | null)[] = [];
 
-    // Find the first day of the year and pad
     const firstDay = new Date(data.year, 0, 1).getDay();
-    for (let i = 0; i < firstDay; i++) {
+    for (let index = 0; index < firstDay; index += 1) {
       currentWeek.push(null);
     }
 
-    for (const contrib of data.contributions) {
-      currentWeek.push(contrib);
+    data.contributions.forEach((contribution) => {
+      currentWeek.push(contribution);
       if (currentWeek.length === 7) {
         weeks.push(currentWeek);
         currentWeek = [];
       }
-    }
+    });
+
     if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) currentWeek.push(null);
+      while (currentWeek.length < 7) {
+        currentWeek.push(null);
+      }
       weeks.push(currentWeek);
     }
 
     return weeks;
   }, [data]);
 
-  // Month label positions
   const monthPositions = useMemo(() => {
     const positions: { label: string; x: number }[] = [];
     let lastMonth = -1;
-    grid.forEach((week, weekIdx) => {
-      for (const cell of week) {
-        if (cell) {
-          const month = new Date(cell.date).getMonth();
-          if (month !== lastMonth) {
-            positions.push({ label: MONTH_LABELS[month], x: weekIdx * TOTAL_CELL });
-            lastMonth = month;
-          }
-          break;
+
+    grid.forEach((week, weekIndex) => {
+      week.forEach((cell) => {
+        if (!cell) {
+          return;
         }
-      }
+
+        const month = new Date(cell.date).getMonth();
+        if (month !== lastMonth) {
+          positions.push({ label: MONTH_LABELS[month], x: weekIndex * TOTAL_CELL + 34 });
+          lastMonth = month;
+        }
+      });
     });
+
     return positions;
   }, [grid]);
 
-  // Monthly view data
   const monthlyGrid = useMemo(() => {
     if (view !== 'monthly') return [];
-    return data.contributions.filter(c => {
-      const month = new Date(c.date).getMonth();
-      return month === selectedMonth;
-    });
+    return data.contributions.filter((contribution) => new Date(contribution.date).getMonth() === selectedMonth);
   }, [data, view, selectedMonth]);
 
-  const monthlyTotal = useMemo(() => {
-    return monthlyGrid.reduce((sum, c) => sum + c.count, 0);
-  }, [monthlyGrid]);
+  const monthlyTotal = useMemo(
+    () => monthlyGrid.reduce((sum, contribution) => sum + contribution.count, 0),
+    [monthlyGrid],
+  );
 
-  const handleCellHover = useCallback((e: React.MouseEvent, cell: DailyContribution) => {
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
-    setTooltip({ x: rect.left + rect.width / 2, y: rect.top - 10, data: cell });
+  const averagePerActiveDay = useMemo(() => {
+    const activeDays = data.contributions.filter((item) => item.count > 0).length;
+    if (activeDays === 0) {
+      return 0;
+    }
+
+    return Math.round((data.totalContributions / activeDays) * 10) / 10;
+  }, [data]);
+
+  const handleCellHover = useCallback((event: React.MouseEvent, cell: DailyContribution) => {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) {
+      return;
+    }
+
+    setTooltip({
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top - 10,
+      data: cell,
+    });
   }, []);
 
   const handleCellLeave = useCallback(() => {
@@ -112,194 +122,258 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="relative rounded-2xl p-6 overflow-hidden"
+      className={cardClassName}
       style={{
         background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
         border: '1px solid rgba(255,255,255,0.08)',
         backdropFilter: 'blur(20px)',
       }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-white">
             <span className="text-xl">📊</span>
-            {data.totalContributions.toLocaleString()} activities in {data.year}
+            Activity Calendar
           </h3>
+          <p className="mt-1 text-xs text-white/40">
+            {data.totalContributions.toLocaleString()} tracked activities across {data.year}.
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* View toggle */}
-          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
-            {(['yearly', 'monthly'] as HeatmapView[]).map(v => (
+          <div className="flex overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+            {(['yearly', 'monthly'] as HeatmapView[]).map((mode) => (
               <button
-                key={v}
-                onClick={() => setView(v)}
+                key={mode}
+                type="button"
+                onClick={() => setView(mode)}
                 className="px-3 py-1.5 text-xs font-medium transition-all"
                 style={{
-                  background: view === v ? 'rgba(57,211,83,0.2)' : 'transparent',
-                  color: view === v ? '#39d353' : 'rgba(255,255,255,0.5)',
+                  background: view === mode ? 'rgba(57,211,83,0.18)' : 'transparent',
+                  color: view === mode ? '#4ade80' : 'rgba(255,255,255,0.5)',
                 }}
               >
-                {v.charAt(0).toUpperCase() + v.slice(1)}
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
               </button>
             ))}
           </div>
 
-          {/* Year selector */}
           <select
             value={data.year}
-            onChange={e => onYearChange?.(parseInt(e.target.value))}
-            className="bg-transparent text-sm text-white/70 border border-white/10 rounded-lg px-2 py-1.5 outline-none cursor-pointer"
-            style={{ background: 'rgba(15,23,42,0.8)' }}
+            onChange={(event) => onYearChange?.(parseInt(event.target.value, 10))}
+            className="cursor-pointer rounded-xl border border-white/10 bg-slate-950/70 px-3 py-1.5 text-sm text-white/70 outline-none"
           >
-            {years.map(y => (
-              <option key={y} value={y} style={{ background: '#1e293b' }}>{y}</option>
+            {years.map((year) => (
+              <option key={year} value={year} style={{ background: '#0f172a' }}>
+                {year}
+              </option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* Monthly selector (when in monthly view) */}
+      <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+        {[
+          { label: 'Total Activity', value: data.totalContributions.toLocaleString(), color: '#4ade80' },
+          { label: 'Current Streak', value: `${data.currentStreak} days`, color: '#f59e0b' },
+          { label: 'Avg / Active Day', value: `${averagePerActiveDay}`, color: '#60a5fa' },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="rounded-[20px] border p-4"
+            style={{
+              background: `${stat.color}08`,
+              borderColor: `${stat.color}16`,
+            }}
+          >
+            <div className="text-xs uppercase tracking-[0.18em] text-white/28">{stat.label}</div>
+            <div className="mt-2 text-2xl font-bold text-white">{stat.value}</div>
+          </div>
+        ))}
+      </div>
+
       <AnimatePresence>
         {view === 'monthly' && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="mb-4 flex gap-1 flex-wrap"
+            className="mb-4 flex flex-wrap gap-1.5"
           >
-            {MONTH_LABELS.map((m, i) => (
+            {MONTH_LABELS.map((month, index) => (
               <button
-                key={m}
-                onClick={() => setSelectedMonth(i)}
-                className="px-3 py-1 text-xs rounded-full transition-all"
+                key={month}
+                type="button"
+                onClick={() => setSelectedMonth(index)}
+                className="rounded-full px-3 py-1 text-xs transition-all"
                 style={{
-                  background: selectedMonth === i ? 'rgba(57,211,83,0.25)' : 'rgba(255,255,255,0.05)',
-                  color: selectedMonth === i ? '#39d353' : 'rgba(255,255,255,0.5)',
-                  border: selectedMonth === i ? '1px solid rgba(57,211,83,0.3)' : '1px solid transparent',
+                  background: selectedMonth === index ? 'rgba(57,211,83,0.2)' : 'rgba(255,255,255,0.05)',
+                  color: selectedMonth === index ? '#4ade80' : 'rgba(255,255,255,0.5)',
+                  border: `1px solid ${selectedMonth === index ? 'rgba(74,222,128,0.26)' : 'rgba(255,255,255,0.05)'}`,
                 }}
               >
-                {m}
+                {month}
               </button>
             ))}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Yearly Heatmap Grid */}
-      {view === 'yearly' && (
-        <div className="overflow-x-auto pb-2">
-          <svg
-            width={grid.length * TOTAL_CELL + 40}
-            height={7 * TOTAL_CELL + 30}
-            className="block"
-          >
-            {/* Month labels */}
-            {monthPositions.map(({ label, x }, i) => (
-              <text
-                key={i}
-                x={x + 32}
-                y={10}
-                fill="rgba(255,255,255,0.4)"
-                fontSize="10"
-                fontFamily="Inter, sans-serif"
-              >
-                {label}
-              </text>
-            ))}
-
-            {/* Day labels */}
-            {DAY_LABELS.map((label, i) => (
-              label && (
+      <div
+        ref={containerRef}
+        className="relative rounded-[22px] border border-white/6 bg-slate-950/35 p-4"
+        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03)' }}
+      >
+        {view === 'yearly' && (
+          <div className="overflow-x-auto pb-2">
+            <svg width={grid.length * TOTAL_CELL + 56} height={7 * TOTAL_CELL + 38} className="block min-w-full">
+              {monthPositions.map(({ label, x }, index) => (
                 <text
-                  key={i}
-                  x={0}
-                  y={i * TOTAL_CELL + 28}
-                  fill="rgba(255,255,255,0.3)"
-                  fontSize="9"
+                  key={`${label}-${index}`}
+                  x={x}
+                  y={12}
+                  fill="rgba(255,255,255,0.42)"
+                  fontSize="10"
                   fontFamily="Inter, sans-serif"
-                  dominantBaseline="middle"
                 >
                   {label}
                 </text>
-              )
-            ))}
+              ))}
 
-            {/* Cells */}
-            {grid.map((week, weekIdx) =>
-              week.map((cell, dayIdx) => {
-                if (!cell) return null;
-                return (
-                  <rect
-                    key={`${weekIdx}-${dayIdx}`}
-                    x={weekIdx * TOTAL_CELL + 30}
-                    y={dayIdx * TOTAL_CELL + 18}
-                    width={CELL_SIZE}
-                    height={CELL_SIZE}
-                    rx={2.5}
-                    ry={2.5}
-                    fill={LEVEL_COLORS[cell.level]}
-                    className="cursor-pointer transition-all duration-150"
-                    style={{ filter: cell.level > 0 ? `drop-shadow(0 0 ${cell.level * 2}px ${LEVEL_COLORS[cell.level]}40)` : 'none' }}
-                    onMouseEnter={(e) => handleCellHover(e, cell)}
-                    onMouseLeave={handleCellLeave}
-                  />
-                );
-              })
-            )}
-          </svg>
-        </div>
-      )}
+              {DAY_LABELS.map(
+                (label, index) =>
+                  label && (
+                    <text
+                      key={`${label}-${index}`}
+                      x={4}
+                      y={index * TOTAL_CELL + 30}
+                      fill="rgba(255,255,255,0.28)"
+                      fontSize="10"
+                      fontFamily="Inter, sans-serif"
+                      dominantBaseline="middle"
+                    >
+                      {label}
+                    </text>
+                  ),
+              )}
 
-      {/* Monthly Grid View */}
-      {view === 'monthly' && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="space-y-3"
-        >
-          <p className="text-sm text-white/50">
-            {monthlyTotal} activities in {MONTH_LABELS[selectedMonth]} {data.year}
-          </p>
-          <div className="grid grid-cols-7 gap-2">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-              <div key={d} className="text-center text-xs text-white/30 pb-1">{d}</div>
-            ))}
-            {/* Pad start */}
-            {Array.from({ length: new Date(data.year, selectedMonth, 1).getDay() }, (_, i) => (
-              <div key={`pad-${i}`} />
-            ))}
-            {monthlyGrid.map((cell, i) => (
-              <motion.div
-                key={cell.date}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: i * 0.015 }}
-                className="aspect-square rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition-transform hover:scale-110"
-                style={{
-                  background: LEVEL_COLORS[cell.level],
-                  color: cell.level > 0 ? 'white' : 'rgba(255,255,255,0.2)',
-                  border: `1px solid ${cell.level > 0 ? 'rgba(57,211,83,0.2)' : 'rgba(255,255,255,0.05)'}`,
-                }}
-                title={`${cell.date}: ${cell.count} activities`}
-              >
-                {new Date(cell.date).getDate()}
-              </motion.div>
-            ))}
+              {grid.map((week, weekIndex) =>
+                week.map((cell, dayIndex) => {
+                  if (!cell) return null;
+                  return (
+                    <rect
+                      key={`${weekIndex}-${dayIndex}`}
+                      x={weekIndex * TOTAL_CELL + 34}
+                      y={dayIndex * TOTAL_CELL + 20}
+                      width={CELL_SIZE}
+                      height={CELL_SIZE}
+                      rx={3}
+                      ry={3}
+                      fill={LEVEL_COLORS[cell.level]}
+                      stroke={cell.level > 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)'}
+                      strokeWidth={0.8}
+                      className="cursor-pointer transition-all duration-200"
+                      style={{
+                        filter:
+                          cell.level > 0
+                            ? `drop-shadow(0 0 ${cell.level * 2}px ${LEVEL_COLORS[cell.level]}55)`
+                            : 'none',
+                      }}
+                      onMouseEnter={(event) => handleCellHover(event, cell)}
+                      onMouseMove={(event) => handleCellHover(event, cell)}
+                      onMouseLeave={handleCellLeave}
+                    />
+                  );
+                }),
+              )}
+            </svg>
           </div>
-        </motion.div>
-      )}
+        )}
 
-      {/* Legend */}
-      <div className="flex items-center justify-between mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-4 text-xs text-white/40">
-          <span>🔥 Current: <span className="text-emerald-400 font-semibold">{data.currentStreak} days</span></span>
-          <span>⭐ Longest: <span className="text-amber-400 font-semibold">{data.longestStreak} days</span></span>
+        {view === 'monthly' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+            <div className="text-sm text-white/50">
+              {monthlyTotal} activities in {MONTH_LABELS[selectedMonth]} {data.year}
+            </div>
+            <div className="grid grid-cols-7 gap-2.5">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <div key={day} className="pb-1 text-center text-xs text-white/28">
+                  {day}
+                </div>
+              ))}
+              {Array.from({ length: new Date(data.year, selectedMonth, 1).getDay() }, (_, index) => (
+                <div key={`pad-${index}`} />
+              ))}
+              {monthlyGrid.map((cell, index) => (
+                <motion.button
+                  key={cell.date}
+                  type="button"
+                  initial={{ scale: 0.92, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: index * 0.01 }}
+                  className="aspect-square rounded-xl border text-xs font-medium transition-transform duration-200 hover:scale-[1.04]"
+                  style={{
+                    background: LEVEL_COLORS[cell.level],
+                    color: cell.level > 0 ? '#f8fafc' : 'rgba(255,255,255,0.28)',
+                    borderColor: cell.level > 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)',
+                  }}
+                  onMouseEnter={(event) => handleCellHover(event, cell)}
+                  onMouseMove={(event) => handleCellHover(event, cell)}
+                  onMouseLeave={handleCellLeave}
+                >
+                  {new Date(cell.date).getDate()}
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        <AnimatePresence>
+          {tooltip && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94 }}
+              className="pointer-events-none absolute z-20 rounded-xl px-3 py-2 text-xs"
+              style={{
+                left: tooltip.x,
+                top: tooltip.y,
+                transform: 'translate(-50%, -100%)',
+                background: 'rgba(0,0,0,0.92)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: 'white',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+              }}
+            >
+              <div className="font-semibold">
+                {tooltip.data.count} activit{tooltip.data.count === 1 ? 'y' : 'ies'}
+              </div>
+              <div className="mt-0.5 text-white/60">
+                {new Date(tooltip.data.date).toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-white/6 pt-4">
+        <div className="flex flex-wrap items-center gap-4 text-xs text-white/40">
+          <span>
+            🔥 Current: <span className="font-semibold text-emerald-400">{data.currentStreak} days</span>
+          </span>
+          <span>
+            ⭐ Longest: <span className="font-semibold text-amber-400">{data.longestStreak} days</span>
+          </span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-white/40">
+
+        <div className="flex items-center gap-2 text-xs text-white/40">
           <span>Less</span>
-          {([0, 1, 2, 3, 4] as const).map(level => (
+          {([0, 1, 2, 3, 4] as const).map((level) => (
             <div
               key={level}
               className="rounded-sm"
@@ -313,34 +387,6 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
           <span>More</span>
         </div>
       </div>
-
-      {/* Tooltip */}
-      <AnimatePresence>
-        {tooltip && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed z-[100] px-3 py-2 rounded-lg text-xs font-medium pointer-events-none"
-            style={{
-              left: tooltip.x,
-              top: tooltip.y,
-              transform: 'translate(-50%, -100%)',
-              background: 'rgba(0,0,0,0.9)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: 'white',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-            }}
-          >
-            <div className="font-semibold">{tooltip.data.count} activit{tooltip.data.count !== 1 ? 'ies' : 'y'}</div>
-            <div className="text-white/60 mt-0.5">
-              {new Date(tooltip.data.date).toLocaleDateString('en-US', {
-                weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 });
