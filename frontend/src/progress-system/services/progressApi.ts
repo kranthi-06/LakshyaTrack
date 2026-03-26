@@ -473,6 +473,147 @@ export async function fetchTimeline(
   }
 }
 
+export interface ProgressStreamMessage {
+  kind: string;
+  userId?: string;
+  eventCount?: number;
+  eventTypes?: string[];
+  timestamp?: string;
+  persistence?: {
+    mongo?: number;
+    sql?: number;
+    buffered?: number;
+  };
+}
+
+interface ProgressStreamOptions {
+  onOpen?: () => void;
+  onMessage?: (message: ProgressStreamMessage) => void;
+  onError?: (error: unknown) => void;
+}
+
+function getProgressStreamUrl(): string {
+  const baseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
+  return `${baseUrl}${PE_BASE}/stream`;
+}
+
+function parseSseChunk(
+  chunk: string,
+  onMessage?: (message: ProgressStreamMessage) => void,
+): void {
+  const normalized = chunk.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  let eventName = 'message';
+  const dataLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim();
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+
+  if (eventName === 'ping' || dataLines.length === 0) {
+    return;
+  }
+
+  try {
+    const payload = JSON.parse(dataLines.join('\n')) as ProgressStreamMessage;
+    onMessage?.(payload);
+  } catch {
+    // Ignore malformed SSE payloads and keep the stream alive.
+  }
+}
+
+export function subscribeToProgressUpdates(options: ProgressStreamOptions = {}): () => void {
+  const controller = new AbortController();
+  const decoder = new TextDecoder();
+  let disposed = false;
+  let reconnectDelayMs = 1000;
+  let reconnectTimer: number | null = null;
+
+  const scheduleReconnect = () => {
+    if (disposed || reconnectTimer !== null) {
+      return;
+    }
+
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      void connect();
+    }, reconnectDelayMs);
+    reconnectDelayMs = Math.min(reconnectDelayMs * 2, 15000);
+  };
+
+  const connect = async () => {
+    const token = localStorage.getItem('token');
+    if (!token || token === 'undefined' || token === 'null') {
+      options.onError?.(new Error('Missing auth token for progress stream'));
+      scheduleReconnect();
+      return;
+    }
+
+    try {
+      const response = await fetch(getProgressStreamUrl(), {
+        headers: {
+          Accept: 'text/event-stream',
+          Authorization: `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Progress stream failed with status ${response.status}`);
+      }
+
+      options.onOpen?.();
+      reconnectDelayMs = 1000;
+
+      const reader = response.body.getReader();
+      let buffer = '';
+
+      while (!disposed) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, '\n');
+
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const chunk = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          parseSseChunk(chunk, options.onMessage);
+          boundary = buffer.indexOf('\n\n');
+        }
+      }
+
+      if (!disposed) {
+        options.onError?.(new Error('Progress stream closed'));
+        scheduleReconnect();
+      }
+    } catch (error) {
+      if (!disposed && !(error instanceof DOMException && error.name === 'AbortError')) {
+        options.onError?.(error);
+        scheduleReconnect();
+      }
+    }
+  };
+
+  void connect();
+
+  return () => {
+    disposed = true;
+    if (reconnectTimer !== null) {
+      window.clearTimeout(reconnectTimer);
+    }
+    controller.abort();
+  };
+}
+
 // ══════════════════════════════════════════════════════════════
 // FALLBACK DATA — Shown when backend API is unavailable
 // All content is LakshyaTrack-specific (no generic DSA/LeetCode)

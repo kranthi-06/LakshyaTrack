@@ -9,6 +9,7 @@ import {
   fetchDashboard,
   getProgressDashboardData,
   fetchContributions,
+  subscribeToProgressUpdates,
 } from './services/progressApi';
 import { PROGRESS_UPDATE_EVENT } from './services/eventTracker';
 import type { ProgressDashboardData } from './types';
@@ -96,7 +97,6 @@ export default function ProgressDashboard() {
     try {
       const freshData = await fetchDashboard(true);
       setData(freshData);
-      setIsLive(true);
     } catch {
       setData(getProgressDashboardData(true));
     } finally {
@@ -113,7 +113,6 @@ export default function ProgressDashboard() {
         const realData = await fetchDashboard();
         if (!cancelled) {
           setData(realData);
-          setIsLive(true);
         }
       } catch {
         // Empty fallback data is already loaded locally.
@@ -143,12 +142,42 @@ export default function ProgressDashboard() {
   }, [refreshDashboard]);
 
   useEffect(() => {
+    let fallbackPollId: number | null = null;
+    let refreshDebounceId: number | null = null;
+
+    const startFallbackPolling = () => {
+      if (fallbackPollId !== null) {
+        return;
+      }
+      fallbackPollId = window.setInterval(() => {
+        if (!document.hidden) {
+          void refreshDashboard(false);
+        }
+      }, 30000);
+    };
+
+    const stopFallbackPolling = () => {
+      if (fallbackPollId !== null) {
+        window.clearInterval(fallbackPollId);
+        fallbackPollId = null;
+      }
+    };
+
+    const scheduleRefresh = () => {
+      if (refreshDebounceId !== null) {
+        window.clearTimeout(refreshDebounceId);
+      }
+      refreshDebounceId = window.setTimeout(() => {
+        void refreshDashboard(false);
+      }, 250);
+    };
+
     const handleExternalUpdate = () => {
-      void refreshDashboard(false);
+      scheduleRefresh();
     };
     const handleVisibility = () => {
       if (!document.hidden) {
-        void refreshDashboard(false);
+        scheduleRefresh();
       }
     };
 
@@ -156,17 +185,32 @@ export default function ProgressDashboard() {
     window.addEventListener('focus', handleExternalUpdate);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    const pollId = window.setInterval(() => {
-      if (!document.hidden) {
-        void refreshDashboard(false);
-      }
-    }, 15000);
+    const disconnectStream = subscribeToProgressUpdates({
+      onOpen: () => {
+        setIsLive(true);
+        stopFallbackPolling();
+      },
+      onMessage: () => {
+        setIsLive(true);
+        scheduleRefresh();
+      },
+      onError: () => {
+        setIsLive(false);
+        startFallbackPolling();
+      },
+    });
+
+    startFallbackPolling();
 
     return () => {
+      disconnectStream();
+      stopFallbackPolling();
       window.removeEventListener(PROGRESS_UPDATE_EVENT, handleExternalUpdate as EventListener);
       window.removeEventListener('focus', handleExternalUpdate);
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.clearInterval(pollId);
+      if (refreshDebounceId !== null) {
+        window.clearTimeout(refreshDebounceId);
+      }
     };
   }, [refreshDashboard]);
 

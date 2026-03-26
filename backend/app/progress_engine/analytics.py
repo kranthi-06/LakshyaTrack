@@ -25,6 +25,7 @@ from app.models.career import (
     QuizAttempt, InterviewSession, MultiStageInterview,
     Roadmap, ProgressSnapshot, UserActivityDay,
 )
+from app.progress_system.models import ActivityLog
 from app.models.resume import SavedResume
 from app.models.user import User, Profile
 from app.services.streak_service import get_streak as legacy_get_streak
@@ -44,6 +45,16 @@ MEANINGFUL_ACTIVITY_EVENT_TYPES = frozenset({
     "PROBLEM_SOLVED",
     "CODE_EXECUTED",
 })
+
+ENGAGEMENT_ACTIVITY_EVENT_TYPES = MEANINGFUL_ACTIVITY_EVENT_TYPES | {
+    "PAGE_VISIT",
+    "FEATURE_USED",
+    "SESSION_START",
+    "QUIZ_COMPLETED",
+    "INTERVIEW_COMPLETED",
+    "ROADMAP_GENERATED",
+    "RESUME_ANALYZED",
+}
 
 FEATURE_EVENT_LABELS = {
     "QUIZ_COMPLETED": "Quizzes",
@@ -117,21 +128,49 @@ def _load_raw_events(
     event_types: Optional[set[str]] = None,
 ) -> List[Dict[str, Any]]:
     col = get_collection("pe_events")
-    if col is None:
-        return []
+    if col is not None:
+        query: Dict[str, Any] = {"user_id": user_id}
+        if start or end:
+            query["timestamp"] = {}
+            if start is not None:
+                query["timestamp"]["$gte"] = start
+            if end is not None:
+                query["timestamp"]["$lte"] = end
+        if event_types:
+            query["event_type"] = {"$in": sorted(event_types)}
 
-    query: Dict[str, Any] = {"user_id": user_id}
-    if start or end:
-        query["timestamp"] = {}
+        events = list(col.find(query, sort=[("timestamp", 1)]))
+        events = [event for event in events if _safe_utc_datetime(event.get("timestamp"))]
+        if events:
+            return events
+
+    db = _get_db()
+    try:
+        query = db.query(ActivityLog).filter(ActivityLog.user_id == user_id)
         if start is not None:
-            query["timestamp"]["$gte"] = start
+            query = query.filter(ActivityLog.timestamp >= start)
         if end is not None:
-            query["timestamp"]["$lte"] = end
-    if event_types:
-        query["event_type"] = {"$in": sorted(event_types)}
+            query = query.filter(ActivityLog.timestamp <= end)
+        if event_types:
+            query = query.filter(ActivityLog.event_type.in_(sorted(event_types)))
 
-    events = list(col.find(query, sort=[("timestamp", 1)]))
-    return [event for event in events if _safe_utc_datetime(event.get("timestamp"))]
+        rows = query.order_by(ActivityLog.timestamp.asc()).all()
+        return [
+            {
+                "event_id": str(row.id),
+                "user_id": row.user_id,
+                "session_id": row.session_id,
+                "event_type": row.event_type,
+                "metadata": row.event_metadata or {},
+                "timestamp": row.timestamp,
+                "ip_address": row.ip_address,
+                "user_agent": row.user_agent,
+            }
+            for row in rows
+            if _safe_utc_datetime(row.timestamp)
+        ]
+    finally:
+        db.close()
 
 
 def _build_session_metrics(
@@ -341,7 +380,12 @@ def _get_meaningful_activity_counts(
         if row.d:
             activity_map[str(row.d)] = max(activity_map[str(row.d)], 1)
 
-    event_rows = _load_raw_events(user_id, start=start, end=end, event_types=set(MEANINGFUL_ACTIVITY_EVENT_TYPES))
+    event_rows = _load_raw_events(
+        user_id,
+        start=start,
+        end=end,
+        event_types=set(ENGAGEMENT_ACTIVITY_EVENT_TYPES),
+    )
     for event in event_rows:
         ts = _safe_utc_datetime(event.get("timestamp"))
         if ts is not None:

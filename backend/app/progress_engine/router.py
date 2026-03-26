@@ -1,46 +1,30 @@
 """
-Progress Engine — FastAPI Router
-Production-grade API endpoints for the Progress Intelligence Dashboard.
+Progress Engine FastAPI router.
 
-Endpoints:
-  POST /events/ingest       — Ingest a single event
-  POST /events/batch        — Ingest batch of events
-  GET  /dashboard            — Full precomputed dashboard
-  GET  /contributions        — Heatmap data
-  GET  /problems             — Problem-solving analytics
-  GET  /activity             — Activity summary
-  GET  /time-analytics       — Time analytics
-  GET  /topics               — Skill bubble map
-  GET  /streak               — Streak data
-  POST /streak/touch         — Touch streak
-  GET  /badges               — Badge/achievement state
-  GET  /timeline             — Activity timeline (NEW)
-  GET  /intelligence         — AI insights
-  POST /workers/flush        — Manual event flush
-  POST /workers/aggregate    — Manual daily aggregation
+This router powers the Progress Intelligence dashboard and the live tracking
+pipeline used by the frontend.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
 from app.models.user import User
 
-from . import analytics, events, workers, redis_client
+from . import analytics, events, realtime, redis_client, workers
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/progress-engine", tags=["Progress Engine"])
 
-
-# ══════════════════════════════════════════════════════════════
-# Request/Response Schemas
-# ══════════════════════════════════════════════════════════════
 
 class EventIngestRequest(BaseModel):
     event_type: str
@@ -55,15 +39,9 @@ class BatchIngestRequest(BaseModel):
     events: list[EventIngestRequest] = Field(..., max_length=100)
 
 
-class TimelineQuery(BaseModel):
-    filter: str = "today"  # today, week, month, all
-    page: int = 1
-    per_page: int = 20
+def _format_sse(event_name: str, payload: dict) -> str:
+    return f"event: {event_name}\ndata: {json.dumps(payload, default=str)}\n\n"
 
-
-# ══════════════════════════════════════════════════════════════
-# EVENT INGESTION — High-throughput, non-blocking
-# ══════════════════════════════════════════════════════════════
 
 @router.post("/events/ingest")
 async def ingest_event(
@@ -71,10 +49,6 @@ async def ingest_event(
     request: Request,
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Ingest a single user event. Non-blocking, buffered write.
-    This is the primary tracking endpoint — called by frontend on every user action.
-    """
     raw = {
         "event_type": body.event_type,
         "user_id": str(current_user.id),
@@ -86,9 +60,7 @@ async def ingest_event(
         "ip_address": request.client.host if request.client else None,
         "user_agent": request.headers.get("user-agent", ""),
     }
-
-    result = events.ingest_event(raw)
-    return result
+    return events.ingest_event(raw)
 
 
 @router.post("/events/batch")
@@ -97,53 +69,95 @@ async def ingest_batch(
     request: Request,
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Ingest a batch of events. More efficient for buffered frontend sends.
-    Max 100 events per batch.
-    """
-    raw_events = []
-    for evt in body.events:
-        raw_events.append({
-            "event_type": evt.event_type,
+    raw_events = [
+        {
+            "event_type": event.event_type,
             "user_id": str(current_user.id),
-            "session_id": evt.session_id,
-            "metadata": evt.metadata,
-            "device_info": evt.device_info or {},
-            "timestamp": evt.timestamp,
-            "event_id": evt.event_id,
+            "session_id": event.session_id,
+            "metadata": event.metadata,
+            "device_info": event.device_info or {},
+            "timestamp": event.timestamp,
+            "event_id": event.event_id,
             "ip_address": request.client.host if request.client else None,
             "user_agent": request.headers.get("user-agent", ""),
-        })
+        }
+        for event in body.events
+    ]
+    return events.ingest_batch(raw_events)
 
-    result = events.ingest_batch(raw_events)
-    return result
 
+@router.get("/stream")
+async def stream_updates(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    user_id = str(current_user.id)
+    subscriber_id, local_queue = realtime.subscribe_local(user_id)
+    pubsub = realtime.open_pubsub(user_id)
 
-# ══════════════════════════════════════════════════════════════
-# DASHBOARD — Full precomputed data
-# ══════════════════════════════════════════════════════════════
+    async def event_generator():
+        last_heartbeat_at = datetime.now(timezone.utc)
+        try:
+            yield _format_sse(
+                "ready",
+                {
+                    "kind": "ready",
+                    "userId": user_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+
+            while True:
+                if await request.is_disconnected():
+                    break
+
+                message: Optional[str] = None
+                if pubsub is not None:
+                    message = await asyncio.to_thread(realtime.read_pubsub_message, pubsub, 1.0)
+
+                if message is None:
+                    try:
+                        message = await asyncio.wait_for(local_queue.get(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        message = None
+
+                now = datetime.now(timezone.utc)
+                if message is not None:
+                    yield f"event: update\ndata: {message}\n\n"
+                    last_heartbeat_at = now
+                    continue
+
+                if (now - last_heartbeat_at).total_seconds() >= 15:
+                    yield _format_sse("ping", {"timestamp": now.isoformat()})
+                    last_heartbeat_at = now
+        finally:
+            realtime.unsubscribe_local(user_id, subscriber_id)
+            if pubsub is not None:
+                await asyncio.to_thread(pubsub.close)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 @router.get("/dashboard")
 async def get_dashboard(
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Get the complete Progress Intelligence Dashboard.
-    Returns all sections in a single response. All data is precomputed.
-    """
     return analytics.get_full_dashboard(str(current_user.id))
 
-
-# ══════════════════════════════════════════════════════════════
-# INDIVIDUAL SECTION ENDPOINTS
-# ══════════════════════════════════════════════════════════════
 
 @router.get("/contributions")
 async def get_contributions(
     year: Optional[int] = None,
     current_user: User = Depends(get_current_user),
 ):
-    """Get contribution heatmap data for a specific year."""
     if year is None:
         year = datetime.now(timezone.utc).year
     return analytics.get_contributions(str(current_user.id), year)
@@ -153,7 +167,6 @@ async def get_contributions(
 async def get_problems(
     current_user: User = Depends(get_current_user),
 ):
-    """Get problem-solving analytics."""
     return analytics.get_problem_stats(str(current_user.id))
 
 
@@ -161,7 +174,6 @@ async def get_problems(
 async def get_activity(
     current_user: User = Depends(get_current_user),
 ):
-    """Get activity tracking summary."""
     return analytics.get_activity_summary(str(current_user.id))
 
 
@@ -169,7 +181,6 @@ async def get_activity(
 async def get_time_analytics(
     current_user: User = Depends(get_current_user),
 ):
-    """Get time analytics & charts data."""
     return analytics.get_time_analytics(str(current_user.id))
 
 
@@ -177,7 +188,6 @@ async def get_time_analytics(
 async def get_topics(
     current_user: User = Depends(get_current_user),
 ):
-    """Get skill/topic bubble map data."""
     return analytics.get_topic_map(str(current_user.id))
 
 
@@ -185,7 +195,6 @@ async def get_topics(
 async def get_streak(
     current_user: User = Depends(get_current_user),
 ):
-    """Get streak data with risk assessment."""
     return analytics.get_streak_data(str(current_user.id))
 
 
@@ -193,15 +202,23 @@ async def get_streak(
 async def touch_streak(
     current_user: User = Depends(get_current_user),
 ):
-    """Touch streak — call on first daily activity."""
-    return workers.run_streak_update(str(current_user.id))
+    user_id = str(current_user.id)
+    result = workers.run_streak_update(user_id)
+    realtime.publish_user_update(
+        user_id,
+        {
+            "kind": "streak_updated",
+            "userId": user_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return result
 
 
 @router.get("/badges")
 async def get_badges(
     current_user: User = Depends(get_current_user),
 ):
-    """Get badge/achievement system state."""
     return analytics.get_badges(str(current_user.id))
 
 
@@ -212,12 +229,11 @@ async def get_timeline(
     per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Get activity timeline. New chronological feed of user actions.
-    Supports pagination and time-range filtering.
-    """
     return analytics.get_activity_timeline(
-        str(current_user.id), filter_range=filter, page=page, per_page=per_page,
+        str(current_user.id),
+        filter_range=filter,
+        page=page,
+        per_page=per_page,
     )
 
 
@@ -225,20 +241,22 @@ async def get_timeline(
 async def get_intelligence(
     current_user: User = Depends(get_current_user),
 ):
-    """Get AI-powered insights and recommendations."""
     return analytics.get_intelligence(str(current_user.id))
 
-
-# ══════════════════════════════════════════════════════════════
-# WORKER ENDPOINTS (admin/internal)
-# ══════════════════════════════════════════════════════════════
 
 @router.post("/workers/flush")
 async def manual_flush(
     current_user: User = Depends(get_current_user),
 ):
-    """Manually flush event buffer to database."""
     result = workers.run_event_flusher()
+    realtime.publish_user_update(
+        str(current_user.id),
+        {
+            "kind": "buffer_flushed",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "flushed": result.get("flushed", 0),
+        },
+    )
     return {"status": "flushed", **result}
 
 
@@ -246,18 +264,20 @@ async def manual_flush(
 async def manual_aggregate(
     current_user: User = Depends(get_current_user),
 ):
-    """Manually run daily aggregation for current user."""
-    result = workers.run_daily_aggregation(str(current_user.id))
+    user_id = str(current_user.id)
+    result = workers.run_daily_aggregation(user_id)
+    realtime.publish_user_update(
+        user_id,
+        {
+            "kind": "aggregate_updated",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     return {"status": "aggregated", "has_data": result is not None}
 
 
-# ══════════════════════════════════════════════════════════════
-# HEALTH & METRICS
-# ══════════════════════════════════════════════════════════════
-
 @router.get("/health")
 async def engine_health():
-    """Progress Engine health check."""
     return {
         "status": "healthy",
         "event_buffer_size": redis_client.get_buffer_size(),

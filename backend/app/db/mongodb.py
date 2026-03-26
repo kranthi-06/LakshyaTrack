@@ -132,6 +132,26 @@ def _ensure_indexes(db: Database) -> None:
         name="reasoning_user_progress_user_topic_idx",
         unique=True,
     )
+    db["pe_events"].create_index(
+        [("user_id", ASCENDING), ("timestamp", DESCENDING)],
+        name="pe_events_user_timestamp_idx",
+    )
+    db["pe_events"].create_index(
+        [("user_id", ASCENDING), ("event_type", ASCENDING), ("timestamp", DESCENDING)],
+        name="pe_events_user_type_timestamp_idx",
+    )
+    db["pe_events"].create_index(
+        [("event_id", ASCENDING)],
+        name="pe_events_event_id_idx",
+    )
+    db["pe_daily_aggregates"].create_index(
+        [("user_id", ASCENDING), ("date", DESCENDING)],
+        name="pe_daily_aggregates_user_date_idx",
+    )
+    db["pe_badges"].create_index(
+        [("user_id", ASCENDING), ("badge_id", ASCENDING)],
+        name="pe_badges_user_badge_idx",
+    )
 
 
 def init_mongodb() -> Optional[Database]:
