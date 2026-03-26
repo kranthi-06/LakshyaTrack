@@ -1,27 +1,22 @@
 import {
   useCallback,
-  useEffect,
   useMemo,
-  useState,
   lazy,
   Suspense,
   type ReactNode,
 } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { RefreshCw, Sun, Moon, WifiOff, Radio } from 'lucide-react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useTheme } from '../context/ThemeContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
+import type { TopicBubble } from '../progress-system/types';
 import {
-  fetchContributions,
-  fetchDashboard,
-  getProgressDashboardData,
-  subscribeToProgressUpdates,
-} from '../progress-system/services/progressApi';
-import { PROGRESS_UPDATE_EVENT } from '../progress-system/services/eventTracker';
-import type { ProgressDashboardData, TopicBubble } from '../progress-system/types';
+  useProgressDashboardRuntime,
+  useProgressDashboardStore,
+} from '../progress-system/store/useProgressDashboardStore';
 
 const ContributionHeatmap = lazy(() => import('../progress-system/components/ContributionHeatmap'));
 const ProblemSolvingStats = lazy(() => import('../progress-system/components/ProblemSolvingStats'));
@@ -175,127 +170,33 @@ function CategoryWiseStatsCard({
 }
 
 export default function ProgressUnified() {
+  useProgressDashboardRuntime();
+
   const { isDark, toggleTheme } = useTheme();
-  const [data, setData] = useState<ProgressDashboardData>(() => getProgressDashboardData());
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLive, setIsLive] = useState(false);
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  const data = useProgressDashboardStore((state) => state.data);
+  const isRefreshing = useProgressDashboardStore((state) => state.isRefreshing);
+  const isLive = useProgressDashboardStore((state) => state.isLive);
+  const isOnline = useProgressDashboardStore((state) => state.isOnline);
+  const refreshDashboard = useProgressDashboardStore((state) => state.refreshDashboard);
+  const refreshContributionYear = useProgressDashboardStore((state) => state.refreshContributionYear);
 
-  const refreshDashboard = useCallback(async (showLoading = false) => {
-    if (showLoading) setIsLoading(true);
-    try {
-      const freshData = await fetchDashboard(true);
-      setData(freshData);
-    } catch {
-      setData(getProgressDashboardData(true));
-    } finally {
-      if (showLoading) setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const realData = await fetchDashboard();
-        if (!cancelled) setData(realData);
-      } catch {
-        if (!cancelled) setData(getProgressDashboardData(true));
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleYearChange = useCallback(async (year: number) => {
-    try {
-      const contributions = await fetchContributions(year);
-      setData((previous) => ({ ...previous, contributions }));
-    } catch {
-      // keep existing contributions on transient failures
-    }
-  }, []);
-
-  useEffect(() => {
-    let fallbackPollId: number | null = null;
-    let refreshDebounceId: number | null = null;
-
-    const startFallbackPolling = () => {
-      if (fallbackPollId !== null) return;
-      fallbackPollId = window.setInterval(() => {
-        if (!document.hidden && navigator.onLine) {
-          void refreshDashboard(false);
-        }
-      }, 30000);
-    };
-
-    const stopFallbackPolling = () => {
-      if (fallbackPollId !== null) {
-        window.clearInterval(fallbackPollId);
-        fallbackPollId = null;
-      }
-    };
-
-    const scheduleRefresh = () => {
-      if (refreshDebounceId !== null) window.clearTimeout(refreshDebounceId);
-      refreshDebounceId = window.setTimeout(() => void refreshDashboard(false), 250);
-    };
-
-    const handleExternalUpdate = () => scheduleRefresh();
-    const handleVisibility = () => {
-      if (!document.hidden) scheduleRefresh();
-    };
-    const handleOnline = () => {
-      setIsOnline(true);
-      scheduleRefresh();
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      setIsLive(false);
-      startFallbackPolling();
-    };
-
-    window.addEventListener(PROGRESS_UPDATE_EVENT, handleExternalUpdate as EventListener);
-    window.addEventListener('focus', handleExternalUpdate);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    const disconnectStream = subscribeToProgressUpdates({
-      onOpen: () => {
-        setIsLive(true);
-        stopFallbackPolling();
-      },
-      onMessage: () => {
-        setIsLive(true);
-        scheduleRefresh();
-      },
-      onError: () => {
-        setIsLive(false);
-        startFallbackPolling();
-      },
-    });
-
-    startFallbackPolling();
-
-    return () => {
-      disconnectStream();
-      stopFallbackPolling();
-      window.removeEventListener(PROGRESS_UPDATE_EVENT, handleExternalUpdate as EventListener);
-      window.removeEventListener('focus', handleExternalUpdate);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      if (refreshDebounceId !== null) window.clearTimeout(refreshDebounceId);
-    };
-  }, [refreshDashboard]);
+  const handleYearChange = useCallback(
+    (year: number) => {
+      void refreshContributionYear(year);
+    },
+    [refreshContributionYear],
+  );
 
   const syncLabel = formatRelativeSync(data.lastUpdated);
-  const connectionLabel = !isOnline ? 'Offline cache' : isLive ? 'Realtime synced' : 'Syncing';
+  const connectionLabel = !isOnline
+    ? 'Offline cache'
+    : isLive
+      ? isRefreshing
+        ? 'Realtime syncing'
+        : 'Realtime synced'
+      : isRefreshing
+        ? 'Syncing'
+        : 'Standby sync';
 
   const summary = useMemo(
     () => [
@@ -380,12 +281,12 @@ export default function ProgressUnified() {
 
             <Button
               type="button"
-              onClick={() => void refreshDashboard(true)}
-              disabled={isLoading}
+              onClick={() => void refreshDashboard({ showLoading: true, forceRefresh: true, reason: 'manual-refresh' })}
+              disabled={isRefreshing}
               className="rounded-full bg-[#6C63FF] hover:bg-[#5B54E0] text-white shadow-lg shadow-indigo-500/20"
             >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="ml-2">{isLoading ? 'Refreshing' : 'Refresh'}</span>
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="ml-2">{isRefreshing ? 'Refreshing' : 'Refresh'}</span>
             </Button>
           </div>
         </div>
@@ -431,16 +332,8 @@ export default function ProgressUnified() {
           ))}
         </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={data.lastUpdated}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.24 }}
-            className="space-y-7"
-          >
-            <Suspense fallback={<SectionSkeleton />}>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24 }} className="space-y-7">
+          <Suspense fallback={<SectionSkeleton />}>
               {/* Activity section */}
               <section className="space-y-4">
                 <div className="px-0.5">
@@ -550,9 +443,8 @@ export default function ProgressUnified() {
                   <BadgeSystem data={data.badges} />
                 </SectionBoundary>
               </section>
-            </Suspense>
-          </motion.div>
-        </AnimatePresence>
+          </Suspense>
+        </motion.div>
 
         <div className="pt-1 text-center text-xs text-slate-500 dark:text-slate-400">
           Last updated: {new Date(data.lastUpdated).toLocaleString()} · synced {syncLabel}

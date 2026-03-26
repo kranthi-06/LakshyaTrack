@@ -330,9 +330,11 @@ export function normalizeDashboardData(raw: Partial<ProgressDashboardData> | Rec
 // API Calls — Real-Time Data
 // ══════════════════════════════════════════════════════════════
 
-async function apiGet<T>(path: string, cacheKey: string, ttl = DEFAULT_TTL): Promise<T> {
-  const cached = getCached<T>(cacheKey);
-  if (cached) return cached;
+async function apiGet<T>(path: string, cacheKey: string, ttl = DEFAULT_TTL, forceRefresh = false): Promise<T> {
+  if (!forceRefresh) {
+    const cached = getCached<T>(cacheKey);
+    if (cached) return cached;
+  }
 
   const { data } = await api.get(`${PE_BASE}${path}`);
   setCache(cacheKey, data, ttl);
@@ -341,7 +343,7 @@ async function apiGet<T>(path: string, cacheKey: string, ttl = DEFAULT_TTL): Pro
 
 // ── Full Dashboard (single aggregated call) ──────────────────
 
-export async function fetchDashboard(forceRefresh = false): Promise<ProgressDashboardData> {
+export async function fetchDashboard(forceRefresh = false, fallbackToMock = true): Promise<ProgressDashboardData> {
   if (!forceRefresh) {
     const cached = getCached<ProgressDashboardData>('dashboard');
     if (cached) return cached;
@@ -353,6 +355,9 @@ export async function fetchDashboard(forceRefresh = false): Promise<ProgressDash
     setCache('dashboard', normalized, DASHBOARD_TTL);
     return normalized;
   } catch (error) {
+    if (!fallbackToMock) {
+      throw error;
+    }
     console.warn('[ProgressEngine] Dashboard API failed, using empty fallback data:', error);
     return getProgressDashboardData(true);
   }
@@ -360,55 +365,77 @@ export async function fetchDashboard(forceRefresh = false): Promise<ProgressDash
 
 // ── Individual Section API Calls ─────────────────────────────
 
-export async function fetchContributions(year?: number): Promise<ContributionData> {
+export async function fetchContributions(
+  year?: number,
+  forceRefresh = false,
+  fallbackToMock = true,
+): Promise<ContributionData> {
   const y = year || new Date().getFullYear();
   try {
     return normalizeContributionData(
-      await apiGet(`/contributions?year=${y}`, `contributions:${y}`, 10 * 60 * 1000),
+      await apiGet(`/contributions?year=${y}`, `contributions:${y}`, 10 * 60 * 1000, forceRefresh),
     );
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch contributions');
+    }
     return generateContributions(y);
   }
 }
 
-export async function fetchProblemStats(): Promise<ProblemSolvingStats> {
+export async function fetchProblemStats(forceRefresh = false, fallbackToMock = true): Promise<ProblemSolvingStats> {
   try {
-    return normalizeProblemStats(await apiGet('/problems', 'problems', 5 * 60 * 1000));
+    return normalizeProblemStats(await apiGet('/problems', 'problems', 5 * 60 * 1000, forceRefresh));
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch problem stats');
+    }
     return generateProblemSolvingStats();
   }
 }
 
-export async function fetchActivity(): Promise<ActivitySummary> {
+export async function fetchActivity(forceRefresh = false, fallbackToMock = true): Promise<ActivitySummary> {
   try {
-    return normalizeActivitySummary(await apiGet('/activity', 'activity', 5 * 60 * 1000));
+    return normalizeActivitySummary(await apiGet('/activity', 'activity', 5 * 60 * 1000, forceRefresh));
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch activity summary');
+    }
     return generateActivitySummary();
   }
 }
 
-export async function fetchTimeAnalytics(): Promise<TimeAnalyticsData> {
+export async function fetchTimeAnalytics(forceRefresh = false, fallbackToMock = true): Promise<TimeAnalyticsData> {
   try {
     return normalizeTimeAnalytics(
-      await apiGet('/time-analytics', 'time-analytics', 5 * 60 * 1000),
+      await apiGet('/time-analytics', 'time-analytics', 5 * 60 * 1000, forceRefresh),
     );
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch time analytics');
+    }
     return generateTimeAnalytics();
   }
 }
 
-export async function fetchTopicMap(): Promise<TopicMapData> {
+export async function fetchTopicMap(forceRefresh = false, fallbackToMock = true): Promise<TopicMapData> {
   try {
-    return normalizeTopicMap(await apiGet('/topics', 'topics', 10 * 60 * 1000));
+    return normalizeTopicMap(await apiGet('/topics', 'topics', 10 * 60 * 1000, forceRefresh));
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch topic map');
+    }
     return generateTopicMap();
   }
 }
 
-export async function fetchStreak(): Promise<StreakData> {
+export async function fetchStreak(forceRefresh = false, fallbackToMock = true): Promise<StreakData> {
   try {
-    return normalizeStreak(await apiGet('/streak', 'streak', 60 * 1000));
+    return normalizeStreak(await apiGet('/streak', 'streak', 60 * 1000, forceRefresh));
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch streak data');
+    }
     return generateStreakData();
   }
 }
@@ -423,18 +450,24 @@ export async function touchStreak(): Promise<StreakData> {
   }
 }
 
-export async function fetchBadges(): Promise<BadgeSystemData> {
+export async function fetchBadges(forceRefresh = false, fallbackToMock = true): Promise<BadgeSystemData> {
   try {
-    return normalizeBadges(await apiGet('/badges', 'badges', 10 * 60 * 1000));
+    return normalizeBadges(await apiGet('/badges', 'badges', 10 * 60 * 1000, forceRefresh));
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch badges');
+    }
     return generateBadges();
   }
 }
 
-export async function fetchIntelligence(): Promise<IntelligenceData> {
+export async function fetchIntelligence(forceRefresh = false, fallbackToMock = true): Promise<IntelligenceData> {
   try {
-    return normalizeIntelligence(await apiGet('/intelligence', 'intelligence', 10 * 60 * 1000));
+    return normalizeIntelligence(await apiGet('/intelligence', 'intelligence', 10 * 60 * 1000, forceRefresh));
   } catch {
+    if (!fallbackToMock) {
+      throw new Error('Failed to fetch intelligence');
+    }
     return generateIntelligence();
   }
 }

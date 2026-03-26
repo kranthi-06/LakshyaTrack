@@ -1,6 +1,5 @@
 import {
   useState,
-  useEffect,
   useMemo,
   useCallback,
   Suspense,
@@ -9,15 +8,11 @@ import {
 } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Radio, RefreshCw, WifiOff } from 'lucide-react';
-import {
-  fetchDashboard,
-  getProgressDashboardData,
-  fetchContributions,
-  subscribeToProgressUpdates,
-} from './services/progressApi';
-import { PROGRESS_UPDATE_EVENT } from './services/eventTracker';
-import type { ProgressDashboardData } from './types';
 import ErrorBoundary from '../components/ErrorBoundary';
+import {
+  useProgressDashboardRuntime,
+  useProgressDashboardStore,
+} from './store/useProgressDashboardStore';
 
 const ContributionHeatmap = lazy(() => import('./components/ContributionHeatmap'));
 const ProblemSolvingStats = lazy(() => import('./components/ProblemSolvingStats'));
@@ -122,156 +117,25 @@ function formatRelativeSync(timestamp: string): string {
 }
 
 export default function ProgressDashboard() {
+  useProgressDashboardRuntime();
+
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
-  const [data, setData] = useState<ProgressDashboardData>(() => getProgressDashboardData());
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLive, setIsLive] = useState(false);
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  const data = useProgressDashboardStore((state) => state.data);
+  const isRefreshing = useProgressDashboardStore((state) => state.isRefreshing);
+  const isLive = useProgressDashboardStore((state) => state.isLive);
+  const isOnline = useProgressDashboardStore((state) => state.isOnline);
+  const refreshDashboard = useProgressDashboardStore((state) => state.refreshDashboard);
+  const refreshContributionYear = useProgressDashboardStore((state) => state.refreshContributionYear);
 
-  const refreshDashboard = useCallback(async (showLoading = false) => {
-    if (showLoading) {
-      setIsLoading(true);
-    }
-
-    try {
-      const freshData = await fetchDashboard(true);
-      setData(freshData);
-    } catch {
-      setData(getProgressDashboardData(true));
-    } finally {
-      if (showLoading) {
-        setIsLoading(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const realData = await fetchDashboard();
-        if (!cancelled) {
-          setData(realData);
-        }
-      } catch {
-        if (!cancelled) {
-          setData(getProgressDashboardData(true));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleYearChange = useCallback(async (year: number) => {
-    try {
-      const contributions = await fetchContributions(year);
-      setData((previous) => ({ ...previous, contributions }));
-    } catch {
-      // Keep the active contribution view on transient failures.
-    }
-  }, []);
+  const handleYearChange = useCallback(
+    (year: number) => {
+      void refreshContributionYear(year);
+    },
+    [refreshContributionYear],
+  );
 
   const handleRefresh = useCallback(async () => {
-    await refreshDashboard(true);
-  }, [refreshDashboard]);
-
-  useEffect(() => {
-    let fallbackPollId: number | null = null;
-    let refreshDebounceId: number | null = null;
-
-    const startFallbackPolling = () => {
-      if (fallbackPollId !== null) {
-        return;
-      }
-
-      fallbackPollId = window.setInterval(() => {
-        if (!document.hidden && navigator.onLine) {
-          void refreshDashboard(false);
-        }
-      }, 30000);
-    };
-
-    const stopFallbackPolling = () => {
-      if (fallbackPollId !== null) {
-        window.clearInterval(fallbackPollId);
-        fallbackPollId = null;
-      }
-    };
-
-    const scheduleRefresh = () => {
-      if (refreshDebounceId !== null) {
-        window.clearTimeout(refreshDebounceId);
-      }
-
-      refreshDebounceId = window.setTimeout(() => {
-        void refreshDashboard(false);
-      }, 250);
-    };
-
-    const handleExternalUpdate = () => {
-      scheduleRefresh();
-    };
-
-    const handleVisibility = () => {
-      if (!document.hidden) {
-        scheduleRefresh();
-      }
-    };
-
-    const handleOnline = () => {
-      setIsOnline(true);
-      scheduleRefresh();
-    };
-
-    const handleOffline = () => {
-      setIsOnline(false);
-      setIsLive(false);
-      startFallbackPolling();
-    };
-
-    window.addEventListener(PROGRESS_UPDATE_EVENT, handleExternalUpdate as EventListener);
-    window.addEventListener('focus', handleExternalUpdate);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    const disconnectStream = subscribeToProgressUpdates({
-      onOpen: () => {
-        setIsLive(true);
-        stopFallbackPolling();
-      },
-      onMessage: () => {
-        setIsLive(true);
-        scheduleRefresh();
-      },
-      onError: () => {
-        setIsLive(false);
-        startFallbackPolling();
-      },
-    });
-
-    startFallbackPolling();
-
-    return () => {
-      disconnectStream();
-      stopFallbackPolling();
-      window.removeEventListener(PROGRESS_UPDATE_EVENT, handleExternalUpdate as EventListener);
-      window.removeEventListener('focus', handleExternalUpdate);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      if (refreshDebounceId !== null) {
-        window.clearTimeout(refreshDebounceId);
-      }
-    };
+    await refreshDashboard({ showLoading: true, forceRefresh: true, reason: 'manual-refresh' });
   }, [refreshDashboard]);
 
   const headerStats = useMemo(
@@ -312,7 +176,15 @@ export default function ProgressDashboard() {
     [data],
   );
 
-  const connectionLabel = !isOnline ? 'Offline cache' : isLive ? 'Realtime synced' : 'Syncing';
+  const connectionLabel = !isOnline
+    ? 'Offline cache'
+    : isLive
+      ? isRefreshing
+        ? 'Realtime syncing'
+        : 'Realtime synced'
+      : isRefreshing
+        ? 'Syncing'
+        : 'Standby sync';
   const syncLabel = formatRelativeSync(data.lastUpdated);
 
   const overviewContent = (
@@ -459,11 +331,11 @@ export default function ProgressDashboard() {
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={isLoading}
+              disabled={isRefreshing}
               className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-200 transition-all hover:bg-indigo-500/16 disabled:opacity-60"
             >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              {isLoading ? 'Refreshing' : 'Refresh'}
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing' : 'Refresh'}
             </button>
           </div>
         </div>
