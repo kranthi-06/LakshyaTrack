@@ -35,6 +35,8 @@ const PROFICIENCY_LABELS: Record<string, string> = {
 
 const EDGE_PADDING = 18;
 const BUBBLE_PADDING = 12;
+// Padding used to keep label text comfortably inside the visible bubble circle.
+const TEXT_INSET = 8;
 const cardClassName =
   'rounded-[24px] p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]';
 
@@ -70,23 +72,56 @@ function splitLabel(label: string, maxChars: number, maxLines: number) {
   return lines.filter(Boolean);
 }
 
-function getBubbleLabelLayout(label: string, radius: number) {
-  if (radius < 28) {
+function getBubbleLabelLayout(label: string, outerRadius: number) {
+  // Bubble visuals use (bubble.r + 6) as the main circle radius.
+  // This layout function uses an "inner radius" so text never crowds the border.
+  const innerRadius = outerRadius - TEXT_INSET;
+
+  if (innerRadius < 20) {
     return { lines: [] as string[], fontSize: 0, subtitleSize: 0, titleStartY: 0, subtitleY: 0, showSubtitle: false };
   }
 
-  const fontSize = clamp(Math.floor(radius / 4), 9, 18);
-  const maxCharsPerLine = clamp(Math.floor((radius * 1.6) / (fontSize * 0.58)), 4, 14);
-  const maxLines = radius >= 52 ? 2 : 1;
+  const fontSize = clamp(Math.floor(innerRadius / 3.2), 9, 18);
+  const maxCharsPerLine = clamp(Math.floor((innerRadius * 1.55) / (fontSize * 0.58)), 4, 14);
+  const maxLines = innerRadius >= 48 ? 2 : 1;
   const lines = splitLabel(label, maxCharsPerLine, maxLines);
-  const showSubtitle = radius >= 60;
-  const titleStartY = showSubtitle ? -(fontSize * (lines.length > 1 ? 0.5 : 0.22)) : lines.length > 1 ? -(fontSize * 0.34) : 0;
-  const subtitleY = titleStartY + lines.length * (fontSize * 0.88) + 7;
+
+  // Subtitle is helpful on larger bubbles; keep it off smaller ones to prevent clutter.
+  const showSubtitle = innerRadius >= 58;
+  const subtitleSize = clamp(Math.round(fontSize * 0.58), 9, 12);
+
+  const lineSpacing = fontSize * 0.92;
+  const subtitleGap = 6;
+  const subtitleBlockHeight = subtitleSize * 0.95;
+  const shiftUp = showSubtitle ? (subtitleBlockHeight / 2 + subtitleGap / 2) : 0;
+
+  // We place title lines by centering their block around the bubble center,
+  // then shifting up to make room for the subtitle.
+  const titleStartY = -((lines.length - 1) / 2) * lineSpacing - shiftUp;
+  const subtitleY = showSubtitle
+    ? ((lines.length - 1) / 2) * lineSpacing + shiftUp + subtitleGap
+    : 0;
+
+  // Safety: if our approximate layout would exceed the inner radius, hide subtitle.
+  // (SVG text is not trivial to measure precisely, so this is a conservative guard.)
+  if (showSubtitle) {
+    const approxHalfHeight = (lines.length - 1) * lineSpacing / 2 + Math.max(fontSize, subtitleSize) * 0.55;
+    if (approxHalfHeight > innerRadius * 0.96) {
+      return {
+        lines,
+        fontSize,
+        subtitleSize,
+        titleStartY: -((lines.length - 1) / 2) * lineSpacing,
+        subtitleY: 0,
+        showSubtitle: false,
+      };
+    }
+  }
 
   return {
     lines,
     fontSize,
-    subtitleSize: clamp(Math.round(fontSize * 0.62), 9, 12),
+    subtitleSize,
     titleStartY,
     subtitleY,
     showSubtitle,
@@ -311,18 +346,25 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                 <stop offset="100%" stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]} stopOpacity="0.04" />
               </radialGradient>
             ))}
-            {bubbles.map((bubble) => (
-              <clipPath key={`clip-${bubble.topic.id}`} id={`bubbleClip-${bubble.topic.id}`}>
-                <circle cx={bubble.x} cy={bubble.y} r={bubble.r - 6} />
-              </clipPath>
-            ))}
+            {bubbles.map((bubble) => {
+              const outerRadius = bubble.r + 6;
+              return (
+                <clipPath
+                  key={`clip-${bubble.topic.id}`}
+                  id={`bubbleClip-${bubble.topic.id}`}
+                  clipPathUnits="userSpaceOnUse"
+                >
+                  <circle cx={bubble.x} cy={bubble.y} r={Math.max(0, outerRadius - TEXT_INSET)} />
+                </clipPath>
+              );
+            })}
           </defs>
 
           {bubbles.map((bubble, index) => {
             const isHovered = hoveredId === bubble.topic.id;
             const isSelected = selectedTopic?.id === bubble.topic.id;
             const proficiencyColor = PROFICIENCY_COLORS[bubble.topic.proficiencyLevel];
-            const labelLayout = getBubbleLabelLayout(bubble.topic.name, bubble.r);
+            const labelLayout = getBubbleLabelLayout(bubble.topic.name, bubble.r + 6);
 
             return (
               <g key={bubble.topic.id}>
@@ -368,7 +410,10 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                 </motion.circle>
 
                 {labelLayout.lines.length > 0 && (
-                  <g clipPath={`url(#bubbleClip-${bubble.topic.id})`} className="pointer-events-none select-none">
+                  <g
+                    clipPath={`url(#bubbleClip-${bubble.topic.id})`}
+                    className="pointer-events-none select-none"
+                  >
                     {labelLayout.lines.map((line, lineIndex) => (
                       <motion.text
                         key={`${bubble.topic.id}-${lineIndex}`}
@@ -379,6 +424,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                         fill="#f8fafc"
                         fontSize={labelLayout.fontSize}
                         fontWeight="600"
+                        clipPath={`url(#bubbleClip-${bubble.topic.id})`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: index * 0.03 + 0.45 }}
@@ -395,6 +441,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                         dominantBaseline="middle"
                         fill="rgba(255,255,255,0.52)"
                         fontSize={labelLayout.subtitleSize}
+                        clipPath={`url(#bubbleClip-${bubble.topic.id})`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: index * 0.03 + 0.55 }}

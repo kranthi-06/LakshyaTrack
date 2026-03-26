@@ -316,10 +316,10 @@ export default function ProgressDashboard() {
   const syncLabel = formatRelativeSync(data.lastUpdated);
 
   const overviewContent = (
-    <div className="space-y-8">
+    <div className="space-y-7">
       <section className="space-y-4">
         <SectionLead
-          eyebrow="Primary Analytics"
+          eyebrow="Analytics"
           title="Streak momentum and practice performance"
           description="The first layer keeps your streak engine and problem-solving depth side by side so the dashboard opens with the clearest signal."
         />
@@ -335,26 +335,28 @@ export default function ProgressDashboard() {
 
       <section className="space-y-4">
         <SectionLead
-          eyebrow="Visual Intelligence"
+          eyebrow="Visuals"
           title="Calendar activity, hour-of-day rhythm, and live behavior"
           description="Heatmap, hourly usage rhythm, and engagement tracking are grouped together to make your learning tempo easier to read without hunting through tabs."
         />
-        <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.08fr,0.92fr]">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <SectionBoundary title="Contribution Heatmap">
             <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
           </SectionBoundary>
           <SectionBoundary title="Time Analytics">
             <TimeAnalytics data={data.timeAnalytics} hourlyActivity={data.intelligence.activeHours} />
           </SectionBoundary>
+          <div className="xl:col-span-2">
+            <SectionBoundary title="Activity Tracking">
+              <ActivityTracking data={data.activity} />
+            </SectionBoundary>
+          </div>
         </div>
-        <SectionBoundary title="Activity Tracking">
-          <ActivityTracking data={data.activity} />
-        </SectionBoundary>
       </section>
 
       <section className="space-y-4">
         <SectionLead
-          eyebrow="Skill Intelligence"
+          eyebrow="Skills"
           title="Topic mastery map with cleaner bubble behavior"
           description="The skill map keeps your existing visual identity, but the bubble spacing, label fitting, and hover states are tuned so it feels premium instead of crowded."
         />
@@ -365,7 +367,7 @@ export default function ProgressDashboard() {
 
       <section className="space-y-4">
         <SectionLead
-          eyebrow="Insights Panel"
+          eyebrow="Insights"
           title="Predictions, suggestions, and focus guidance"
           description="AI insights remain intact, but the reading flow is cleaner so warnings, recommendations, and high-value patterns surface faster."
         />
@@ -508,8 +510,8 @@ export default function ProgressDashboard() {
           ))}
         </div>
 
-        <div className="sticky top-3 z-20">
-          <div className="inline-flex min-w-full rounded-[22px] p-2 sm:min-w-0" style={HEADER_SURFACE_STYLE}>
+        <div className="sticky top-4 z-20">
+          <div className="inline-flex w-full min-w-0 rounded-[22px] p-2 sm:w-auto sm:min-w-0" style={HEADER_SURFACE_STYLE}>
             <div className="flex flex-wrap gap-2">
               {TABS.map((tab) => (
                 <button
