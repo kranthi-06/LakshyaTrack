@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
+import { useTheme } from '../../context/ThemeContext';
 import {
   mutedTextClassName,
   panelClassName,
@@ -193,6 +194,7 @@ function packBubbles(topics: TopicBubble[], width: number, height: number): Bubb
 }
 
 const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
+  const { isDark } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 420 });
   const [selectedTopic, setSelectedTopic] = useState<TopicBubble | null>(null);
@@ -294,7 +296,15 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
           ))}
         </div>
 
-        <div ref={containerRef} className={`relative overflow-hidden rounded-2xl border p-3 ${panelClassName}`}>
+        <div
+          ref={containerRef}
+          className={`relative overflow-hidden rounded-2xl border p-3 ${panelClassName}`}
+          style={{
+            background: isDark
+              ? 'linear-gradient(180deg, rgba(2,6,23,0.28), rgba(2,6,23,0.18))'
+              : 'linear-gradient(180deg, rgba(226,232,240,0.92), rgba(241,245,249,0.98))',
+          }}
+        >
           {filteredTopics.length === 0 && (
             <div className={`absolute inset-0 flex items-center justify-center px-6 text-center text-sm ${mutedTextClassName}`}>
               No topic activity has been recorded for this view yet.
@@ -305,9 +315,21 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
             <defs>
               {bubbles.map((bubble) => (
                 <radialGradient key={`gradient-${bubble.topic.id}`} id={`bubbleGrad-${bubble.topic.id}`}>
-                  <stop offset="0%" stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]} stopOpacity="0.32" />
-                  <stop offset="72%" stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]} stopOpacity="0.14" />
-                  <stop offset="100%" stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]} stopOpacity="0.04" />
+                  <stop
+                    offset="0%"
+                    stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]}
+                    stopOpacity={isDark ? '0.32' : '0.72'}
+                  />
+                  <stop
+                    offset="72%"
+                    stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]}
+                    stopOpacity={isDark ? '0.14' : '0.34'}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor={PROFICIENCY_COLORS[bubble.topic.proficiencyLevel]}
+                    stopOpacity={isDark ? '0.04' : '0.12'}
+                  />
                 </radialGradient>
               ))}
               {bubbles.map((bubble) => {
@@ -347,7 +369,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                     fill={`url(#bubbleGrad-${bubble.topic.id})`}
                     stroke={proficiencyColor}
                     strokeWidth={isHovered || isSelected ? 2.2 : 1.1}
-                    strokeOpacity={isHovered || isSelected ? 0.75 : 0.3}
+                    strokeOpacity={isHovered || isSelected ? (isDark ? 0.75 : 0.92) : isDark ? 0.3 : 0.58}
                     className="cursor-pointer"
                     initial={{ r: 0, opacity: 0 }}
                     animate={{
@@ -362,7 +384,11 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                     onMouseMove={(event) => handleBubbleHover(event, bubble.topic)}
                     onMouseLeave={handleBubbleLeave}
                     onClick={() => handleBubbleClick(bubble.topic)}
-                    style={{ filter: isHovered ? `drop-shadow(0 0 16px ${proficiencyColor}55)` : 'none' }}
+                    style={{
+                      filter: isHovered
+                        ? `drop-shadow(0 0 18px ${proficiencyColor}${isDark ? '55' : '40'})`
+                        : `drop-shadow(0 10px 20px ${proficiencyColor}${isDark ? '12' : '18'})`,
+                    }}
                   >
                     <title>{bubble.topic.name}</title>
                   </motion.circle>
@@ -376,7 +402,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                           y={bubble.y + labelLayout.titleStartY + lineIndex * (labelLayout.fontSize * 0.92)}
                           textAnchor="middle"
                           dominantBaseline="middle"
-                          fill="#f8fafc"
+                          fill={isDark ? '#f8fafc' : '#0f172a'}
                           fontSize={labelLayout.fontSize}
                           fontWeight="600"
                           clipPath={`url(#bubbleClip-${bubble.topic.id})`}
@@ -394,7 +420,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
                           y={bubble.y + labelLayout.subtitleY}
                           textAnchor="middle"
                           dominantBaseline="middle"
-                          fill="rgba(248,250,252,0.62)"
+                          fill={isDark ? 'rgba(248,250,252,0.62)' : 'rgba(15,23,42,0.72)'}
                           fontSize={labelLayout.subtitleSize}
                           clipPath={`url(#bubbleClip-${bubble.topic.id})`}
                           initial={{ opacity: 0 }}

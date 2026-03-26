@@ -455,7 +455,7 @@ export default function ProgressUnified() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr,0.65fr]">
+                <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.72fr)]">
                   <SectionBoundary title="Contribution Heatmap">
                     <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
                   </SectionBoundary>

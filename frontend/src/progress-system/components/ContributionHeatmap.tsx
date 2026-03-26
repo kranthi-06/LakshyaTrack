@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
+import { useTheme } from '../../context/ThemeContext';
 import {
   mutedTextClassName,
   panelClassName,
@@ -21,7 +22,15 @@ const CELL_SIZE = 12;
 const CELL_GAP = 4;
 const TOTAL_CELL = CELL_SIZE + CELL_GAP;
 
-const LEVEL_COLORS: Record<DailyContribution['level'], string> = {
+const LIGHT_LEVEL_COLORS: Record<DailyContribution['level'], string> = {
+  0: 'rgba(148,163,184,0.16)',
+  1: '#dcfce7',
+  2: '#86efac',
+  3: '#22c55e',
+  4: '#15803d',
+};
+
+const DARK_LEVEL_COLORS: Record<DailyContribution['level'], string> = {
   0: 'rgba(148,163,184,0.10)',
   1: '#163c2d',
   2: '#1e6648',
@@ -34,12 +43,17 @@ const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 const surfaceCardClassName = `rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`;
 
 const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChange }: Props) {
+  const { isDark } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<HeatmapView>('yearly');
   const [tooltip, setTooltip] = useState<{ x: number; y: number; data: DailyContribution } | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const currentYear = new Date().getFullYear();
   const years = [currentYear, currentYear - 1, currentYear - 2];
+  const levelColors = isDark ? DARK_LEVEL_COLORS : LIGHT_LEVEL_COLORS;
+  const axisLabelColor = isDark ? 'rgba(148,163,184,0.86)' : 'rgba(71,85,105,0.92)';
+  const activeStroke = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.10)';
+  const inactiveStroke = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.06)';
 
   const grid = useMemo(() => {
     const weeks: (DailyContribution | null)[][] = [];
@@ -116,7 +130,12 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
   }, []);
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="min-w-0">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="min-w-0 self-start"
+    >
       <Card className={surfaceCardClassName}>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -213,7 +232,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                     key={`${label}-${index}`}
                     x={x}
                     y={12}
-                    fill="rgba(100,116,139,0.95)"
+                    fill={axisLabelColor}
                     fontSize="10"
                     fontFamily="Inter, sans-serif"
                   >
@@ -228,7 +247,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                         key={`${label}-${index}`}
                         x={4}
                         y={index * TOTAL_CELL + 30}
-                        fill="rgba(100,116,139,0.85)"
+                        fill={axisLabelColor}
                         fontSize="10"
                         fontFamily="Inter, sans-serif"
                         dominantBaseline="middle"
@@ -250,12 +269,12 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                         height={CELL_SIZE}
                         rx={3}
                         ry={3}
-                        fill={LEVEL_COLORS[cell.level]}
-                        stroke={cell.level > 0 ? 'rgba(15,23,42,0.18)' : 'rgba(15,23,42,0.08)'}
+                        fill={levelColors[cell.level]}
+                        stroke={cell.level > 0 ? activeStroke : inactiveStroke}
                         strokeWidth={0.8}
                         className="cursor-pointer transition-all duration-200"
                         style={{
-                          filter: cell.level > 0 ? `drop-shadow(0 0 ${cell.level * 2}px ${LEVEL_COLORS[cell.level]}55)` : 'none',
+                          filter: cell.level > 0 ? `drop-shadow(0 0 ${cell.level * 2}px ${levelColors[cell.level]}55)` : 'none',
                         }}
                         onMouseEnter={(event) => handleCellHover(event, cell)}
                         onMouseMove={(event) => handleCellHover(event, cell)}
@@ -291,9 +310,9 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                     transition={{ delay: index * 0.01 }}
                     className="aspect-square rounded-xl border text-xs font-medium transition-transform duration-200 hover:scale-[1.04]"
                     style={{
-                      background: LEVEL_COLORS[cell.level],
-                      color: cell.level > 0 ? '#f8fafc' : 'rgba(100,116,139,0.72)',
-                      borderColor: cell.level > 0 ? 'rgba(255,255,255,0.08)' : 'rgba(148,163,184,0.16)',
+                      background: levelColors[cell.level],
+                      color: cell.level > 2 ? '#f8fafc' : isDark ? '#e2e8f0' : '#334155',
+                      borderColor: cell.level > 0 ? activeStroke : 'rgba(148,163,184,0.16)',
                     }}
                     onMouseEnter={(event) => handleCellHover(event, cell)}
                     onMouseMove={(event) => handleCellHover(event, cell)}
@@ -354,7 +373,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                 style={{
                   width: 12,
                   height: 12,
-                  background: LEVEL_COLORS[level],
+                  background: levelColors[level],
                 }}
               />
             ))}
