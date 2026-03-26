@@ -70,19 +70,12 @@ def create_refresh_token(
     )
 
 
-def decode_access_token(token: str) -> Optional[dict]:
-    """
-    Decode and validate a JWT token.
-    Returns the payload dict or None on failure.
-    """
+def _decode_token(token: str) -> Optional[dict]:
     if not token or not isinstance(token, str):
         return None
 
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") not in (None, "access"):
-            return None
-        return payload
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError as e:
         logger.debug("Token decode failed: %s", str(e))
         return None
@@ -91,8 +84,21 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
 
 
+def decode_access_token(token: str) -> Optional[dict]:
+    """
+    Decode and validate an access JWT token.
+    Returns the payload dict or None on failure.
+    """
+    payload = _decode_token(token)
+    if not payload:
+        return None
+    if payload.get("type") not in (None, "access"):
+        return None
+    return payload
+
+
 def decode_refresh_token(token: str) -> Optional[dict]:
-    payload = decode_access_token(token)
+    payload = _decode_token(token)
     if not payload:
         return None
     if payload.get("type") not in (None, "refresh"):

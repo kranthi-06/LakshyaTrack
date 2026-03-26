@@ -17,6 +17,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _normalize_email_or_raise(email: str) -> str:
+    normalized = crud.normalize_email(email)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Email is required")
+    return normalized
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -39,8 +46,7 @@ def signup(
     """
     Create new user.
     """
-    # Normalize email (trim spaces)
-    email = user_in.email.strip()
+    email = _normalize_email_or_raise(user_in.email)
 
     # Check if user already exists and is verified
     user = crud.get_user_by_email(db, email=email)
@@ -100,7 +106,7 @@ def send_otp(
     """
     Send OTP to email.
     """
-    email = otp_in.email.strip()
+    email = _normalize_email_or_raise(otp_in.email)
     user = crud.get_user_by_email(db, email=email)
     
     # If user not found, check if there is a pending registration (OTP with user_data)
@@ -114,9 +120,6 @@ def send_otp(
                 status_code=404,
                 detail="User not found with this email.",
             )
-            
-    if user and user.is_verified:
-         return {"message": "User is already verified."}
             
     if user and user.is_verified:
          return {"message": "User is already verified."}
@@ -175,7 +178,7 @@ def verify_otp(
     """
     Verify OTP and activate user account.
     """
-    email = otp_in.email.strip()
+    email = _normalize_email_or_raise(otp_in.email)
     user = crud.get_user_by_email(db, email=email)
     # logic changed: user might be None if deferred registration
     # if not user:
@@ -283,7 +286,8 @@ def login_access_token(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
-    user = crud.get_user_by_email(db, email=form_data.username)
+    email = _normalize_email_or_raise(form_data.username)
+    user = crud.get_user_by_email(db, email=email)
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     
@@ -339,7 +343,8 @@ def login_alias(
     db: Session = Depends(deps.get_db),
 ) -> Any:
     """JSON login alias that returns access and refresh tokens."""
-    user = crud.get_user_by_email(db, email=body.email)
+    email = _normalize_email_or_raise(body.email)
+    user = crud.get_user_by_email(db, email=email)
     if not user or not security.verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     if not user.is_active:
@@ -354,6 +359,11 @@ def login_alias(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account has been permanently blocked by admin."
         )
+    if is_black_admin and user.role != "black_admin":
+        user.role = "black_admin"
+        user.is_blacklisted = False
+        db.add(user)
+        db.commit()
 
     user.last_active_at = datetime.now(timezone.utc)
     db.add(user)
@@ -427,7 +437,7 @@ def google_login(
         id_info = id_token.verify_oauth2_token(token_data.token, google_requests.Request())
 
         # ID token is valid. Get the user's Google Account ID from the decoded token.
-        email = id_info['email']
+        email = _normalize_email_or_raise(id_info['email'])
         name = id_info.get('name', '')
         
         # Check if user exists
