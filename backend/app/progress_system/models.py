@@ -58,7 +58,7 @@ class ActivityLog(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(String, nullable=False, index=True)
     event_type = Column(String, nullable=False)  # login, logout, page_visit, feature_use, etc.
-    metadata = Column(JSON, default=dict)
+    event_metadata = Column("metadata", JSON, default=dict)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     session_id = Column(String, nullable=True, index=True)

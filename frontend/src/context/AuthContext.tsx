@@ -61,6 +61,37 @@ function hasValidToken(): boolean {
     return !!token && token !== 'undefined' && token !== 'null';
 }
 
+function getCachedUserSnapshot(): User | null {
+    try {
+        const raw = localStorage.getItem(USER_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as User;
+        return parsed?.email ? parsed : null;
+    } catch {
+        localStorage.removeItem(USER_CACHE_KEY);
+        return null;
+    }
+}
+
+function buildSessionFallbackUser(sessionOrUser: any): User | null {
+    const rawUser = sessionOrUser?.user || sessionOrUser;
+    const email = rawUser?.email;
+    if (!email) return null;
+
+    const fullName =
+        rawUser?.user_metadata?.full_name ||
+        rawUser?.user_metadata?.name ||
+        rawUser?.identities?.[0]?.identity_data?.full_name ||
+        undefined;
+
+    return {
+        email,
+        full_name: fullName,
+        profile: fullName ? { full_name: fullName } : undefined,
+        is_active: true,
+    };
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const user = useAuthStore((s) => s.user) as User | null;
     const loading = useAuthStore((s) => s.loading);
@@ -129,7 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // For any other error (network, timeout, 500), keep the token
             // AND preserve the existing user so we don't trigger a redirect.
             console.warn('AuthContext: Failed to fetch user (non-auth error, keeping token & user)', err?.message || err);
-            return userRef.current; // ← KEY FIX: return existing user, not null
+            return userRef.current || getCachedUserSnapshot();
         }
     }, []);
 
@@ -202,8 +233,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (supabaseSession) {
                     // Supabase has a valid session — store the token and fetch user
                     localStorage.setItem(TOKEN_KEY, supabaseSession.access_token);
-                    const userData = await fetchCurrentUser(true);
-                    if (mountedRef.current) updateUser(userData);
+                    const backendUser = await fetchCurrentUser(true);
+                    const resolvedUser = backendUser || buildSessionFallbackUser(supabaseSession);
+                    if (mountedRef.current) updateUser(resolvedUser);
                 } else {
                     // No Supabase session — try local token (custom email/password login)
                     const userData = await fetchCurrentUser(true);
@@ -252,10 +284,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.setItem(TOKEN_KEY, session.access_token);
 
                 try {
-                    const userData = await fetchCurrentUser();
+                    const backendUser = await fetchCurrentUser();
+                    const resolvedUser = backendUser || buildSessionFallbackUser(session);
                     if (!mountedRef.current) return;
-                    updateUser(userData);
-                    touchDailyStreak().catch(() => { });
+                    updateUser(resolvedUser);
+                    if (backendUser) {
+                        touchDailyStreak().catch(() => { });
+                    }
 
                     // Navigate only when the user is on a public / callback page
                     const currentPath = window.location.pathname;

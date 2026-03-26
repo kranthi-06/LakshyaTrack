@@ -4,6 +4,12 @@ import { useAuth } from '../context/AuthContext';
 import AuthLoadingScreen from './AuthLoadingScreen';
 
 const MAX_LOADING_MS = 15000; // 15s safety timeout
+const TOKEN_KEY = 'token';
+
+function hasToken(): boolean {
+    const token = localStorage.getItem(TOKEN_KEY);
+    return !!token && token !== 'undefined' && token !== 'null';
+}
 
 export const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
     const { user, loading, authReady } = useAuth();
@@ -36,6 +42,13 @@ export const ProtectedRoute = ({ children }: { children: React.ReactElement }) =
     // User object is available → render normally
     if (user) {
         return children;
+    }
+
+    // Keep the user on the authenticated route while a valid token still exists.
+    // This prevents OAuth users from bouncing back to /login during temporary
+    // backend hydration issues right after callback or refresh.
+    if (hasToken()) {
+        return <AuthLoadingScreen />;
     }
 
     // Genuinely not authenticated — redirect to login

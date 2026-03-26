@@ -235,7 +235,7 @@ async def track_activity(
     log = ActivityLog(
         user_id=str(current_user.id),
         event_type=event.event_type,
-        metadata=event.metadata,
+        event_metadata=event.metadata,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
         session_id=event.session_id,
