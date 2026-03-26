@@ -50,6 +50,8 @@ const EnglishSpeaking = lazyPage('/english');
 const Reasoning = lazyPage('/reasoning');
 const AdminQuestionUpload = lazyPage('/admin/questions');
 const ProgressDashboardPage = lazyPage('/progress-dashboard');
+const ProgressLegacy = lazyPage('/progress-legacy');
+const ProgressDashboardLegacy = lazyPage('/progress-dashboard-legacy');
 
 /**
  * OAuth Code Interceptor
@@ -210,6 +212,8 @@ function App() {
             <Route path="/english" element={<ProtectedPage><EnglishSpeaking /></ProtectedPage>} />
             <Route path="/reasoning" element={<ProtectedPage><Reasoning /></ProtectedPage>} />
             <Route path="/progress-dashboard" element={<ProtectedPage><ProgressDashboardPage /></ProtectedPage>} />
+            <Route path="/progress-legacy" element={<ProtectedPage><ProgressLegacy /></ProtectedPage>} />
+            <Route path="/progress-dashboard-legacy" element={<ProtectedPage><ProgressDashboardLegacy /></ProtectedPage>} />
 
             {/* ── Admin Routes ── */}
             <Route path="/admin/users" element={<AdminPage><AdminDashboard /></AdminPage>} />

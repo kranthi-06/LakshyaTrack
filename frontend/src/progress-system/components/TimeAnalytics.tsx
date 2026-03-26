@@ -18,6 +18,7 @@ import type { TimeAnalyticsData } from '../types';
 interface Props {
   data: TimeAnalyticsData;
   hourlyActivity?: { hour: number; activity: number }[];
+  variant?: 'full' | 'compact';
 }
 
 interface ChartTooltipEntry {
@@ -85,7 +86,7 @@ const HourlyTooltip = ({ active, payload }: ChartTooltipProps) => {
   );
 };
 
-const TimeAnalytics = memo(function TimeAnalytics({ data, hourlyActivity = [] }: Props) {
+const TimeAnalytics = memo(function TimeAnalytics({ data, hourlyActivity = [], variant = 'full' }: Props) {
   const [view, setView] = useState<'daily' | 'weekly' | 'features'>('daily');
   const hasTrackedTime =
     data.dailyUsage.some((day) => day.totalMinutes > 0 || day.activeMinutes > 0) ||
@@ -131,22 +132,24 @@ const TimeAnalytics = memo(function TimeAnalytics({ data, hourlyActivity = [] }:
             Weekly time, active rhythm, and feature depth in one consistent view.
           </p>
         </div>
-        <div className="flex overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
-          {(['daily', 'weekly', 'features'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setView(mode)}
-              className="px-3 py-1.5 text-xs font-medium transition-all"
-              style={{
-                background: view === mode ? 'rgba(6,182,212,0.18)' : 'transparent',
-                color: view === mode ? '#67e8f9' : 'rgba(255,255,255,0.5)',
-              }}
-            >
-              {mode.charAt(0).toUpperCase() + mode.slice(1)}
-            </button>
-          ))}
-        </div>
+        {variant === 'full' && (
+          <div className="flex overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+            {(['daily', 'weekly', 'features'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setView(mode)}
+                className="px-3 py-1.5 text-xs font-medium transition-all"
+                style={{
+                  background: view === mode ? 'rgba(6,182,212,0.18)' : 'transparent',
+                  color: view === mode ? '#67e8f9' : 'rgba(255,255,255,0.5)',
+                }}
+              >
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -175,59 +178,86 @@ const TimeAnalytics = memo(function TimeAnalytics({ data, hourlyActivity = [] }:
         ))}
       </div>
 
-      {hourlyActivity.length > 0 && (
-        <div
-          className="mb-5 rounded-[20px] border border-white/8 bg-slate-950/30 p-4"
-          style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)' }}
-        >
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-white/28">
-                Activity Rhythm
-              </div>
-              <div className="mt-1 text-sm font-medium text-white">
-                Peak focus around {formatHour(hourPeak.hour)}
-              </div>
-            </div>
-            <div className="text-xs text-white/38">
-              Hour-of-day interaction density
-            </div>
+      {variant === 'compact' && (
+        <div className="rounded-[20px] border border-white/8 bg-slate-950/30 p-4" style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-white/28">
+            Focus window
           </div>
-
-          <div className="h-[124px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourlyActivity} margin={{ top: 0, right: 0, bottom: 0, left: -10 }} barCategoryGap="26%">
-                <XAxis
-                  dataKey="hour"
-                  tickFormatter={(hour) => (hour % 3 === 0 ? `${hour % 12 || 12}${hour >= 12 ? 'p' : 'a'}` : '')}
-                  stroke="rgba(255,255,255,0.12)"
-                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis hide />
-                <Tooltip content={<HourlyTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                <Bar dataKey="activity" radius={[4, 4, 0, 0]} maxBarSize={12}>
-                  {hourlyActivity.map((entry, index) => (
-                    <Cell
-                      key={`${entry.hour}-${index}`}
-                      fill={
-                        entry.hour === hourPeak.hour
-                          ? '#f59e0b'
-                          : entry.activity > hourPeak.activity * 0.6
-                            ? '#60a5fa'
-                            : 'rgba(99,102,241,0.38)'
-                      }
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mt-2 text-sm font-medium text-white">
+            Peak hours: <span className="text-cyan-300">{peakTimeRange}</span>
+          </div>
+          <div className="mt-2 text-xs text-white/40">
+            Compact view keeps the dashboard heatmap-first.
           </div>
         </div>
       )}
 
-      {view === 'daily' && (
+      {variant === 'compact' && (
+        <div className="mt-5 flex items-center justify-between border-t border-white/6 pt-4 text-xs">
+          <span className="text-white/40">
+            Most active on <span className="font-medium text-cyan-400">{data.peakDay}s</span>
+          </span>
+          <span className="text-white/40">
+            Peak hours: <span className="font-medium text-cyan-400">{peakTimeRange}</span>
+          </span>
+        </div>
+      )}
+
+      {variant === 'compact' ? null : (
+        <>
+          {hourlyActivity.length > 0 && (
+            <div
+              className="mb-5 rounded-[20px] border border-white/8 bg-slate-950/30 p-4"
+              style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)' }}
+            >
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-white/28">
+                    Activity Rhythm
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-white">
+                    Peak focus around {formatHour(hourPeak.hour)}
+                  </div>
+                </div>
+                <div className="text-xs text-white/38">
+                  Hour-of-day interaction density
+                </div>
+              </div>
+
+              <div className="h-[124px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={hourlyActivity} margin={{ top: 0, right: 0, bottom: 0, left: -10 }} barCategoryGap="26%">
+                    <XAxis
+                      dataKey="hour"
+                      tickFormatter={(hour) => (hour % 3 === 0 ? `${hour % 12 || 12}${hour >= 12 ? 'p' : 'a'}` : '')}
+                      stroke="rgba(255,255,255,0.12)"
+                      tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis hide />
+                    <Tooltip content={<HourlyTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                    <Bar dataKey="activity" radius={[4, 4, 0, 0]} maxBarSize={12}>
+                      {hourlyActivity.map((entry, index) => (
+                        <Cell
+                          key={`${entry.hour}-${index}`}
+                          fill={
+                            entry.hour === hourPeak.hour
+                              ? '#f59e0b'
+                              : entry.activity > hourPeak.activity * 0.6
+                                ? '#60a5fa'
+                                : 'rgba(99,102,241,0.38)'
+                          }
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {view === 'daily' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data.dailyUsage} margin={{ top: 5, right: 8, bottom: 5, left: -10 }}>
@@ -402,6 +432,8 @@ const TimeAnalytics = memo(function TimeAnalytics({ data, hourlyActivity = [] }:
           Peak hours: <span className="font-medium text-cyan-400">{peakTimeRange}</span>
         </span>
       </div>
+        </>
+      )}
     </motion.div>
   );
 });

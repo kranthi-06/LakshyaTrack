@@ -47,8 +47,7 @@ const navItems = [
     { label: 'English Coach', path: '/english', icon: Languages, featureKey: null },
     { label: 'Reasoning', path: '/reasoning', icon: Brain, featureKey: null },
     { label: 'Opportunity Portal', path: '/jobs', icon: Briefcase, featureKey: 'job_portal' },
-    { label: 'Progress Tracker', path: '/progress', icon: LineChart, featureKey: null },
-    { label: 'Progress Intelligence', path: '/progress-dashboard', icon: Sparkles, featureKey: null },
+    { label: 'Progress Intelligence', path: '/progress', icon: Sparkles, featureKey: null },
 ];
 
 import logoUrl from '../assets/logo.png';

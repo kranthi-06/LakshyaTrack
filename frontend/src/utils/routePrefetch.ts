@@ -8,7 +8,7 @@ const pageImporters: Record<string, Importer> = {
     '/resume-builder': () => import('../pages/ResumeBuilder'),
     '/career': () => import('../pages/CareerIntelligence'),
     '/quiz': () => import('../pages/Quiz'),
-    '/progress': () => import('../pages/Progress'),
+    '/progress': () => import('../pages/ProgressUnified'),
     '/profile': () => import('../pages/Profile'),
     '/evaluate': () => import('../pages/Evaluate'),
     '/interview': () => import('../pages/Interview'),
@@ -24,7 +24,9 @@ const pageImporters: Record<string, Importer> = {
     '/english': () => import('../pages/EnglishSpeaking'),
     '/reasoning': () => import('../pages/Reasoning'),
     '/admin/questions': () => import('../pages/AdminQuestionUpload'),
-    '/progress-dashboard': () => import('../progress-system/ProgressDashboard'),
+    '/progress-dashboard': () => import('../pages/ProgressUnified'),
+    '/progress-legacy': () => import('../pages/Progress'),
+    '/progress-dashboard-legacy': () => import('../progress-system/ProgressDashboard'),
 };
 
 const preloadedRoutes = new Set<string>();
