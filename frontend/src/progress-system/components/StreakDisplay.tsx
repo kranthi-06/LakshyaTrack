@@ -1,9 +1,13 @@
-// ══════════════════════════════════════════════════════════════
-// Streak Engine Display Component
-// ══════════════════════════════════════════════════════════════
-
 import { memo } from 'react';
 import { motion } from 'framer-motion';
+import { Card } from '@/components/ui/card';
+import {
+  mutedTextClassName,
+  panelClassName,
+  surfaceClassName,
+  surfaceHoverClassName,
+  titleTextClassName,
+} from '../ui/surfaces';
 import type { StreakData } from '../types';
 
 interface Props {
@@ -13,10 +17,14 @@ interface Props {
 function FlameIcon({ size = 32, active = true }: { size?: number; active?: boolean }) {
   return (
     <motion.div
-      animate={active ? {
-        scale: [1, 1.1, 1],
-        filter: ['brightness(1)', 'brightness(1.3)', 'brightness(1)'],
-      } : {}}
+      animate={
+        active
+          ? {
+              scale: [1, 1.08, 1],
+              filter: ['brightness(1)', 'brightness(1.18)', 'brightness(1)'],
+            }
+          : {}
+      }
       transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
     >
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -29,198 +37,162 @@ function FlameIcon({ size = 32, active = true }: { size?: number; active?: boole
         </defs>
         <path
           d="M12 2C10.5 6 7 8 7 12C7 15.31 9.69 18 13 18C13 18 12 16 12 14C12 11 15 9 16 6C16 6 18 10 18 13C18 16.31 15.31 19 12 19C8.13 19 5 15.87 5 12C5 7 9 3 12 2Z"
-          fill={active ? 'url(#flameGrad)' : 'rgba(255,255,255,0.15)'}
+          fill={active ? 'url(#flameGrad)' : 'rgba(148,163,184,0.4)'}
         />
       </svg>
     </motion.div>
   );
 }
 
+const surfaceCardClassName = `rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`;
+
 const StreakDisplay = memo(function StreakDisplay({ data }: Props) {
-  const streakPercentOfMax = data.longestStreak > 0
-
-    ? Math.round((data.currentStreak / data.longestStreak) * 100)
-    : 0;
-  const activeHistoryDays = data.streakHistory.filter(h => h.active).length;
+  const streakPercentOfMax =
+    data.longestStreak > 0 ? Math.round((data.currentStreak / data.longestStreak) * 100) : 0;
+  const activeHistoryDays = data.streakHistory.filter((history) => history.active).length;
   const historyLength = data.streakHistory.length;
-  const consistencyPercent = historyLength > 0
-    ? Math.round((activeHistoryDays / historyLength) * 100)
-    : 0;
-
+  const consistencyPercent = historyLength > 0 ? Math.round((activeHistoryDays / historyLength) * 100) : 0;
+  const maxWeeklyCount = Math.max(...data.weeklyActivity, 1);
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.2 }}
-      className="rounded-[24px] p-5 overflow-hidden relative transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,6,23,0.35)]"
-      style={{
-        background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8))',
-        border: '1px solid rgba(255,255,255,0.08)',
-        backdropFilter: 'blur(20px)',
-      }}
-    >
-      {/* Ambient glow for active streak */}
-      {data.currentStreak > 0 && (
-        <div
-          className="absolute top-0 right-0 w-32 h-32 rounded-full"
-          style={{
-            background: 'radial-gradient(circle, rgba(245,158,11,0.15) 0%, transparent 70%)',
-            filter: 'blur(20px)',
-          }}
-        />
-      )}
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }} className="min-w-0">
+      <Card className={`relative overflow-hidden ${surfaceCardClassName}`}>
+        {data.currentStreak > 0 && (
+          <div className="pointer-events-none absolute right-0 top-0 h-32 w-32 rounded-full bg-amber-400/10 blur-3xl dark:bg-amber-500/10" />
+        )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5 relative z-10">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <span className="text-xl">🔥</span>
-          Streak Engine
-        </h3>
-        {data.isAtRisk && (
+        <div className="relative z-10 mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className={`text-base font-semibold ${titleTextClassName}`}>Streak Engine</h3>
+            <p className={`mt-1 text-xs ${mutedTextClassName}`}>Consistency, record pace, and weekly cadence.</p>
+          </div>
+
+          {data.isAtRisk && (
+            <motion.div
+              animate={{ opacity: [0.75, 1, 0.75] }}
+              transition={{ duration: 1.6, repeat: Infinity }}
+              className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-300"
+            >
+              Streak at risk: {data.hoursUntilReset}h left
+            </motion.div>
+          )}
+        </div>
+
+        <div className={`relative z-10 mb-6 grid gap-4 md:grid-cols-[1fr,auto,1fr]`}>
+          <div className={`rounded-2xl border p-5 text-center ${panelClassName}`}>
+            <div className="mb-2 flex items-center justify-center">
+              <FlameIcon size={46} active={data.currentStreak > 0} />
+            </div>
+            <motion.div
+              className={`text-5xl font-[900] tracking-tighter ${titleTextClassName}`}
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 14, delay: 0.2 }}
+            >
+              {data.currentStreak}
+            </motion.div>
+            <div className={`mt-1 text-sm ${mutedTextClassName}`}>Current Streak</div>
+          </div>
+
+          <div className="hidden h-full w-px self-stretch bg-slate-200 dark:bg-slate-800 md:block" />
+
+          <div className={`rounded-2xl border p-5 text-center ${panelClassName}`}>
+            <div className="mb-2 flex items-center justify-center text-4xl text-amber-500">★</div>
+            <motion.div
+              className="text-5xl font-[900] tracking-tighter text-amber-500"
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 14, delay: 0.3 }}
+            >
+              {data.longestStreak}
+            </motion.div>
+            <div className={`mt-1 text-sm ${mutedTextClassName}`}>Longest Streak</div>
+          </div>
+        </div>
+
+        <div className="relative z-10 mb-5">
+          <div className={`mb-2 flex items-center justify-between text-xs ${mutedTextClassName}`}>
+            <span>Progress to record</span>
+            <span className="font-semibold text-amber-600 dark:text-amber-300">{streakPercentOfMax}%</span>
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-white/10">
+            <motion.div
+              className="h-full rounded-full"
+              style={{
+                width: `${Math.min(100, streakPercentOfMax)}%`,
+                background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
+                boxShadow: '0 0 12px rgba(245,158,11,0.32)',
+              }}
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min(100, streakPercentOfMax)}%` }}
+              transition={{ duration: 1.1, ease: 'easeOut', delay: 0.3 }}
+            />
+          </div>
+        </div>
+
+        <div className={`relative z-10 rounded-2xl border p-4 ${panelClassName}`}>
+          <div className={`mb-3 text-xs font-semibold uppercase tracking-[0.22em] ${mutedTextClassName}`}>
+            This Week's Activity
+          </div>
+
+          <div className="flex items-end justify-between gap-2">
+            {data.weeklyActivity.map((count, index) => {
+              const height = Math.max(8, (count / maxWeeklyCount) * 60);
+              return (
+                <div key={index} className="flex flex-1 flex-col items-center gap-1.5">
+                  <motion.div
+                    className="min-h-[8px] w-full rounded-md"
+                    style={{
+                      maxWidth: 32,
+                      height,
+                      background: count > 0 ? 'linear-gradient(180deg, #f59e0b, #ef4444)' : 'rgba(148,163,184,0.24)',
+                    }}
+                    initial={{ height: 0 }}
+                    animate={{ height }}
+                    transition={{ duration: 0.7, delay: 0.1 + index * 0.06, ease: 'easeOut' }}
+                  />
+                  <span className={`text-[10px] ${mutedTextClassName}`}>{dayLabels[index]}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="relative z-10 mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/70 pt-4 dark:border-slate-800/60">
+          <div className="text-center">
+            <div className={`text-lg font-bold ${titleTextClassName}`}>{data.totalActiveDays}</div>
+            <div className={`text-xs ${mutedTextClassName}`}>Active Days</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold text-emerald-600 dark:text-emerald-300">
+              {activeHistoryDays}/{historyLength}
+            </div>
+            <div className={`text-xs ${mutedTextClassName}`}>Last 30 Days</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold text-cyan-600 dark:text-cyan-300">{consistencyPercent}%</div>
+            <div className={`text-xs ${mutedTextClassName}`}>Consistency</div>
+          </div>
+        </div>
+
+        {data.currentStreak >= 7 && (
           <motion.div
-            animate={{ opacity: [0.7, 1, 0.7] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-            style={{
-              background: 'rgba(239,68,68,0.15)',
-              color: '#ef4444',
-              border: '1px solid rgba(239,68,68,0.2)',
-            }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+            className="relative z-10 mt-4 rounded-xl border border-amber-200/80 bg-amber-50/80 p-3 text-center text-sm dark:border-amber-500/20 dark:bg-amber-500/10"
           >
-            ⚠️ Streak at risk! {data.hoursUntilReset}h left
+            <span className="font-medium text-amber-700 dark:text-amber-200">
+              {data.currentStreak >= 30
+                ? `Legendary streak: ${data.currentStreak} days and still climbing.`
+                : data.currentStreak >= 14
+                  ? `Amazing momentum: ${data.currentStreak} days strong.`
+                  : 'Great momentum. Keep pushing toward the 14-day badge.'}
+            </span>
           </motion.div>
         )}
-      </div>
-
-      {/* Main streak display */}
-      <div className="flex items-center justify-center gap-8 mb-6 relative z-10">
-        {/* Current streak */}
-        <div className="text-center">
-          <div className="flex items-center justify-center mb-2">
-            <FlameIcon size={48} active={data.currentStreak > 0} />
-          </div>
-          <motion.div
-            className="text-5xl font-bold text-white mb-1"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 200, damping: 12, delay: 0.3 }}
-          >
-            {data.currentStreak}
-          </motion.div>
-          <div className="text-sm text-white/50">Current Streak</div>
-        </div>
-
-        {/* Divider */}
-        <div className="h-20 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
-
-        {/* Longest streak */}
-        <div className="text-center">
-          <div className="flex items-center justify-center mb-2">
-            <span className="text-4xl">⭐</span>
-          </div>
-          <motion.div
-            className="text-5xl font-bold text-amber-400 mb-1"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 200, damping: 12, delay: 0.5 }}
-          >
-            {data.longestStreak}
-          </motion.div>
-          <div className="text-sm text-white/50">Longest Streak</div>
-        </div>
-      </div>
-
-      {/* Progress towards record */}
-      <div className="mb-5 relative z-10">
-        <div className="flex justify-between text-xs mb-2">
-          <span className="text-white/50">Progress to record</span>
-          <span className="text-amber-400 font-medium">{streakPercentOfMax}%</span>
-        </div>
-        <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-          <motion.div
-            className="h-full rounded-full"
-            style={{
-              background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
-              boxShadow: '0 0 12px rgba(245,158,11,0.4)',
-            }}
-            initial={{ width: 0 }}
-            animate={{ width: `${Math.min(100, streakPercentOfMax)}%` }}
-            transition={{ duration: 1.2, ease: 'easeOut', delay: 0.4 }}
-          />
-        </div>
-      </div>
-
-      {/* Weekly activity */}
-      <div className="relative z-10">
-        <div className="text-xs text-white/40 mb-3 font-medium">This Week's Activity</div>
-        <div className="flex items-end gap-2 justify-between">
-          {data.weeklyActivity.map((count, i) => {
-            const maxCount = Math.max(...data.weeklyActivity, 1);
-            const height = Math.max(8, (count / maxCount) * 60);
-            return (
-              <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
-                <motion.div
-                  className="w-full rounded-md min-h-[8px]"
-                  style={{
-                    background: count > 0
-                      ? `linear-gradient(180deg, #f59e0b, #ef4444)`
-                      : 'rgba(255,255,255,0.06)',
-                    maxWidth: 32,
-                  }}
-                  initial={{ height: 0 }}
-                  animate={{ height }}
-                  transition={{ duration: 0.8, delay: 0.3 + i * 0.1, ease: 'easeOut' }}
-                />
-                <span className="text-[10px] text-white/30">{dayLabels[i]}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3 mt-5 pt-4 relative z-10" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="text-center">
-          <div className="text-lg font-bold text-white">{data.totalActiveDays}</div>
-          <div className="text-xs text-white/40">Active Days</div>
-        </div>
-        <div className="text-center">
-          <div className="text-lg font-bold text-emerald-400">
-            {activeHistoryDays}/{historyLength}
-          </div>
-          <div className="text-xs text-white/40">Last 30 Days</div>
-        </div>
-        <div className="text-center">
-          <div className="text-lg font-bold text-cyan-400">
-            {consistencyPercent}%
-          </div>
-          <div className="text-xs text-white/40">Consistency</div>
-        </div>
-      </div>
-
-      {/* Motivational message */}
-      {data.currentStreak >= 7 && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.2 }}
-          className="mt-4 p-3 rounded-xl text-center text-sm relative z-10"
-          style={{
-            background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(239,68,68,0.1))',
-            border: '1px solid rgba(245,158,11,0.15)',
-          }}
-        >
-          {data.currentStreak >= 30 ? (
-            <span className="text-amber-300">🏆 Legendary! You're on a {data.currentStreak}-day streak! Unstoppable!</span>
-          ) : data.currentStreak >= 14 ? (
-            <span className="text-amber-300">🔥 Amazing! {data.currentStreak} days strong! You're in the top 5%!</span>
-          ) : (
-            <span className="text-amber-300">💪 Great momentum! Keep it going for the 14-day badge!</span>
-          )}
-        </motion.div>
-      )}
+      </Card>
     </motion.div>
   );
 });
