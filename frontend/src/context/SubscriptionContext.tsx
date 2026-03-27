@@ -5,9 +5,7 @@ import {
     SubscriptionStatus,
 } from '../services/subscription';
 
-// ══════════════════════════════════════════════════════════════
 // TYPES
-// ══════════════════════════════════════════════════════════════
 
 interface SubscriptionContextType {
     /** Current subscription stage (0-3) */
@@ -57,90 +55,172 @@ const ALWAYS_AVAILABLE_FEATURES: Record<string, boolean> = {
     job_portal: true,
 };
 
-// ══════════════════════════════════════════════════════════════
-// PROVIDER
-// ══════════════════════════════════════════════════════════════
+const SUB_CACHE_KEY = 'sub:status-cache';
+
+function getCachedSubscription(): SubscriptionStatus | null {
+    try {
+        const raw = localStorage.getItem(SUB_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed?.plan ? parsed : null;
+    } catch {
+        localStorage.removeItem(SUB_CACHE_KEY);
+        return null;
+    }
+}
+
+function setCachedSubscription(data: SubscriptionStatus | null) {
+    try {
+        if (data) {
+            localStorage.setItem(SUB_CACHE_KEY, JSON.stringify(data));
+        } else {
+            localStorage.removeItem(SUB_CACHE_KEY);
+        }
+    } catch {
+        // Ignore cache write failures.
+    }
+}
+
+function getHydratedSubscription(snapshot: unknown): SubscriptionStatus | null {
+    if (!snapshot || typeof snapshot !== 'object') return null;
+
+    const candidate = snapshot as Partial<SubscriptionStatus>;
+    return candidate.plan ? (candidate as SubscriptionStatus) : null;
+}
 
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user, authReady } = useAuth();
+    const userKey = user?.id || user?.email || null;
+    const hydratedSubscription = useMemo(
+        () => getHydratedSubscription(user?.subscription_status),
+        [user?.subscription_status],
+    );
+    const initialSubscription = hydratedSubscription || getCachedSubscription();
 
-    // ── State ──────────────────────────────────────────────────
-    // CRITICAL: We do NOT initialize with any default subscription data.
-    // The initial state is "loading" until the backend responds.
-    // This prevents the free -> premium flicker entirely.
-    const [subscriptionData, setSubscriptionData] = useState<SubscriptionStatus | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [resolved, setResolved] = useState(false);
+    // Seed from the hydrated auth snapshot or the last known cache so the UI
+    // can render immediately, then validate in the background.
+    const [subscriptionData, setSubscriptionData] = useState<SubscriptionStatus | null>(initialSubscription);
+    const [loading, setLoading] = useState(() => !initialSubscription);
+    const [resolved, setResolved] = useState(() => !!initialSubscription);
     const mountedRef = useRef(true);
+    const activeUserKeyRef = useRef<string | null>(userKey);
+    const inflightRequestRef = useRef<Promise<void> | null>(null);
+    const inflightUserKeyRef = useRef<string | null>(null);
 
-    // ── Fetch subscription status from backend ────────────────
-    const fetchStatus = useCallback(async () => {
-        if (!user) {
-            // No user = definitely free, no need to call API
+    useEffect(() => {
+        activeUserKeyRef.current = userKey;
+    }, [userKey]);
+
+    const fetchStatus = useCallback(async (options: { foreground?: boolean } = {}) => {
+        const { foreground = true } = options;
+        const requestUserKey = userKey;
+
+        if (!requestUserKey) {
             setSubscriptionData(null);
             setLoading(false);
             setResolved(true);
+            setCachedSubscription(null);
             return;
         }
 
-        try {
-            setLoading(true);
-            const data = await getSubscriptionStatus();
-            if (mountedRef.current) {
-                setSubscriptionData(data);
-                setResolved(true);
-            }
-        } catch (err) {
-            console.warn('SubscriptionContext: Failed to fetch subscription status', err);
-            // On failure, mark as resolved with null data (free tier)
-            // so the UI doesn't stay loading forever
-            if (mountedRef.current) {
-                setResolved(true);
-            }
-        } finally {
-            if (mountedRef.current) {
-                setLoading(false);
-            }
+        if (inflightRequestRef.current && inflightUserKeyRef.current === requestUserKey) {
+            return inflightRequestRef.current;
         }
-    }, [user]);
 
-    // ── Fetch on mount and when user/authReady changes ────────
+        const request = (async () => {
+            try {
+                if (foreground) {
+                    setLoading(true);
+                }
+
+                const data = await getSubscriptionStatus();
+                if (mountedRef.current && activeUserKeyRef.current === requestUserKey) {
+                    setSubscriptionData(data);
+                    setResolved(true);
+                    setCachedSubscription(data);
+                }
+            } catch (err) {
+                console.warn('SubscriptionContext: Failed to fetch subscription status', err);
+                if (mountedRef.current && activeUserKeyRef.current === requestUserKey) {
+                    setResolved(true);
+                }
+            } finally {
+                if (mountedRef.current && activeUserKeyRef.current === requestUserKey && foreground) {
+                    setLoading(false);
+                }
+            }
+        })();
+
+        inflightUserKeyRef.current = requestUserKey;
+        const trackedRequest = request.finally(() => {
+            if (inflightRequestRef.current === trackedRequest) {
+                inflightRequestRef.current = null;
+                inflightUserKeyRef.current = null;
+            }
+        });
+        inflightRequestRef.current = trackedRequest;
+        return trackedRequest;
+    }, [userKey]);
+
+    useEffect(() => {
+        if (hydratedSubscription) {
+            setSubscriptionData(hydratedSubscription);
+            setResolved(true);
+            setLoading(false);
+            setCachedSubscription(hydratedSubscription);
+            return;
+        }
+
+        if (!userKey) {
+            setSubscriptionData(null);
+            setResolved(true);
+            setLoading(false);
+            setCachedSubscription(null);
+        }
+    }, [hydratedSubscription, userKey]);
+
     useEffect(() => {
         mountedRef.current = true;
 
         if (authReady) {
-            fetchStatus();
+            void fetchStatus({ foreground: !(hydratedSubscription || getCachedSubscription()) });
         }
 
         return () => {
             mountedRef.current = false;
         };
-    }, [authReady, fetchStatus]);
+    }, [authReady, fetchStatus, hydratedSubscription, userKey]);
 
-    // ── Auto-refresh every 60 seconds to catch expiry changes ─
     useEffect(() => {
-        if (!user) return;
-        const interval = setInterval(fetchStatus, 60_000);
+        if (!userKey) return;
+        const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+            void fetchStatus({ foreground: false });
+        }, 120_000);
         return () => clearInterval(interval);
-    }, [user, fetchStatus]);
+    }, [userKey, fetchStatus]);
 
-    // ── Derived values ────────────────────────────────────────
     const stage = subscriptionData?.stage ?? 0;
     const plan = subscriptionData?.plan ?? 'free';
     const status = subscriptionData?.status ?? 'none';
     const isAdmin = subscriptionData?.is_admin ?? false;
-    const features = {
-        ...ALWAYS_AVAILABLE_FEATURES,
-        ...(subscriptionData?.features ?? {}),
-    };
-    const featureExpires = subscriptionData?.feature_expires ?? {};
+    const features = useMemo(
+        () => ({
+            ...ALWAYS_AVAILABLE_FEATURES,
+            ...(subscriptionData?.features ?? {}),
+        }),
+        [subscriptionData?.features],
+    );
+    const featureExpires = useMemo(
+        () => subscriptionData?.feature_expires ?? {},
+        [subscriptionData?.feature_expires],
+    );
     const expiresAt = subscriptionData?.expires_at ?? null;
 
     const hasFeature = useCallback(
         (featureKey: string): boolean => {
-            // If not resolved yet, deny access (safe default)
             if (!resolved) return false;
-            // Admins always have full access
             if (isAdmin) return true;
             return features[featureKey] ?? false;
         },
@@ -157,7 +237,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     );
 
     const refreshAccess = useCallback(async () => {
-        await fetchStatus();
+        await fetchStatus({ foreground: true });
     }, [fetchStatus]);
 
     const contextValue = useMemo<SubscriptionContextType>(
@@ -184,10 +264,6 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         </SubscriptionContext.Provider>
     );
 };
-
-// ══════════════════════════════════════════════════════════════
-// HOOK
-// ══════════════════════════════════════════════════════════════
 
 export const useSubscription = (): SubscriptionContextType => {
     const context = useContext(SubscriptionContext);

@@ -1,4 +1,4 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosAdapter, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // ══════════════════════════════════════════════════════════════
 // PRODUCTION-GRADE API CLIENT
@@ -27,6 +27,11 @@ const api = axios.create({
 // This prevents redundant backend hits when multiple React components
 // request the same data simultaneously (e.g. during StrictMode double-renders).
 const _inflightRequests = new Map<string, Promise<any>>();
+
+type DedupedRequestConfig = InternalAxiosRequestConfig & {
+    _baseAdapter?: AxiosAdapter;
+    _dedupKey?: string;
+};
 
 function deduplicationKey(config: InternalAxiosRequestConfig): string | null {
     // Only deduplicate GET requests (safe to coalesce reads)
@@ -108,19 +113,43 @@ api.interceptors.request.use((config) => {
         config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Request deduplication: if an identical GET is already in-flight, reuse it
-    const dedupKey = deduplicationKey(config as InternalAxiosRequestConfig);
-    if (dedupKey && _inflightRequests.has(dedupKey)) {
-        const controller = new AbortController();
-        (config as any)._dedupKey = dedupKey;
-        (config as any)._deduplicated = true;
-        // Abort this request — the response interceptor will return the in-flight result
-        config.signal = controller.signal;
-        // We return the config but immediately reject so the response interceptor catches it
-        // and returns the deduplicated result.
+    // Request deduplication: route identical concurrent GETs through the same
+    // adapter promise so only one network request is sent.
+    const requestConfig = config as DedupedRequestConfig;
+    const dedupKey = deduplicationKey(requestConfig);
+    if (dedupKey) {
+        requestConfig._dedupKey = dedupKey;
+
+        const existingRequest = _inflightRequests.get(dedupKey);
+        if (existingRequest) {
+            requestConfig.adapter = async () => existingRequest;
+            return requestConfig;
+        }
+
+        requestConfig._baseAdapter ??= axios.getAdapter(requestConfig.adapter ?? api.defaults.adapter);
+
+        requestConfig.adapter = async (adapterConfig) => {
+            const dedupedAdapterConfig = adapterConfig as DedupedRequestConfig;
+            const requestKey = dedupedAdapterConfig._dedupKey ?? dedupKey;
+            const inflightRequest = _inflightRequests.get(requestKey);
+            if (inflightRequest) {
+                return inflightRequest;
+            }
+
+            const requestPromise = Promise.resolve(
+                (requestConfig._baseAdapter as AxiosAdapter)(dedupedAdapterConfig),
+            ).finally(() => {
+                if (_inflightRequests.get(requestKey) === requestPromise) {
+                    _inflightRequests.delete(requestKey);
+                }
+            });
+
+            _inflightRequests.set(requestKey, requestPromise);
+            return requestPromise;
+        };
     }
 
-    return config;
+    return requestConfig;
 });
 
 // ── Response Interceptor with retry logic ─────────────────────

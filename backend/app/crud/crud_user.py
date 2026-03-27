@@ -1,9 +1,8 @@
 from typing import Optional
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.models.user import User
+from app.models.user import User, Profile
 from app.schemas.user import UserCreate, UserUpdate
 from uuid import UUID
 from app.core.security import get_password_hash
@@ -16,13 +15,30 @@ def normalize_email(email: Optional[str]) -> Optional[str]:
 
 
 def get_user(db: Session, user_id: UUID):
-    return db.query(User).filter(User.id == user_id).first()
+    """Fetch user by ID with profile eager-loaded (avoids N+1 on /users/me)."""
+    return (
+        db.query(User)
+        .options(joinedload(User.profile))
+        .filter(User.id == user_id)
+        .first()
+    )
 
 def get_user_by_email(db: Session, email: str):
+    """Fetch user by email with profile eager-loaded.
+    
+    Note: emails are stored lowercase via normalize_email() at insert time,
+    so we can compare directly without func.lower() — this allows PostgreSQL
+    to use the index on users.email.
+    """
     normalized_email = normalize_email(email)
     if not normalized_email:
         return None
-    return db.query(User).filter(func.lower(User.email) == normalized_email).first()
+    return (
+        db.query(User)
+        .options(joinedload(User.profile))
+        .filter(User.email == normalized_email)
+        .first()
+    )
 
 
 def create_user(db: Session, user_in: UserCreate):
@@ -38,4 +54,3 @@ def create_user(db: Session, user_in: UserCreate):
     db.commit()
     db.refresh(db_user)
     return db_user
-

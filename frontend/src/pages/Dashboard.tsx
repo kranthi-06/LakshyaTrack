@@ -28,8 +28,11 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getActiveRoadmap } from '../services/careerPlatform';
+import { useProgressDashboardStore, useProgressDashboardRuntime } from '../progress-system/store/useProgressDashboardStore';
 
 export default function Dashboard() {
+    useProgressDashboardRuntime();
+    const progressData = useProgressDashboardStore((state) => state.data);
     const { user } = useAuth();
     const { stage, hasFeature, isAdmin, loading: subLoading, resolved: subResolved } = useSubscription();
     const navigate = useNavigate();
@@ -92,10 +95,10 @@ export default function Dashboard() {
     };
 
     const stats = [
-        { label: 'Skills Assessed', value: '12', change: '+3 this week', icon: Zap, color: 'from-blue-500 to-cyan-400', bg: 'bg-blue-50 dark:bg-blue-500/10' },
-        { label: 'Achievements', value: '8', change: 'New badge earned!', icon: Trophy, color: 'from-emerald-500 to-teal-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
-        { label: 'Profile Score', value: '85%', change: '+5% this month', icon: TrendingUp, color: 'from-amber-500 to-orange-400', bg: 'bg-amber-50 dark:bg-amber-500/10' },
-        { label: 'Streak Days', value: '15', change: 'Keep it up!', icon: Calendar, color: 'from-violet-500 to-purple-400', bg: 'bg-violet-50 dark:bg-violet-500/10' },
+        { label: 'Problems Solved', value: progressData.problemSolving.totalSolved.toString(), change: `${progressData.problemSolving.acceptanceRate}% accuracy`, icon: Zap, color: 'from-blue-500 to-cyan-400', bg: 'bg-blue-50 dark:bg-blue-500/10' },
+        { label: 'Achievements', value: progressData.badges.totalUnlocked.toString(), change: `${progressData.badges.totalBadges - progressData.badges.totalUnlocked} remaining`, icon: Trophy, color: 'from-emerald-500 to-teal-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+        { label: 'Active Days', value: progressData.activity.activeDays.toString(), change: `${progressData.activity.totalSessions} sessions`, icon: TrendingUp, color: 'from-amber-500 to-orange-400', bg: 'bg-amber-50 dark:bg-amber-500/10' },
+        { label: 'Streak Days', value: progressData.streak.currentStreak.toString(), change: progressData.streak.longestStreak > 0 ? `Best: ${progressData.streak.longestStreak}` : 'Keep it up!', icon: Calendar, color: 'from-violet-500 to-purple-400', bg: 'bg-violet-50 dark:bg-violet-500/10' },
     ];
 
     const quickActions = [

@@ -4,10 +4,14 @@ import { setAuthInitialized, setUnauthorizedHandler } from '../services/api';
 import { invalidateCache } from '../services/cache';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { touchDailyStreak } from '../services/careerPlatform';
+import { getActiveRoadmap, touchDailyStreak } from '../services/careerPlatform';
+import { prefetchRoute } from '../utils/routePrefetch';
 import { useAuthStore } from '../store/authStore';
+import { resetProgressDashboardStoreState, useProgressDashboardStore } from '../progress-system/store/useProgressDashboardStore';
+import type { SubscriptionStatus } from '../services/subscription';
 
 interface User {
+    id?: string;
     email: string;
     full_name?: string;
     profile?: {
@@ -29,6 +33,7 @@ interface User {
     is_blacklisted?: boolean;
     last_active_at?: string;
     created_at?: string;
+    subscription_status?: SubscriptionStatus | null;
 }
 
 interface AuthContextType {
@@ -53,6 +58,8 @@ const AUTH_CALLBACK_SAFETY_TIMEOUT_MS = 8000;
 const BACKEND_FETCH_TIMEOUT_MS = 10000; // Max wait for /users/me during init
 const TOKEN_KEY = 'token';
 const USER_CACHE_KEY = 'auth:user-cache';
+const SUB_CACHE_KEY = 'sub:status-cache';
+const USAGE_CACHE_KEY = 'usage:status-cache';
 const RETRY_INTERVAL_MS = 15000; // Retry fetching user every 15s when offline
 
 /** Check whether a non-empty auth token lives in localStorage */
@@ -118,6 +125,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [setStoreUser]);
 
+    const clearSessionCaches = useCallback(() => {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_CACHE_KEY);
+        localStorage.removeItem(SUB_CACHE_KEY);
+        localStorage.removeItem(USAGE_CACHE_KEY);
+        invalidateCache('auth:');
+        invalidateCache('roadmap:');
+        invalidateCache('progress:');
+        resetProgressDashboardStoreState();
+    }, []);
+
+    const warmDashboardTransition = useCallback(() => {
+        prefetchRoute('/dashboard');
+
+        void useProgressDashboardStore.getState().refreshDashboard({
+            forceRefresh: false,
+            showLoading: false,
+            fallbackToMock: true,
+            reason: 'auth-transition',
+        }).catch(() => { });
+
+        void getActiveRoadmap().catch(() => { });
+    }, []);
+
     /**
      * Safely attempt to fetch the current user from backend.
      * On network / timeout errors, returns the EXISTING user (if any)
@@ -152,8 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Don't clear token during initial load — could be a race condition
                 if (initCompleteRef.current) {
                     console.warn('AuthContext: Token invalid (401) — clearing.');
-                    localStorage.removeItem(TOKEN_KEY);
-                    invalidateCache('auth:');
+                    clearSessionCaches();
                 }
                 return null;
             }
@@ -162,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.warn('AuthContext: Failed to fetch user (non-auth error, keeping token & user)', err?.message || err);
             return userRef.current || getCachedUserSnapshot();
         }
-    }, []);
+    }, [clearSessionCaches]);
 
     // ── Background retry: re-fetch user when token exists but user is null ──
     useEffect(() => {
@@ -282,6 +312,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (event === 'SIGNED_IN' && session) {
                 invalidateCache('auth:');
                 localStorage.setItem(TOKEN_KEY, session.access_token);
+                resetProgressDashboardStoreState();
+                warmDashboardTransition();
 
                 try {
                     const backendUser = await fetchCurrentUser();
@@ -307,8 +339,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Only clear token on genuine 401 (token truly invalid)
                     const status = err?.response?.status;
                     if (status === 401) {
-                        localStorage.removeItem(TOKEN_KEY);
-                        invalidateCache('auth:');
+                        clearSessionCaches();
                         await supabase.auth.signOut().catch(() => { });
                         if (mountedRef.current) updateUser(null);
                     }
@@ -327,8 +358,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 //   b) The token has already been removed (genuine sign-out)
                 if (explicitLogoutRef.current || !hasValidToken()) {
                     explicitLogoutRef.current = false;
-                    localStorage.removeItem(TOKEN_KEY);
-                    invalidateCache('auth:');
+                    clearSessionCaches();
                     if (mountedRef.current) {
                         updateUser(null);
                         navigate('/login', { replace: true });
@@ -346,7 +376,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             mountedRef.current = false;
             subscription.unsubscribe();
         };
-    }, [fetchCurrentUser, navigate, setStoreLoading, updateUser]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [clearSessionCaches, fetchCurrentUser, navigate, setStoreLoading, updateUser, warmDashboardTransition]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         // Optional fast hydration: seed user from cache while revalidating with backend.
@@ -366,8 +396,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         setUnauthorizedHandler(() => {
             explicitLogoutRef.current = true;
-            localStorage.removeItem(TOKEN_KEY);
-            invalidateCache('auth:');
+            clearSessionCaches();
             updateUser(null);
             storeLogout();
             if (window.location.pathname !== '/login') {
@@ -375,23 +404,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         });
         return () => setUnauthorizedHandler(null);
-    }, [navigate, storeLogout, updateUser]);
+    }, [clearSessionCaches, navigate, storeLogout, updateUser]);
 
     // ── Email + Password Login ──────────────────────────────────
     const login = useCallback(async (data: any) => {
+        prefetchRoute('/dashboard');
         const response = await loginApi(data.username || data.email, data.password);
         if (response.access_token) {
             localStorage.setItem(TOKEN_KEY, response.access_token);
+            localStorage.removeItem(SUB_CACHE_KEY);
+            localStorage.removeItem(USAGE_CACHE_KEY);
             invalidateCache('auth:');
             invalidateCache('roadmap:');
             invalidateCache('progress:');
-            const userData = await getMe();
+            resetProgressDashboardStoreState();
+            warmDashboardTransition();
+            const userData = response.user ?? await getMe();
             updateUser(userData);
             // Best-effort daily streak touch (non-blocking).
             touchDailyStreak().catch(() => { });
             navigate('/dashboard', { replace: true });
         }
-    }, [navigate, updateUser]);
+    }, [navigate, updateUser, warmDashboardTransition]);
 
     // ── Registration (no auto‑login — OTP verification required) ─
     const register = useCallback(async (data: any) => {
@@ -400,17 +434,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ── OTP Verification ────────────────────────────────────────
     const verifyOtp = useCallback(async (email: string, otp: string) => {
+        prefetchRoute('/dashboard');
         const response = await verifyOtpApi(email, otp);
         if (response.access_token) {
             localStorage.setItem(TOKEN_KEY, response.access_token);
+            localStorage.removeItem(SUB_CACHE_KEY);
+            localStorage.removeItem(USAGE_CACHE_KEY);
             invalidateCache('auth:');
             invalidateCache('roadmap:');
             invalidateCache('progress:');
-            const userData = await getMe();
+            resetProgressDashboardStoreState();
+            warmDashboardTransition();
+            const userData = response.user ?? await getMe();
             updateUser(userData);
             touchDailyStreak().catch(() => { });
         }
-    }, [updateUser]);
+    }, [updateUser, warmDashboardTransition]);
 
     // ── Resend OTP ──────────────────────────────────────────────
     const resendOtp = useCallback(async (email: string) => {
@@ -429,6 +468,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ── Google Sign‑In via Supabase ─────────────────────────────
     const signInWithGoogle = useCallback(async () => {
+        prefetchRoute('/dashboard');
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
@@ -443,17 +483,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ── Logout ──────────────────────────────────────────────────
     const logout = useCallback(async () => {
         explicitLogoutRef.current = true; // Mark this as an explicit user action
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_CACHE_KEY);
-        invalidateCache('auth:');
-        invalidateCache('roadmap:');
-        invalidateCache('progress:');
+        clearSessionCaches();
         // Sign out from Supabase too (if applicable)
         await supabase.auth.signOut().catch(() => { });
         updateUser(null);
         storeLogout();
         navigate('/login', { replace: true });
-    }, [navigate, storeLogout, updateUser]);
+    }, [clearSessionCaches, navigate, storeLogout, updateUser]);
 
     const contextValue = useMemo(() => ({
         user,

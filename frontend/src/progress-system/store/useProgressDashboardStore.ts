@@ -7,6 +7,7 @@ import {
   fetchContributions,
   fetchDashboard,
   fetchIntelligence,
+  invalidateCache as invalidateProgressApiCache,
   fetchProblemStats,
   fetchStreak,
   fetchTimeAnalytics,
@@ -215,6 +216,31 @@ let visibilityHandler: (() => void) | null = null;
 let onlineHandler: (() => void) | null = null;
 let offlineHandler: (() => void) | null = null;
 let customProgressHandler: EventListener | null = null;
+
+export function resetProgressDashboardStoreState(): void {
+  fullRefreshPromise = null;
+  sectionRefreshPromise = null;
+  pendingSectionRefresh.clear();
+  pendingSectionTimestamp = undefined;
+
+  if (pendingSectionTimer !== null && typeof window !== 'undefined') {
+    window.clearTimeout(pendingSectionTimer);
+    pendingSectionTimer = null;
+  }
+
+  invalidateProgressApiCache();
+
+  useProgressDashboardStore.setState({
+    data: getProgressDashboardData(true),
+    isLoading: true,
+    isRefreshing: false,
+    isLive: false,
+    isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
+    hasHydrated: false,
+    selectedContributionYear: getCurrentYear(),
+    lastFetchAt: 0,
+  });
+}
 
 async function performFullRefresh(options: RefreshOptions = {}): Promise<void> {
   const state = useProgressDashboardStore.getState();

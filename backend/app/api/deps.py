@@ -19,12 +19,24 @@ logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/access-token")
 LAST_ACTIVE_WRITE_INTERVAL = timedelta(minutes=10)
 _LAST_ACTIVE_MAX_ENTRIES = 10_000
-_EXTERNAL_TOKEN_CACHE_TTL = timedelta(minutes=5)
+_EXTERNAL_TOKEN_CACHE_TTL = timedelta(minutes=15)
 _EXTERNAL_TOKEN_VERIFY_TIMEOUT_SECONDS = 5
 
 _last_active_flush: dict[str, datetime] = {}
 _last_daily_activity_mark: dict[str, date] = {}
 _external_token_identity_cache: dict[str, tuple[datetime, dict[str, Any]]] = {}
+
+# Persistent HTTP session for Supabase token verification (connection reuse)
+_supabase_http_session: requests.Session | None = None
+
+def _get_supabase_http_session() -> requests.Session:
+    global _supabase_http_session
+    if _supabase_http_session is None:
+        _supabase_http_session = requests.Session()
+        _supabase_http_session.headers.update({
+            "apikey": settings.SUPABASE_KEY or "",
+        })
+    return _supabase_http_session
 
 
 def _get_black_admin_emails() -> list:
@@ -100,10 +112,10 @@ def _verify_supabase_access_token(token: str) -> Optional[dict[str, Any]]:
         _external_token_identity_cache.pop(cache_key, None)
 
     try:
-        response = requests.get(
+        session = _get_supabase_http_session()
+        response = session.get(
             f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/user",
             headers={
-                "apikey": settings.SUPABASE_KEY,
                 "Authorization": f"Bearer {token}",
             },
             timeout=_EXTERNAL_TOKEN_VERIFY_TIMEOUT_SECONDS,
@@ -163,10 +175,13 @@ def touch_user_auth_activity(
     *,
     now: Optional[datetime] = None,
 ) -> None:
+    """Update user last_active + daily activity in a SINGLE commit."""
     now_utc = _coerce_utc_datetime(now) or datetime.now(timezone.utc)
     user_key = str(user.id)
     last_flush = _coerce_utc_datetime(_last_active_flush.get(user_key))
     current_last_active = _coerce_utc_datetime(user.last_active_at)
+
+    needs_commit = False
 
     should_flush = (
         current_last_active is None
@@ -178,38 +193,43 @@ def touch_user_auth_activity(
     if should_flush:
         user.last_active_at = now_utc
         db.add(user)
-        db.commit()
+        needs_commit = True
         _last_active_flush[user_key] = now_utc
         if len(_last_active_flush) > _LAST_ACTIVE_MAX_ENTRIES:
             sorted_keys = sorted(_last_active_flush, key=_last_active_flush.get)  # type: ignore[arg-type]
             for key in sorted_keys[: len(sorted_keys) // 2]:
                 _last_active_flush.pop(key, None)
 
-    if _last_daily_activity_mark.get(user_key) == now_utc.date():
-        return
+    if _last_daily_activity_mark.get(user_key) != now_utc.date():
+        try:
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    try:
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
+            from app.models.career import UserActivityDay
 
-        from app.models.career import UserActivityDay
+            today_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
+            stmt = pg_insert(UserActivityDay).values(
+                user_id=user.id,
+                activity_date=today_start,
+                activity_count=1,
+            ).on_conflict_do_nothing(
+                constraint="uq_user_activity_day",
+            )
+            db.execute(stmt)
+            needs_commit = True
+            _last_daily_activity_mark[user_key] = now_utc.date()
+            if len(_last_daily_activity_mark) > _LAST_ACTIVE_MAX_ENTRIES:
+                oldest_keys = list(_last_daily_activity_mark.keys())[: len(_last_daily_activity_mark) // 2]
+                for key in oldest_keys:
+                    _last_daily_activity_mark.pop(key, None)
+        except Exception:
+            db.rollback()
+            return
 
-        today_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
-        stmt = pg_insert(UserActivityDay).values(
-            user_id=user.id,
-            activity_date=today_start,
-            activity_count=1,
-        ).on_conflict_do_nothing(
-            constraint="uq_user_activity_day",
-        )
-        db.execute(stmt)
-        db.commit()
-        _last_daily_activity_mark[user_key] = now_utc.date()
-        if len(_last_daily_activity_mark) > _LAST_ACTIVE_MAX_ENTRIES:
-            oldest_keys = list(_last_daily_activity_mark.keys())[: len(_last_daily_activity_mark) // 2]
-            for key in oldest_keys:
-                _last_daily_activity_mark.pop(key, None)
-    except Exception:
-        db.rollback()
+    if needs_commit:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
 
 def get_current_user(

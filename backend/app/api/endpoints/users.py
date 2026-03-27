@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
 from app.api import deps
+from app.services.subscription_service import get_subscription_status
 
 router = APIRouter()
 
@@ -44,12 +45,16 @@ def create_user(
 
 @router.get("/me", response_model=schemas.user.User)
 def read_user_me(
+    db: Session = Depends(deps.get_db),
     current_user: models.user.User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Get current user.
     """
-    return current_user
+    role = deps._resolve_user_role(current_user)
+    payload = schemas.user.User.model_validate(current_user).model_dump()
+    payload["subscription_status"] = get_subscription_status(db, current_user.id, role)
+    return payload
 
 
 @router.put("/me/profile", response_model=schemas.user.User)

@@ -2,10 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useAuth } from './AuthContext';
 import { getUsageStatus, UsageStatus, UsageCounter } from '../services/usage';
 
-// ══════════════════════════════════════════════════════════════
-// TYPES
-// ══════════════════════════════════════════════════════════════
-
 type CounterName = 'resume_count' | 'interview_count_weekly' | 'plan_count' | 'resume_edit_monthly';
 
 interface UsageContextType {
@@ -29,72 +25,138 @@ interface UsageContextType {
 
 const UsageContext = createContext<UsageContextType | undefined>(undefined);
 
-// ══════════════════════════════════════════════════════════════
-// PROVIDER
-// ══════════════════════════════════════════════════════════════
+const USAGE_CACHE_KEY = 'usage:status-cache';
+
+function getCachedUsage(): UsageStatus | null {
+    try {
+        const raw = localStorage.getItem(USAGE_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed?.plan ? parsed : null;
+    } catch {
+        localStorage.removeItem(USAGE_CACHE_KEY);
+        return null;
+    }
+}
+
+function setCachedUsage(data: UsageStatus | null) {
+    try {
+        if (data) {
+            localStorage.setItem(USAGE_CACHE_KEY, JSON.stringify(data));
+        } else {
+            localStorage.removeItem(USAGE_CACHE_KEY);
+        }
+    } catch {
+        // Ignore cache write failures.
+    }
+}
 
 export const UsageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user, authReady } = useAuth();
+    const userKey = user?.id || user?.email || null;
+    const initialUsage = getCachedUsage();
 
-    const [usage, setUsage] = useState<UsageStatus | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [resolved, setResolved] = useState(false);
+    const [usage, setUsage] = useState<UsageStatus | null>(initialUsage);
+    const [loading, setLoading] = useState(() => !initialUsage);
+    const [resolved, setResolved] = useState(() => !!initialUsage);
     const mountedRef = useRef(true);
+    const activeUserKeyRef = useRef<string | null>(userKey);
+    const inflightRequestRef = useRef<Promise<void> | null>(null);
+    const inflightUserKeyRef = useRef<string | null>(null);
 
-    // ── Fetch usage status from backend ───────────────────────
-    const fetchUsage = useCallback(async () => {
-        if (!user) {
+    useEffect(() => {
+        activeUserKeyRef.current = userKey;
+    }, [userKey]);
+
+    const fetchUsage = useCallback(async (options: { foreground?: boolean } = {}) => {
+        const { foreground = true } = options;
+        const requestUserKey = userKey;
+
+        if (!requestUserKey) {
             setUsage(null);
             setLoading(false);
             setResolved(true);
+            setCachedUsage(null);
             return;
         }
 
-        try {
-            setLoading(true);
-            const data = await getUsageStatus();
-            if (mountedRef.current) {
-                setUsage(data);
-                setResolved(true);
-            }
-        } catch (err) {
-            console.warn('UsageContext: Failed to fetch usage status', err);
-            if (mountedRef.current) {
-                setResolved(true);
-            }
-        } finally {
-            if (mountedRef.current) {
-                setLoading(false);
-            }
+        if (inflightRequestRef.current && inflightUserKeyRef.current === requestUserKey) {
+            return inflightRequestRef.current;
         }
-    }, [user]);
 
-    // ── Fetch on mount and when user/authReady changes ────────
+        const request = (async () => {
+            try {
+                if (foreground) {
+                    setLoading(true);
+                }
+
+                const data = await getUsageStatus();
+                if (mountedRef.current && activeUserKeyRef.current === requestUserKey) {
+                    setUsage(data);
+                    setResolved(true);
+                    setCachedUsage(data);
+                }
+            } catch (err) {
+                console.warn('UsageContext: Failed to fetch usage status', err);
+                if (mountedRef.current && activeUserKeyRef.current === requestUserKey) {
+                    setResolved(true);
+                }
+            } finally {
+                if (mountedRef.current && activeUserKeyRef.current === requestUserKey && foreground) {
+                    setLoading(false);
+                }
+            }
+        })();
+
+        inflightUserKeyRef.current = requestUserKey;
+        const trackedRequest = request.finally(() => {
+            if (inflightRequestRef.current === trackedRequest) {
+                inflightRequestRef.current = null;
+                inflightUserKeyRef.current = null;
+            }
+        });
+        inflightRequestRef.current = trackedRequest;
+        return trackedRequest;
+    }, [userKey]);
+
+    useEffect(() => {
+        if (!userKey) {
+            setUsage(null);
+            setResolved(true);
+            setLoading(false);
+            setCachedUsage(null);
+        }
+    }, [userKey]);
+
     useEffect(() => {
         mountedRef.current = true;
+
         if (authReady) {
-            fetchUsage();
+            void fetchUsage({ foreground: !getCachedUsage() });
         }
+
         return () => {
             mountedRef.current = false;
         };
-    }, [authReady, fetchUsage]);
+    }, [authReady, fetchUsage, userKey]);
 
-    // ── Auto-refresh every 30 seconds to keep UI in sync ──────
     useEffect(() => {
-        if (!user) return;
-        const interval = setInterval(fetchUsage, 30_000);
+        if (!userKey) return;
+        const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+            void fetchUsage({ foreground: false });
+        }, 60_000);
         return () => clearInterval(interval);
-    }, [user, fetchUsage]);
+    }, [userKey, fetchUsage]);
 
-    // ── Helper functions ──────────────────────────────────────
     const isLimitExceeded = useCallback(
         (counter: CounterName): boolean => {
             if (!resolved || !usage) return false;
             if (usage.is_admin) return false;
             const c = usage.counters[counter];
             if (!c) return false;
-            if (c.limit === -1) return false; // unlimited
+            if (c.limit === -1) return false;
             return c.exceeded;
         },
         [resolved, usage],
@@ -131,7 +193,7 @@ export const UsageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 
     const refreshUsage = useCallback(async () => {
-        await fetchUsage();
+        await fetchUsage({ foreground: true });
     }, [fetchUsage]);
 
     const contextValue = useMemo<UsageContextType>(
@@ -154,10 +216,6 @@ export const UsageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         </UsageContext.Provider>
     );
 };
-
-// ══════════════════════════════════════════════════════════════
-// HOOK
-// ══════════════════════════════════════════════════════════════
 
 export const useUsage = (): UsageContextType => {
     const context = useContext(UsageContext);

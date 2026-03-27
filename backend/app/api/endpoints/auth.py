@@ -10,6 +10,7 @@ from app.api import deps
 from app.api.deps import _get_black_admin_emails
 from app.core import security
 from app.core.config import settings
+from app.services.subscription_service import get_subscription_status
 from app.services.email_service import send_email_otp
 import logging
 
@@ -37,6 +38,14 @@ class AuthSessionResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+def _build_user_response_payload(db: Session, user: models.user.User) -> dict[str, Any]:
+    hydrated_user = crud.get_user(db, user_id=user.id) or user
+    role = deps._resolve_user_role(hydrated_user)
+    payload = schemas.user.User.model_validate(hydrated_user).model_dump()
+    payload["subscription_status"] = get_subscription_status(db, hydrated_user.id, role)
+    return payload
 
 @router.post("/signup")
 def signup(
@@ -276,10 +285,11 @@ def verify_otp(
     return {
         "message": "Email verified successfully",
         "access_token": access_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "user": _build_user_response_payload(db, user),
     }
 
-@router.post("/login/access-token", response_model=schemas.user.Token)
+@router.post("/login/access-token", response_model=schemas.user.TokenWithUser)
 def login_access_token(
     db: Session = Depends(deps.get_db), form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
@@ -307,14 +317,10 @@ def login_access_token(
             detail="Your account has been permanently blocked by admin."
         )
     
-    # ── SYNC ROLE FROM ENV ON LOGIN ───────────────────────────
+    # ── SYNC ROLE + UPDATE ACTIVITY (single commit) ──────────
     if is_black_admin and user.role != "black_admin":
         user.role = "black_admin"
         user.is_blacklisted = False
-        db.add(user)
-        db.commit()
-    
-    # Update last_active_at
     user.last_active_at = datetime.now(timezone.utc)
     db.add(user)
     db.commit()
@@ -325,6 +331,7 @@ def login_access_token(
             user.id, expires_delta=access_token_expires
         ),
         "token_type": "bearer",
+        "user": _build_user_response_payload(db, user),
     }
 
 
@@ -362,9 +369,6 @@ def login_alias(
     if is_black_admin and user.role != "black_admin":
         user.role = "black_admin"
         user.is_blacklisted = False
-        db.add(user)
-        db.commit()
-
     user.last_active_at = datetime.now(timezone.utc)
     db.add(user)
     db.commit()
@@ -422,7 +426,7 @@ from google.auth.transport import requests as google_requests
 class GoogleToken(BaseModel):
     token: str
 
-@router.post("/google-login", response_model=schemas.user.Token)
+@router.post("/google-login", response_model=schemas.user.TokenWithUser)
 def google_login(
     token_data: GoogleToken,
     db: Session = Depends(deps.get_db)
@@ -489,14 +493,10 @@ def google_login(
                 detail="Your account has been permanently blocked by admin."
             )
         
-        # Sync role from env
+        # ── SYNC ROLE + ACTIVITY (single commit) ─────────────
         if is_black_admin and user.role != "black_admin":
             user.role = "black_admin"
             user.is_blacklisted = False
-            db.add(user)
-            db.commit()
-        
-        # Update last_active_at
         user.last_active_at = datetime.now(timezone.utc)
         db.add(user)
         db.commit()
@@ -508,6 +508,7 @@ def google_login(
                 user.id, expires_delta=access_token_expires
             ),
             "token_type": "bearer",
+            "user": _build_user_response_payload(db, user),
         }
 
     except ValueError as e:

@@ -84,9 +84,14 @@ def test_verify_supabase_access_token_builds_identity_and_caches(monkeypatch):
         calls["count"] += 1
         return Response()
 
+    class FakeSession:
+        @staticmethod
+        def get(*args, **kwargs):
+            return fake_get(*args, **kwargs)
+
     monkeypatch.setattr(deps.settings, "SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setattr(deps.settings, "SUPABASE_KEY", "anon-key")
-    monkeypatch.setattr(deps.requests, "get", fake_get)
+    monkeypatch.setattr(deps, "_get_supabase_http_session", lambda: FakeSession())
     deps._external_token_identity_cache.clear()
 
     identity_first = deps._verify_supabase_access_token("token-123")

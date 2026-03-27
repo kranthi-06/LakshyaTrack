@@ -60,12 +60,16 @@ class UserInDBBase(UserBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     profile: Optional[Profile] = None
+    subscription_status: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
 
 class User(UserInDBBase):
     pass
+
+class TokenWithUser(Token):
+    user: Optional[User] = None
 
 class UserInDB(UserInDBBase):
     pass

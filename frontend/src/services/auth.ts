@@ -37,7 +37,7 @@ export const getMe = async (bypassCache = false) =>
             return response.data;
         },
         {
-            ttlMs: 45_000,
+            ttlMs: 120_000, // 2 min — user data rarely changes mid-session
             persist: true,
             bypassCache,
         },
