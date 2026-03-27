@@ -67,21 +67,8 @@ function getGoogleOAuthRedirectUrl(): string {
         import.meta.env.VITE_PUBLIC_APP_URL ||
         import.meta.env.VITE_SITE_URL ||
         import.meta.env.VITE_APP_URL;
-    const currentOrigin = window.location.origin.replace(/\/$/, '');
-    const normalizedEnvOrigin = envOrigin?.replace(/\/$/, '');
-    const hostname = window.location.hostname.toLowerCase();
-    const isLocalhost =
-        hostname === 'localhost' ||
-        hostname === '127.0.0.1' ||
-        hostname === '0.0.0.0';
 
-    // On deployed environments, always return to the same live origin the user
-    // started from. This prevents stale Vercel env values from forcing OAuth
-    // callbacks to deleted preview deployments.
-    const baseOrigin = isLocalhost && normalizedEnvOrigin
-        ? normalizedEnvOrigin
-        : currentOrigin;
-
+    const baseOrigin = (envOrigin || window.location.origin).replace(/\/$/, '');
     return `${baseOrigin}/auth/callback`;
 }
 
