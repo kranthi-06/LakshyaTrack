@@ -5,12 +5,13 @@ import {
   Suspense,
   type ReactNode,
 } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { RefreshCw, Sun, Moon, WifiOff, Radio } from 'lucide-react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useTheme } from '../context/ThemeContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { SkeletonBlock, SkeletonText } from '../progress-system/ui/loading';
 
 import type { TopicBubble } from '../progress-system/types';
 import {
@@ -39,6 +40,43 @@ function SectionSkeleton({ minHeight = 220 }: { minHeight?: number }) {
       <div className="mb-3 h-3 w-3/4 rounded bg-slate-200/60 dark:bg-white/10" />
       <div className="h-24 w-full rounded-2xl bg-slate-200/50 dark:bg-white/10" />
     </Card>
+  );
+}
+
+function SummaryCardSkeleton() {
+  return (
+    <Card className={`rounded-2xl p-5 ${surfaceClassName}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-3">
+          <SkeletonBlock className="h-3 w-24" />
+          <div className="flex items-end gap-2">
+            <SkeletonBlock className="h-10 w-16" />
+            <SkeletonBlock className="h-4 w-12" />
+          </div>
+        </div>
+        <SkeletonBlock className="h-11 w-11 rounded-2xl" />
+      </div>
+    </Card>
+  );
+}
+
+function LoadingHint({ message }: { message: string | null }) {
+  return (
+    <AnimatePresence initial={false}>
+      {message && (
+        <motion.div
+          key={message}
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className="inline-flex items-center gap-2 rounded-full border border-indigo-200/70 bg-indigo-50/80 px-3 py-2 text-xs font-medium text-indigo-700 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-200"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-current opacity-75" />
+          {message}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -89,8 +127,10 @@ function buildCategoryStats(topics: TopicBubble[]) {
 
 function CategoryWiseStatsCard({
   topics,
+  loading = false,
 }: {
   topics: TopicBubble[];
+  loading?: boolean;
 }) {
   const rows = useMemo(() => buildCategoryStats(topics), [topics]);
   const maxSolved = Math.max(1, ...rows.map((r) => r.problemsSolved));
@@ -98,6 +138,45 @@ function CategoryWiseStatsCard({
 
   return (
     <Card className={`rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`}>
+      {loading ? (
+        <>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <SkeletonText lines={['w-32', 'w-56']} />
+            <SkeletonBlock className="h-8 w-24 rounded-full" />
+          </div>
+          <div className="space-y-3">
+            {Array.from({ length: 5 }, (_, index) => (
+              <div
+                key={index}
+                className="rounded-xl border border-slate-200/70 bg-white/60 p-4 dark:border-slate-800/60 dark:bg-slate-950/30"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-2">
+                    <SkeletonBlock className="h-4 w-28" />
+                    <SkeletonBlock className="h-3 w-20" />
+                  </div>
+                  <div className="space-y-2 text-right">
+                    <SkeletonBlock className="h-4 w-16" />
+                    <SkeletonBlock className="h-3 w-14" />
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {Array.from({ length: 2 }, (_, barIndex) => (
+                    <div key={barIndex}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <SkeletonBlock className="h-3 w-10" />
+                        <SkeletonBlock className="h-3 w-8" />
+                      </div>
+                      <SkeletonBlock className="h-2 w-full rounded-full" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
@@ -165,6 +244,8 @@ function CategoryWiseStatsCard({
           })}
         </div>
       )}
+        </>
+      )}
     </Card>
   );
 }
@@ -174,9 +255,12 @@ export default function ProgressUnified() {
 
   const { isDark, toggleTheme } = useTheme();
   const data = useProgressDashboardStore((state) => state.data);
+  const isLoading = useProgressDashboardStore((state) => state.isLoading);
   const isRefreshing = useProgressDashboardStore((state) => state.isRefreshing);
   const isLive = useProgressDashboardStore((state) => state.isLive);
   const isOnline = useProgressDashboardStore((state) => state.isOnline);
+  const hasHydrated = useProgressDashboardStore((state) => state.hasHydrated);
+  const loadedSections = useProgressDashboardStore((state) => state.loadedSections);
   const refreshDashboard = useProgressDashboardStore((state) => state.refreshDashboard);
   const refreshContributionYear = useProgressDashboardStore((state) => state.refreshContributionYear);
 
@@ -187,7 +271,18 @@ export default function ProgressUnified() {
     [refreshContributionYear],
   );
 
-  const syncLabel = formatRelativeSync(data.lastUpdated);
+  const loadedSectionCount = useMemo(
+    () => Object.values(loadedSections).filter(Boolean).length,
+    [loadedSections],
+  );
+  const totalSectionCount = Object.keys(loadedSections).length;
+  const showLoadingHint = isLoading && loadedSectionCount < totalSectionCount;
+  const loadingHintMessage = showLoadingHint
+    ? loadedSectionCount === 0
+      ? 'Preparing your progress insights...'
+      : 'Analyzing your activity...'
+    : null;
+  const syncLabel = hasHydrated ? formatRelativeSync(data.lastUpdated) : null;
   const connectionLabel = !isOnline
     ? 'Offline cache'
     : isLive
@@ -264,9 +359,11 @@ export default function ProgressUnified() {
               {connectionLabel}
             </div>
 
-            <div className="rounded-full border border-slate-200/70 bg-white/70 px-3 py-2 text-xs text-slate-600 dark:border-slate-800/60 dark:bg-slate-950/30 dark:text-slate-300">
-              Synced {syncLabel}
-            </div>
+            {syncLabel && (
+              <div className="rounded-full border border-slate-200/70 bg-white/70 px-3 py-2 text-xs text-slate-600 dark:border-slate-800/60 dark:bg-slate-950/30 dark:text-slate-300">
+                Synced {syncLabel}
+              </div>
+            )}
 
             <Button
               type="button"
@@ -291,6 +388,8 @@ export default function ProgressUnified() {
           </div>
         </div>
 
+        <LoadingHint message={loadingHintMessage} />
+
         {/* Summary strip */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {summary.map((stat, index) => (
@@ -302,32 +401,36 @@ export default function ProgressUnified() {
               whileHover={{ y: -2 }}
               className="min-w-0"
             >
-              <Card className={`rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                      {stat.label}
+              {[loadedSections.streak, loadedSections.problemSolving, loadedSections.activity, loadedSections.badges][index] ? (
+                <Card className={`rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        {stat.label}
+                      </div>
+                      <div className="mt-2 flex items-end gap-2">
+                        <div className="text-4xl font-[900] tracking-tighter text-slate-900 dark:text-white">
+                          {stat.value}
+                        </div>
+                        <div className="pb-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          {stat.sub}
+                        </div>
+                      </div>
                     </div>
-                    <div className="mt-2 flex items-end gap-2">
-                      <div className="text-4xl font-[900] tracking-tighter text-slate-900 dark:text-white">
-                        {stat.value}
-                      </div>
-                      <div className="pb-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                        {stat.sub}
-                      </div>
+                    <div
+                      className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl border"
+                      style={{
+                        background: `${stat.accent}12`,
+                        borderColor: `${stat.accent}22`,
+                      }}
+                    >
+                      {stat.icon}
                     </div>
                   </div>
-                  <div
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl border"
-                    style={{
-                      background: `${stat.accent}12`,
-                      borderColor: `${stat.accent}22`,
-                    }}
-                  >
-                    {stat.icon}
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              ) : (
+                <SummaryCardSkeleton />
+              )}
             </motion.div>
           ))}
         </div>
@@ -350,13 +453,18 @@ export default function ProgressUnified() {
 
                 <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.72fr)]">
                   <SectionBoundary title="Contribution Heatmap">
-                    <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
+                    <ContributionHeatmap
+                      data={data.contributions}
+                      onYearChange={handleYearChange}
+                      loading={!loadedSections.contributions}
+                    />
                   </SectionBoundary>
                   <SectionBoundary title="Time Analytics">
                     <TimeAnalytics
                       data={data.timeAnalytics}
                       hourlyActivity={data.intelligence.activeHours}
                       variant="compact"
+                      loading={!(loadedSections.timeAnalytics && loadedSections.intelligence)}
                     />
                   </SectionBoundary>
                 </div>
@@ -377,10 +485,10 @@ export default function ProgressUnified() {
                 </div>
                 <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                   <SectionBoundary title="Streak Engine">
-                    <StreakDisplay data={data.streak} />
+                    <StreakDisplay data={data.streak} loading={!loadedSections.streak} />
                   </SectionBoundary>
                   <SectionBoundary title="Intelligence Hub">
-                    <IntelligentInsights data={data.intelligence} />
+                    <IntelligentInsights data={data.intelligence} loading={!loadedSections.intelligence} />
                   </SectionBoundary>
                 </div>
               </section>
@@ -400,10 +508,10 @@ export default function ProgressUnified() {
                 </div>
                 <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                   <SectionBoundary title="Problem Solving Stats">
-                    <ProblemSolvingStats data={data.problemSolving} />
+                    <ProblemSolvingStats data={data.problemSolving} loading={!loadedSections.problemSolving} />
                   </SectionBoundary>
                   <SectionBoundary title="Category-wise Stats">
-                    <CategoryWiseStatsCard topics={data.topicMap.topics} />
+                    <CategoryWiseStatsCard topics={data.topicMap.topics} loading={!loadedSections.topicMap} />
                   </SectionBoundary>
                 </div>
               </section>
@@ -422,7 +530,7 @@ export default function ProgressUnified() {
                   </div>
                 </div>
                 <SectionBoundary title="Skill Map">
-                  <TopicBubbleMap data={data.topicMap} />
+                  <TopicBubbleMap data={data.topicMap} loading={!loadedSections.topicMap} />
                 </SectionBoundary>
               </section>
 
@@ -440,16 +548,18 @@ export default function ProgressUnified() {
                   </div>
                 </div>
                 <SectionBoundary title="Achievements">
-                  <BadgeSystem data={data.badges} />
+                  <BadgeSystem data={data.badges} loading={!loadedSections.badges} />
                 </SectionBoundary>
               </section>
           </Suspense>
         </motion.div>
 
-        <div className="pt-1 text-center text-xs text-slate-500 dark:text-slate-400">
+        {syncLabel && (
+          <div className="pt-1 text-center text-xs text-slate-500 dark:text-slate-400">
           Last updated: {new Date(data.lastUpdated).toLocaleString()} · synced {syncLabel}
           {isLive && ' · realtime engine connected'}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

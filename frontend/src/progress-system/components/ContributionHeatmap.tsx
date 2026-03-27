@@ -11,11 +11,13 @@ import {
   surfaceHoverClassName,
   titleTextClassName,
 } from '../ui/surfaces';
+import { SkeletonBlock, SkeletonText } from '../ui/loading';
 import type { ContributionData, DailyContribution, HeatmapView } from '../types';
 
 interface Props {
   data: ContributionData;
   onYearChange?: (year: number) => void;
+  loading?: boolean;
 }
 
 const CELL_SIZE = 12;
@@ -42,7 +44,7 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 const surfaceCardClassName = `rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`;
 
-const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChange }: Props) {
+const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChange, loading = false }: Props) {
   const { isDark } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<HeatmapView>('yearly');
@@ -137,6 +139,47 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
       className="min-w-0 self-start"
     >
       <Card className={surfaceCardClassName}>
+        {loading ? (
+          <>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <SkeletonText lines={['w-36', 'w-56']} />
+              <div className="flex items-center gap-3">
+                <SkeletonBlock className="h-9 w-32 rounded-xl" />
+                <SkeletonBlock className="h-9 w-20 rounded-xl" />
+              </div>
+            </div>
+
+            <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+              {Array.from({ length: 3 }, (_, index) => (
+                <div key={index} className={`rounded-xl border p-4 ${panelClassName}`}>
+                  <SkeletonBlock className="h-3 w-24" />
+                  <SkeletonBlock className="mt-3 h-7 w-20" />
+                </div>
+              ))}
+            </div>
+
+            <div className={`rounded-2xl border p-4 ${panelClassName}`}>
+              <div className="mb-4 flex items-center justify-between">
+                <SkeletonBlock className="h-3 w-44" />
+                <SkeletonBlock className="h-3 w-24" />
+              </div>
+              <div className="grid grid-cols-12 gap-1.5">
+                {Array.from({ length: 84 }, (_, index) => (
+                  <SkeletonBlock key={index} className="h-3.5 w-full rounded-[4px]" />
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200/70 pt-4 dark:border-slate-800/60">
+              <div className="flex gap-4">
+                <SkeletonBlock className="h-3 w-28" />
+                <SkeletonBlock className="h-3 w-28" />
+              </div>
+              <SkeletonBlock className="h-3 w-28" />
+            </div>
+          </>
+        ) : (
+          <>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className={`text-base font-semibold ${titleTextClassName}`}>Activity Calendar</h3>
@@ -380,6 +423,8 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
             <span>More</span>
           </div>
         </div>
+          </>
+        )}
       </Card>
     </motion.div>
   );

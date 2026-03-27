@@ -35,6 +35,9 @@ interface CacheEntry<T> {
 const _cache = new Map<string, CacheEntry<any>>();
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
 const DASHBOARD_TTL = 10 * 1000;
+const DASHBOARD_PERSIST_TTL = 60 * 1000;
+const DASHBOARD_CACHE_STORAGE_PREFIX = 'progress:dashboard-cache:';
+const AUTH_USER_CACHE_KEY = 'auth:user-cache';
 
 function getCached<T>(key: string): T | null {
   const entry = _cache.get(key);
@@ -47,6 +50,110 @@ function getCached<T>(key: string): T | null {
 
 function setCache<T>(key: string, data: T, ttl = DEFAULT_TTL): void {
   _cache.set(key, { data, expiresAt: Date.now() + ttl });
+}
+
+function getProgressCacheUserKey(): string | null {
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(AUTH_USER_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as { id?: string; email?: string } | null;
+    if (typeof parsed?.id === 'string' && parsed.id.trim()) {
+      return `id:${parsed.id.trim()}`;
+    }
+
+    if (typeof parsed?.email === 'string' && parsed.email.trim()) {
+      return `email:${parsed.email.trim().toLowerCase()}`;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getDashboardStorageKey(userKey: string): string {
+  return `${DASHBOARD_CACHE_STORAGE_PREFIX}${userKey}`;
+}
+
+function persistDashboardCache(data: ProgressDashboardData): void {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+
+  const userKey = getProgressCacheUserKey();
+  if (!userKey) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      getDashboardStorageKey(userKey),
+      JSON.stringify({
+        data,
+        fetchedAt: Date.now(),
+        expiresAt: Date.now() + DASHBOARD_PERSIST_TTL,
+      }),
+    );
+  } catch {
+    // Ignore storage write failures.
+  }
+}
+
+export function getCachedDashboardSnapshot(): { data: ProgressDashboardData; fetchedAt: number } | null {
+  const memorySnapshot = getCached<ProgressDashboardData>('dashboard');
+  if (memorySnapshot) {
+    return {
+      data: normalizeDashboardData(memorySnapshot),
+      fetchedAt: Date.now(),
+    };
+  }
+
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  const userKey = getProgressCacheUserKey();
+  if (!userKey) {
+    return null;
+  }
+
+  const storageKey = getDashboardStorageKey(userKey);
+
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as {
+      data?: Partial<ProgressDashboardData>;
+      fetchedAt?: number;
+      expiresAt?: number;
+    } | null;
+
+    if (!parsed || typeof parsed.expiresAt !== 'number' || parsed.expiresAt <= Date.now()) {
+      localStorage.removeItem(storageKey);
+      return null;
+    }
+
+    const normalized = normalizeDashboardData(parsed.data);
+    setCache('dashboard', normalized, Math.max(1_000, parsed.expiresAt - Date.now()));
+
+    return {
+      data: normalized,
+      fetchedAt: typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : Date.now(),
+    };
+  } catch {
+    localStorage.removeItem(storageKey);
+    return null;
+  }
 }
 
 export function invalidateCache(prefix?: string): void {
@@ -347,12 +454,18 @@ export async function fetchDashboard(forceRefresh = false, fallbackToMock = true
   if (!forceRefresh) {
     const cached = getCached<ProgressDashboardData>('dashboard');
     if (cached) return cached;
+
+    const persisted = getCachedDashboardSnapshot();
+    if (persisted) {
+      return persisted.data;
+    }
   }
 
   try {
     const { data } = await api.get(`${PE_BASE}/dashboard`);
     const normalized = normalizeDashboardData(data);
     setCache('dashboard', normalized, DASHBOARD_TTL);
+    persistDashboardCache(normalized);
     return normalized;
   } catch (error) {
     if (!fallbackToMock) {

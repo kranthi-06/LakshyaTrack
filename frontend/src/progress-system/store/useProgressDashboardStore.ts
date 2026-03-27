@@ -7,6 +7,7 @@ import {
   fetchContributions,
   fetchDashboard,
   fetchIntelligence,
+  getCachedDashboardSnapshot,
   invalidateCache as invalidateProgressApiCache,
   fetchProblemStats,
   fetchStreak,
@@ -41,6 +42,8 @@ type DashboardSectionDataMap = {
   intelligence: IntelligenceData;
 };
 
+type LoadedSectionsState = Record<DashboardSection, boolean>;
+
 interface RefreshOptions {
   forceRefresh?: boolean;
   showLoading?: boolean;
@@ -61,6 +64,7 @@ interface ProgressDashboardStoreState {
   isLive: boolean;
   isOnline: boolean;
   hasHydrated: boolean;
+  loadedSections: LoadedSectionsState;
   selectedContributionYear: number;
   lastFetchAt: number;
   refreshDashboard: (options?: RefreshOptions) => Promise<void>;
@@ -79,6 +83,8 @@ const ALL_SECTIONS: DashboardSection[] = [
   'badges',
   'intelligence',
 ];
+
+const initialDashboardSnapshot = getCachedDashboardSnapshot();
 
 const FALLBACK_POLL_INTERVAL_MS = 20_000;
 const STALE_REFRESH_MS = 15_000;
@@ -119,6 +125,34 @@ function getRequestedSections(sections: DashboardSection[]): DashboardSection[] 
   }
 
   return Array.from(unique);
+}
+
+function buildLoadedSectionsState(value = false): LoadedSectionsState {
+  return {
+    contributions: value,
+    problemSolving: value,
+    activity: value,
+    timeAnalytics: value,
+    topicMap: value,
+    streak: value,
+    badges: value,
+    intelligence: value,
+  };
+}
+
+function mergeLoadedSectionsState(
+  current: LoadedSectionsState,
+  sections: DashboardSection[],
+): LoadedSectionsState {
+  if (sections.length === 0) {
+    return current;
+  }
+
+  const nextState = { ...current };
+  sections.forEach((section) => {
+    nextState[section] = true;
+  });
+  return nextState;
 }
 
 function mergeDashboardPatch(
@@ -187,14 +221,15 @@ async function fetchSectionData(
 }
 
 export const useProgressDashboardStore = create<ProgressDashboardStoreState>(() => ({
-  data: getProgressDashboardData(),
-  isLoading: true,
+  data: initialDashboardSnapshot?.data ?? getProgressDashboardData(),
+  isLoading: !initialDashboardSnapshot,
   isRefreshing: false,
   isLive: false,
   isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
-  hasHydrated: false,
+  hasHydrated: Boolean(initialDashboardSnapshot),
+  loadedSections: buildLoadedSectionsState(Boolean(initialDashboardSnapshot)),
   selectedContributionYear: getCurrentYear(),
-  lastFetchAt: 0,
+  lastFetchAt: initialDashboardSnapshot?.fetchedAt ?? 0,
   refreshDashboard: (options) => performFullRefresh(options),
   refreshContributionYear: (year) => performContributionYearRefresh(year),
   setLiveStatus: (isLive) => useProgressDashboardStore.setState({ isLive }),
@@ -237,6 +272,7 @@ export function resetProgressDashboardStoreState(): void {
     isLive: false,
     isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
     hasHydrated: false,
+    loadedSections: buildLoadedSectionsState(false),
     selectedContributionYear: getCurrentYear(),
     lastFetchAt: 0,
   });
@@ -280,6 +316,7 @@ async function performFullRefresh(options: RefreshOptions = {}): Promise<void> {
           freshData.lastUpdated,
         ),
         hasHydrated: true,
+        loadedSections: buildLoadedSectionsState(true),
         lastFetchAt: Date.now(),
       }));
     } catch {
@@ -287,6 +324,7 @@ async function performFullRefresh(options: RefreshOptions = {}): Promise<void> {
         useProgressDashboardStore.setState({
           data: getProgressDashboardData(true),
           hasHydrated: true,
+          loadedSections: buildLoadedSectionsState(true),
           lastFetchAt: Date.now(),
         });
       }
@@ -335,9 +373,11 @@ async function refreshSectionsNow(
       );
 
       if (Object.keys(patch).length > 0) {
+        const resolvedSections = Object.keys(patch) as DashboardSection[];
         useProgressDashboardStore.setState((current) => ({
           data: mergeDashboardPatch(current.data, patch, options.timestamp),
           hasHydrated: true,
+          loadedSections: mergeLoadedSectionsState(current.loadedSections, resolvedSections),
           lastFetchAt: Date.now(),
         }));
       }
@@ -371,6 +411,7 @@ async function performContributionYearRefresh(year: number): Promise<void> {
     const contributions = await fetchContributions(year, true, false);
     useProgressDashboardStore.setState((current) => ({
       data: mergeDashboardPatch(current.data, { contributions }),
+      loadedSections: mergeLoadedSectionsState(current.loadedSections, ['contributions']),
       lastFetchAt: Date.now(),
     }));
   } finally {
@@ -519,7 +560,21 @@ function startRuntime(): void {
   runtimeStarted = true;
   ensureFallbackPolling();
 
-  const state = useProgressDashboardStore.getState();
+  let state = useProgressDashboardStore.getState();
+  if (!state.hasHydrated) {
+    const cachedSnapshot = getCachedDashboardSnapshot();
+    if (cachedSnapshot) {
+      useProgressDashboardStore.setState({
+        data: cachedSnapshot.data,
+        isLoading: false,
+        hasHydrated: true,
+        loadedSections: buildLoadedSectionsState(true),
+        lastFetchAt: cachedSnapshot.fetchedAt,
+      });
+      state = useProgressDashboardStore.getState();
+    }
+  }
+
   if (!state.hasHydrated) {
     void performFullRefresh({
       showLoading: true,

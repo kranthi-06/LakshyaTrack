@@ -9,10 +9,12 @@ import {
   surfaceHoverClassName,
   titleTextClassName,
 } from '../ui/surfaces';
+import { SkeletonBlock, SkeletonCircle, SkeletonText } from '../ui/loading';
 import type { IntelligenceData, Insight, InsightType } from '../types';
 
 interface Props {
   data: IntelligenceData;
+  loading?: boolean;
 }
 
 interface HourlyTooltipProps {
@@ -159,7 +161,7 @@ const HourlyTooltip = ({ active, payload }: HourlyTooltipProps) => {
   );
 };
 
-const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
+const IntelligentInsights = memo(function IntelligentInsights({ data, loading = false }: Props) {
   const peakHour = useMemo(
     () =>
       data.activeHours.reduce(
@@ -176,6 +178,56 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.35 }} className="min-w-0">
       <Card className={surfaceCardClassName}>
+        {loading ? (
+          <>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <SkeletonText lines={['w-36', 'w-64']} />
+              <SkeletonBlock className="h-8 w-32 rounded-full" />
+            </div>
+
+            <div className="mb-6 flex flex-wrap justify-center gap-8">
+              {Array.from({ length: 3 }, (_, index) => (
+                <div key={index} className="flex flex-col items-center gap-3">
+                  <SkeletonCircle size={88} />
+                  <SkeletonBlock className="h-3 w-20" />
+                </div>
+              ))}
+            </div>
+
+            <div className={`mb-6 rounded-2xl border p-4 ${panelClassName}`}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <SkeletonText lines={['w-28', 'w-44']} />
+                <SkeletonBlock className="h-3 w-20" />
+              </div>
+              <SkeletonBlock className="h-[132px] w-full" />
+            </div>
+
+            <div className="mb-5">
+              <SkeletonBlock className="mb-3 h-3 w-32" />
+              <div className="flex flex-wrap gap-2">
+                {Array.from({ length: 4 }, (_, index) => (
+                  <SkeletonBlock key={index} className="h-8 w-28 rounded-full" />
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <SkeletonBlock className="h-3 w-28" />
+              {Array.from({ length: 3 }, (_, index) => (
+                <div key={index} className="rounded-xl border p-4" style={{ background: 'rgba(148,163,184,0.06)', borderColor: 'rgba(148,163,184,0.16)' }}>
+                  <div className="flex items-start gap-3">
+                    <SkeletonCircle size={24} />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <SkeletonBlock className="h-4 w-40" />
+                      <SkeletonText lines={['w-full', 'w-5/6']} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className={`text-base font-semibold ${titleTextClassName}`}>Intelligence Hub</h3>
@@ -275,6 +327,8 @@ const IntelligentInsights = memo(function IntelligentInsights({ data }: Props) {
             </div>
           )}
         </div>
+          </>
+        )}
       </Card>
     </motion.div>
   );

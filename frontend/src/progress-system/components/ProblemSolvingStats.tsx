@@ -9,10 +9,12 @@ import {
   surfaceHoverClassName,
   titleTextClassName,
 } from '../ui/surfaces';
+import { SkeletonBlock, SkeletonCircle, SkeletonText } from '../ui/loading';
 import type { ProblemSolvingStats as ProblemStats } from '../types';
 
 interface Props {
   data: ProblemStats;
+  loading?: boolean;
 }
 
 function CircularProgress({
@@ -90,7 +92,7 @@ function CircularProgress({
 
 const surfaceCardClassName = `rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`;
 
-const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
+const ProblemSolvingStats = memo(function ProblemSolvingStats({ data, loading = false }: Props) {
   const [activeTab, setActiveTab] = useState<'overview' | 'recent'>('overview');
 
   const difficultyConfig = {
@@ -111,6 +113,46 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }} className="min-w-0">
       <Card className={surfaceCardClassName}>
+        {loading ? (
+          <>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <SkeletonText lines={['w-40', 'w-64']} />
+              <SkeletonBlock className="h-9 w-28 rounded-xl" />
+            </div>
+
+            <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={index} className={`rounded-xl border p-4 ${panelClassName}`}>
+                  <SkeletonBlock className="h-3 w-20" />
+                  <SkeletonBlock className="mt-3 h-7 w-16" />
+                </div>
+              ))}
+            </div>
+
+            <div className="mb-6 flex flex-wrap justify-center gap-8">
+              {Array.from({ length: 3 }, (_, index) => (
+                <div key={index} className="flex flex-col items-center gap-3">
+                  <SkeletonCircle size={140} />
+                  <SkeletonBlock className="h-3 w-20" />
+                  <SkeletonBlock className="h-3 w-12" />
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              {Array.from({ length: 3 }, (_, index) => (
+                <div key={index}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <SkeletonBlock className="h-3 w-24" />
+                    <SkeletonBlock className="h-3 w-16" />
+                  </div>
+                  <SkeletonBlock className="h-2 w-full rounded-full" />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className={`text-base font-semibold ${titleTextClassName}`}>Learning Analytics</h3>
@@ -262,6 +304,8 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data }: Props) {
               </motion.div>
             ))}
           </div>
+        )}
+          </>
         )}
       </Card>
     </motion.div>

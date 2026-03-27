@@ -23,12 +23,14 @@ import {
   surfaceHoverClassName,
   titleTextClassName,
 } from '../ui/surfaces';
+import { SkeletonBlock, SkeletonText } from '../ui/loading';
 import type { TimeAnalyticsData } from '../types';
 
 interface Props {
   data: TimeAnalyticsData;
   hourlyActivity?: { hour: number; activity: number }[];
   variant?: 'full' | 'compact';
+  loading?: boolean;
 }
 
 interface ChartTooltipEntry {
@@ -86,6 +88,7 @@ const TimeAnalytics = memo(function TimeAnalytics({
   data,
   hourlyActivity = [],
   variant = 'full',
+  loading = false,
 }: Props) {
   const [view, setView] = useState<'daily' | 'weekly' | 'features'>('daily');
   const hasTrackedTime =
@@ -120,6 +123,44 @@ const TimeAnalytics = memo(function TimeAnalytics({
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.25 }} className="min-w-0">
       <Card className={surfaceCardClassName}>
+        {loading ? (
+          <>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <SkeletonText lines={['w-32', 'w-56']} />
+              {variant === 'full' && <SkeletonBlock className="h-9 w-36 rounded-xl" />}
+            </div>
+
+            <div className={`mb-5 grid gap-3 ${variant === 'compact' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'}`}>
+              {Array.from({ length: variant === 'compact' ? 4 : 4 }, (_, index) => (
+                <div key={index} className={`rounded-xl border p-4 ${panelClassName}`}>
+                  <SkeletonBlock className="h-3 w-20" />
+                  <SkeletonBlock className="mt-3 h-7 w-16" />
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              <div className={`rounded-2xl border p-4 ${panelClassName}`}>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <SkeletonText lines={['w-24', 'w-44']} />
+                  <SkeletonBlock className="h-3 w-24" />
+                </div>
+                <SkeletonBlock className={variant === 'compact' ? 'h-[112px] w-full' : 'h-[124px] w-full'} />
+              </div>
+
+              {variant === 'compact' ? (
+                <div className={`rounded-2xl border p-4 ${panelClassName}`}>
+                  <SkeletonText lines={['w-24', 'w-40', 'w-28']} />
+                </div>
+              ) : (
+                <div className={`rounded-2xl border p-4 ${panelClassName}`}>
+                  <SkeletonBlock className="mb-4 h-[280px] w-full" />
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className={`text-base font-semibold ${titleTextClassName}`}>Time Analytics</h3>
@@ -469,6 +510,8 @@ const TimeAnalytics = memo(function TimeAnalytics({
                 Peak hours: <span className={strongTextClassName}>{peakTimeRange}</span>
               </span>
             </div>
+          </>
+        )}
           </>
         )}
       </Card>

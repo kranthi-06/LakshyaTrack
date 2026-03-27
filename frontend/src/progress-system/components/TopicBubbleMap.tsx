@@ -10,10 +10,12 @@ import {
   surfaceHoverClassName,
   titleTextClassName,
 } from '../ui/surfaces';
+import { SkeletonBlock, SkeletonCircle, SkeletonText } from '../ui/loading';
 import type { TopicMapData, TopicBubble } from '../types';
 
 interface Props {
   data: TopicMapData;
+  loading?: boolean;
 }
 
 interface BubblePosition {
@@ -193,7 +195,7 @@ function packBubbles(topics: TopicBubble[], width: number, height: number): Bubb
   return bubbles;
 }
 
-const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
+const TopicBubbleMap = memo(function TopicBubbleMap({ data, loading = false }: Props) {
   const { isDark } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 420 });
@@ -250,6 +252,56 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.3 }} className="min-w-0">
       <Card className={surfaceCardClassName}>
+        {loading ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <SkeletonText lines={['w-28', 'w-56']} />
+              <div className="flex flex-wrap items-center gap-3">
+                {Array.from({ length: 4 }, (_, index) => (
+                  <div key={index} className="flex items-center gap-1.5">
+                    <SkeletonBlock className="h-2.5 w-2.5 rounded-full" />
+                    <SkeletonBlock className="h-3 w-16" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              {Array.from({ length: 5 }, (_, index) => (
+                <SkeletonBlock key={index} className="h-7 w-24 rounded-full" />
+              ))}
+            </div>
+
+            <div
+              className={`relative overflow-hidden rounded-2xl border p-3 ${panelClassName}`}
+              style={{
+                minHeight: 420,
+                background: isDark
+                  ? 'linear-gradient(180deg, rgba(2,6,23,0.28), rgba(2,6,23,0.18))'
+                  : 'linear-gradient(180deg, rgba(226,232,240,0.92), rgba(241,245,249,0.98))',
+              }}
+            >
+              <div className="relative h-full min-h-[394px]">
+                <div className="absolute left-[12%] top-[18%]">
+                  <SkeletonCircle size={72} />
+                </div>
+                <div className="absolute left-[38%] top-[10%]">
+                  <SkeletonCircle size={96} />
+                </div>
+                <div className="absolute right-[18%] top-[22%]">
+                  <SkeletonCircle size={64} />
+                </div>
+                <div className="absolute left-[22%] bottom-[18%]">
+                  <SkeletonCircle size={84} />
+                </div>
+                <div className="absolute right-[26%] bottom-[12%]">
+                  <SkeletonCircle size={76} />
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className={`text-base font-semibold ${titleTextClassName}`}>Skill Map</h3>
@@ -460,7 +512,7 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
         </div>
 
         <AnimatePresence>
-          {selectedTopic && (
+        {selectedTopic && (
             <motion.div
               initial={{ opacity: 0, height: 0, marginTop: 0 }}
               animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
@@ -545,6 +597,8 @@ const TopicBubbleMap = memo(function TopicBubbleMap({ data }: Props) {
             </motion.div>
           )}
         </AnimatePresence>
+          </>
+        )}
       </Card>
     </motion.div>
   );

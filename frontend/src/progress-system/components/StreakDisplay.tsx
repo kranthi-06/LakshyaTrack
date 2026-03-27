@@ -8,10 +8,12 @@ import {
   surfaceHoverClassName,
   titleTextClassName,
 } from '../ui/surfaces';
+import { SkeletonBlock, SkeletonCircle, SkeletonText } from '../ui/loading';
 import type { StreakData } from '../types';
 
 interface Props {
   data: StreakData;
+  loading?: boolean;
 }
 
 function FlameIcon({ size = 32, active = true }: { size?: number; active?: boolean }) {
@@ -46,7 +48,7 @@ function FlameIcon({ size = 32, active = true }: { size?: number; active?: boole
 
 const surfaceCardClassName = `rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`;
 
-const StreakDisplay = memo(function StreakDisplay({ data }: Props) {
+const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Props) {
   const streakPercentOfMax =
     data.longestStreak > 0 ? Math.round((data.currentStreak / data.longestStreak) * 100) : 0;
   const activeHistoryDays = data.streakHistory.filter((history) => history.active).length;
@@ -58,6 +60,58 @@ const StreakDisplay = memo(function StreakDisplay({ data }: Props) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }} className="min-w-0">
       <Card className={`relative overflow-hidden ${surfaceCardClassName}`}>
+        {loading ? (
+          <>
+            <div className="relative z-10 mb-5 flex flex-wrap items-center justify-between gap-3">
+              <SkeletonText lines={['w-32', 'w-52']} />
+              <SkeletonBlock className="h-8 w-32 rounded-full" />
+            </div>
+
+            <div className={`relative z-10 mb-6 grid gap-4 md:grid-cols-[1fr,auto,1fr]`}>
+              {Array.from({ length: 2 }, (_, index) => (
+                <div key={index} className={`rounded-2xl border p-5 text-center ${panelClassName}`}>
+                  <div className="mb-3 flex items-center justify-center">
+                    <SkeletonCircle size={46} />
+                  </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <SkeletonBlock className="h-12 w-20" />
+                    <SkeletonBlock className="h-3 w-24" />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="relative z-10 mb-5">
+              <div className="mb-2 flex items-center justify-between">
+                <SkeletonBlock className="h-3 w-28" />
+                <SkeletonBlock className="h-3 w-12" />
+              </div>
+              <SkeletonBlock className="h-2.5 w-full rounded-full" />
+            </div>
+
+            <div className={`relative z-10 rounded-2xl border p-4 ${panelClassName}`}>
+              <SkeletonBlock className="mb-4 h-3 w-28" />
+              <div className="flex items-end justify-between gap-2">
+                {Array.from({ length: 7 }, (_, index) => (
+                  <div key={index} className="flex flex-1 flex-col items-center gap-2">
+                    <SkeletonBlock className="h-12 w-full max-w-[32px] rounded-md" />
+                    <SkeletonBlock className="h-3 w-6" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="relative z-10 mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/70 pt-4 dark:border-slate-800/60">
+              {Array.from({ length: 3 }, (_, index) => (
+                <div key={index} className="text-center">
+                  <SkeletonBlock className="mx-auto h-6 w-14" />
+                  <SkeletonBlock className="mx-auto mt-2 h-3 w-20" />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
         {data.currentStreak > 0 && (
           <div className="pointer-events-none absolute right-0 top-0 h-32 w-32 rounded-full bg-amber-400/10 blur-3xl dark:bg-amber-500/10" />
         )}
@@ -191,6 +245,8 @@ const StreakDisplay = memo(function StreakDisplay({ data }: Props) {
                   : 'Great momentum. Keep pushing toward the 14-day badge.'}
             </span>
           </motion.div>
+        )}
+          </>
         )}
       </Card>
     </motion.div>

@@ -9,10 +9,12 @@ import {
   surfaceHoverClassName,
   titleTextClassName,
 } from '../ui/surfaces';
+import { SkeletonBlock, SkeletonText } from '../ui/loading';
 import type { BadgeSystemData, Badge, BadgeRarity } from '../types';
 
 interface Props {
   data: BadgeSystemData;
+  loading?: boolean;
 }
 
 const RARITY_CONFIG: Record<
@@ -124,7 +126,7 @@ function BadgeCard({ badge, index }: { badge: Badge; index: number }) {
   );
 }
 
-const BadgeSystem = memo(function BadgeSystem({ data }: Props) {
+const BadgeSystem = memo(function BadgeSystem({ data, loading = false }: Props) {
   const [filter, setFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const completionPercent = data.totalBadges > 0 ? Math.round((data.totalUnlocked / data.totalBadges) * 100) : 0;
@@ -140,6 +142,50 @@ const BadgeSystem = memo(function BadgeSystem({ data }: Props) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.3 }} className="min-w-0">
       <Card className={surfaceCardClassName}>
+        {loading ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <SkeletonText lines={['w-40', 'w-56']} />
+              <div className="flex items-center gap-2">
+                <SkeletonBlock className="h-2 w-24 rounded-full" />
+                <SkeletonBlock className="h-3 w-10" />
+              </div>
+            </div>
+
+            <div className={`mb-5 flex items-center gap-3 rounded-xl border p-4 ${panelClassName}`}>
+              <SkeletonBlock className="h-10 w-10 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <SkeletonBlock className="h-4 w-32" />
+                <SkeletonBlock className="h-3 w-48" />
+              </div>
+              <div className="space-y-2 text-right">
+                <SkeletonBlock className="h-4 w-12" />
+                <SkeletonBlock className="h-3 w-12" />
+              </div>
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-2">
+              <SkeletonBlock className="h-9 w-36 rounded-xl" />
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from({ length: 4 }, (_, index) => (
+                  <SkeletonBlock key={index} className="h-7 w-24 rounded-full" />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }, (_, index) => (
+                <div key={index} className={`rounded-xl border p-4 ${panelClassName}`}>
+                  <SkeletonBlock className="mb-3 h-10 w-10 rounded-full" />
+                  <SkeletonBlock className="h-4 w-28" />
+                  <SkeletonText className="mt-3" lines={['w-full', 'w-5/6']} />
+                  <SkeletonBlock className="mt-4 h-2 w-full rounded-full" />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className={`text-base font-semibold ${titleTextClassName}`}>
@@ -234,6 +280,8 @@ const BadgeSystem = memo(function BadgeSystem({ data }: Props) {
 
         {filteredBadges.length === 0 && (
           <div className={`py-8 text-center text-sm ${mutedTextClassName}`}>No badges match the current filter.</div>
+        )}
+          </>
         )}
       </Card>
     </motion.div>
