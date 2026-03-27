@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import logoUrl from '../assets/logo.png';
+import loadingLogoUrl from '../assets/favicon.png';
 
 const statusMessages = [
     'Checking your session...',
@@ -51,7 +51,7 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                         <div className="auth-loading-logo-ring-spinner" />
                     </div>
                     <div className="auth-loading-logo" style={{ width: '104px', height: '104px', background: 'transparent', border: 'none', backdropFilter: 'none', padding: 0 }}>
-                        <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-2xl transition-transform duration-500" />
+                        <img src={loadingLogoUrl} alt="Logo" className="w-full h-full object-contain rounded-[22px] drop-shadow-2xl transition-transform duration-500" />
                     </div>
                 </div>
 
