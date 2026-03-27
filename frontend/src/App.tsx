@@ -52,14 +52,6 @@ const AdminQuestionUpload = lazyPage('/admin/questions');
 const ProgressDashboardPage = lazyPage('/progress-dashboard');
 const ProgressLegacy = lazyPage('/progress-legacy');
 const ProgressDashboardLegacy = lazyPage('/progress-dashboard-legacy');
-const BRAND_ICON_VERSION = '7';
-const BRAND_ICONS = [
-  { rel: 'icon', href: `/favicon-32.png?v=${BRAND_ICON_VERSION}`, type: 'image/png', sizes: '32x32' },
-  { rel: 'icon', href: `/favicon-wide.png?v=${BRAND_ICON_VERSION}`, type: 'image/png', sizes: '512x512' },
-  { rel: 'icon', href: `/favicon.svg?v=${BRAND_ICON_VERSION}`, type: 'image/svg+xml', sizes: 'any' },
-  { rel: 'shortcut icon', href: `/favicon.ico?v=${BRAND_ICON_VERSION}`, type: 'image/x-icon' },
-  { rel: 'apple-touch-icon', href: `/apple-touch-icon.png?v=${BRAND_ICON_VERSION}`, sizes: '180x180' },
-];
 
 /**
  * OAuth Code Interceptor
@@ -82,26 +74,6 @@ function OAuthCodeInterceptor({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
-}
-
-function RouteFaviconSync() {
-  const location = useLocation();
-
-  useEffect(() => {
-    document.head.querySelectorAll('link[data-brand-icon="true"]').forEach((node) => node.remove());
-
-    BRAND_ICONS.forEach(({ rel, href, type, sizes }) => {
-      const link = document.createElement('link');
-      link.setAttribute('data-brand-icon', 'true');
-      link.rel = rel;
-      link.href = href;
-      if (type) link.type = type;
-      if (sizes) link.sizes = sizes;
-      document.head.appendChild(link);
-    });
-  }, [location.pathname]);
-
-  return null;
 }
 
 /** Wrap a page with AppLayout + ProtectedRoute */
@@ -161,7 +133,6 @@ function App() {
     <ErrorBoundary moduleName="Application">
     <ThemeProvider>
     <Router>
-      <RouteFaviconSync />
       <AuthProvider>
         <AuthHydrationGate>
         <SubscriptionProvider>

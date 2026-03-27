@@ -28,7 +28,7 @@
             "destination": "/frontend/assets/$1"
         },
         {
-            "source": "/(lakshyatrack\\.svg|favicon\\.ico|vite\\.svg|robots\\.txt|sitemap\\.xml)",
+            "source": "/(lakshyatrack\\.svg|favicon\\.ico|favicon-16\\.png|favicon-32\\.png|favicon-wide\\.png|favicon\\.svg|favicon-tab\\.svg|apple-touch-icon\\.png|vite\\.svg|robots\\.txt|sitemap\\.xml)",
             "destination": "/frontend/$1"
         },
         {
