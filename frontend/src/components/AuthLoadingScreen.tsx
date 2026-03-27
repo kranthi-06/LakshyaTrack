@@ -50,8 +50,8 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                     <div className="auth-loading-logo-ring" style={{ inset: '-10px' }}>
                         <div className="auth-loading-logo-ring-spinner" />
                     </div>
-                    <div className="auth-loading-logo" style={{ width: '128px', height: '128px', background: 'transparent', border: 'none', backdropFilter: 'none', padding: 0 }}>
-                        <img src={logoUrl} alt="Logo" className="w-full h-full object-cover rounded-[28px] drop-shadow-2xl hover:scale-[1.02] transition-transform duration-500" />
+                    <div className="auth-loading-logo" style={{ width: '104px', height: '104px', background: 'transparent', border: 'none', backdropFilter: 'none', padding: 0 }}>
+                        <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-2xl transition-transform duration-500" />
                     </div>
                 </div>
 
