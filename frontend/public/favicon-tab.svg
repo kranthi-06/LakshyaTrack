@@ -1,33 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LakshyaTrack favicon">
-  <defs>
-    <linearGradient id="disc" x1="14" y1="10" x2="50" y2="54" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#173b8c" />
-      <stop offset="1" stop-color="#0b1838" />
-    </linearGradient>
-    <linearGradient id="ring" x1="16" y1="12" x2="48" y2="52" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fff1af" />
-      <stop offset="0.45" stop-color="#f5c95a" />
-      <stop offset="1" stop-color="#b67a12" />
-    </linearGradient>
-    <radialGradient id="star" cx="0.5" cy="0.42" r="0.72">
-      <stop offset="0" stop-color="#ffffff" />
-      <stop offset="0.22" stop-color="#b8f4ff" />
-      <stop offset="0.62" stop-color="#37a3ff" />
-      <stop offset="1" stop-color="#1247dd" />
-    </radialGradient>
-  </defs>
-
-  <circle cx="32" cy="32" r="25" fill="url(#disc)" />
-  <circle cx="32" cy="32" r="21" fill="none" stroke="url(#ring)" stroke-width="4" />
-
-  <path
-    d="M32 15.5 36.7 27.3 48.5 32 36.7 36.7 32 48.5 27.3 36.7 15.5 32 27.3 27.3Z"
-    fill="url(#star)"
-  />
-  <path
-    d="M32 20.6 35.05 28.95 43.4 32 35.05 35.05 32 43.4 28.95 35.05 20.6 32 28.95 28.95Z"
-    fill="#eefcff"
-    fill-opacity="0.88"
-  />
-  <circle cx="32" cy="32" r="2.25" fill="#ffffff" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LakshyaTrack LI mark">
+  <image href="/favicon-wide.png?v=7" width="512" height="512" preserveAspectRatio="xMidYMid meet" />
 </svg>

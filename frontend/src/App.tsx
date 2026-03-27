@@ -52,6 +52,14 @@ const AdminQuestionUpload = lazyPage('/admin/questions');
 const ProgressDashboardPage = lazyPage('/progress-dashboard');
 const ProgressLegacy = lazyPage('/progress-legacy');
 const ProgressDashboardLegacy = lazyPage('/progress-dashboard-legacy');
+const BRAND_ICON_VERSION = '7';
+const BRAND_ICONS = [
+  { rel: 'icon', href: `/favicon-32.png?v=${BRAND_ICON_VERSION}`, type: 'image/png', sizes: '32x32' },
+  { rel: 'icon', href: `/favicon-wide.png?v=${BRAND_ICON_VERSION}`, type: 'image/png', sizes: '512x512' },
+  { rel: 'icon', href: `/favicon.svg?v=${BRAND_ICON_VERSION}`, type: 'image/svg+xml', sizes: 'any' },
+  { rel: 'shortcut icon', href: `/favicon.ico?v=${BRAND_ICON_VERSION}`, type: 'image/x-icon' },
+  { rel: 'apple-touch-icon', href: `/apple-touch-icon.png?v=${BRAND_ICON_VERSION}`, sizes: '180x180' },
+];
 
 /**
  * OAuth Code Interceptor
@@ -80,36 +88,17 @@ function RouteFaviconSync() {
   const location = useLocation();
 
   useEffect(() => {
-    const pngHref = '/favicon-wide.png?v=6';
+    document.head.querySelectorAll('link[data-brand-icon="true"]').forEach((node) => node.remove());
 
-    const upsertIcon = (
-      selector: string,
-      rel: string,
-      href: string,
-      type?: string,
-      sizes?: string,
-    ) => {
-      let link = document.head.querySelector<HTMLLinkElement>(selector);
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = rel;
-        document.head.appendChild(link);
-      }
+    BRAND_ICONS.forEach(({ rel, href, type, sizes }) => {
+      const link = document.createElement('link');
+      link.setAttribute('data-brand-icon', 'true');
+      link.rel = rel;
+      link.href = href;
       if (type) link.type = type;
       if (sizes) link.sizes = sizes;
-      link.href = href;
-    };
-
-    upsertIcon('link[rel="icon"]', 'icon', pngHref, 'image/png');
-    upsertIcon('link[rel="shortcut icon"]', 'shortcut icon', pngHref);
-
-    document.head
-      .querySelectorAll('link[rel="icon"][sizes="32x32"], link[rel="icon"][sizes="any"]')
-      .forEach((node) => {
-        if ((node as HTMLLinkElement).href !== new URL(pngHref, window.location.origin).href) {
-          node.remove();
-        }
-      });
+      document.head.appendChild(link);
+    });
   }, [location.pathname]);
 
   return null;
