@@ -62,6 +62,16 @@ const SUB_CACHE_KEY = 'sub:status-cache';
 const USAGE_CACHE_KEY = 'usage:status-cache';
 const RETRY_INTERVAL_MS = 15000; // Retry fetching user every 15s when offline
 
+function getGoogleOAuthRedirectUrl(): string {
+    const envOrigin =
+        import.meta.env.VITE_PUBLIC_APP_URL ||
+        import.meta.env.VITE_SITE_URL ||
+        import.meta.env.VITE_APP_URL;
+
+    const baseOrigin = (envOrigin || window.location.origin).replace(/\/$/, '');
+    return `${baseOrigin}/auth/callback`;
+}
+
 /** Check whether a non-empty auth token lives in localStorage */
 function hasValidToken(): boolean {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -469,10 +479,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ── Google Sign‑In via Supabase ─────────────────────────────
     const signInWithGoogle = useCallback(async () => {
         prefetchRoute('/dashboard');
+        const redirectTo = getGoogleOAuthRedirectUrl();
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin + '/auth/callback',
+                redirectTo,
             },
         });
         if (error) throw error;
