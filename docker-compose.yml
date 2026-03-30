@@ -36,6 +36,8 @@ services:
       - RATE_LIMIT_ENABLED=true
       - RATE_LIMIT_BACKEND=redis
       - JOB_QUEUE_BACKEND=redis
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -97,6 +99,15 @@ services:
           cpus: '0.5'
     profiles:
       - production
+
+  # ── Code Execution Sandbox (image build only — containers spawned by backend) ──
+  sandbox:
+    build:
+      context: ./backend/sandbox
+    image: lakshyatrack-sandbox:latest
+    profiles:
+      - build-only
+    entrypoint: ["echo", "sandbox image ready"]
 
 volumes:
   redis_data:

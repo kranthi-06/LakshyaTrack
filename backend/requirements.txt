@@ -23,3 +23,4 @@ pymongo
 dnspython
 redis
 gunicorn
+docker
