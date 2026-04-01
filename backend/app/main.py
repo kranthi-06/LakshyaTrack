@@ -664,14 +664,14 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
     # Return safe response (no internal details leaked in production)
-    is_vercel = _is_vercel_runtime()
+    is_production = (settings.APP_ENV or "").lower() == "production" or _is_vercel_runtime()
     return JSONResponse(
         status_code=500,
         content={
             "detail": "Internal Server Error",
             "error_id": error_id,
             # Only include details in non-production environments
-            "error": error_msg if not is_vercel else None,
+            "error": error_msg if not is_production else None,
         },
     )
 

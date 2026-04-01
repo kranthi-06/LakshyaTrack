@@ -180,7 +180,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
           </>
         ) : (
           <>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className={`text-base font-semibold ${titleTextClassName}`}>Activity Calendar</h3>
             <p className={`mt-1 text-xs ${mutedTextClassName}`}>
@@ -220,7 +220,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
           </div>
         </div>
 
-        <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="mb-4 grid grid-cols-3 gap-2.5">
           {[
             { label: 'Total Activity', value: data.totalContributions.toLocaleString(), color: '#4ade80' },
             { label: 'Current Streak', value: `${data.currentStreak} days`, color: '#f59e0b' },
@@ -228,14 +228,14 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
           ].map((stat) => (
             <div
               key={stat.label}
-              className={`rounded-xl border p-4 ${panelClassName}`}
+              className={`rounded-xl border p-3 ${panelClassName}`}
               style={{
                 background: `${stat.color}08`,
                 borderColor: `${stat.color}22`,
               }}
             >
-              <div className={`text-[11px] font-black uppercase tracking-widest ${mutedTextClassName}`}>{stat.label}</div>
-              <div className={`mt-2 text-2xl font-[900] tracking-tighter ${titleTextClassName}`}>{stat.value}</div>
+              <div className={`text-[10px] font-black uppercase tracking-widest ${mutedTextClassName}`}>{stat.label}</div>
+              <div className={`mt-1 text-xl font-[900] tracking-tighter ${titleTextClassName}`}>{stat.value}</div>
             </div>
           ))}
         </div>
@@ -397,7 +397,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
           </AnimatePresence>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200/70 pt-4 text-xs dark:border-slate-800/60">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-3 text-xs dark:border-slate-800/60">
           <div className={`flex flex-wrap items-center gap-4 ${mutedTextClassName}`}>
             <span>
               Current: <span className="font-semibold text-emerald-600 dark:text-emerald-300">{data.currentStreak} days</span>

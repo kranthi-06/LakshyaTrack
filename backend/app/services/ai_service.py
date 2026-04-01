@@ -30,8 +30,8 @@ from app.services import document_store_service
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded fallback to bypass Vercel env issues
-HARDCODED_KEY = "gsk_ZG1EDy" + "NY91actH6jYm7UWGdyb3FYcmIVv3jn9hiYlxjesGbjtIHF"
+# SECURITY: API keys MUST come from environment variables.
+# Never hardcode keys in source code.
 
 # Timeout configurations (seconds)
 GROQ_TIMEOUT = 30.0
@@ -52,17 +52,14 @@ class AIService:
 
         # ── Initialize Groq (Primary) ──────────────────────────
         self.groq_available = False
-        is_production = (settings.APP_ENV or "").lower() == "production"
-        raw_key = settings.GROQ_API_KEY or (None if is_production else HARDCODED_KEY)
-        self.groq_api_key = raw_key.strip() if raw_key else None
+        raw_key = (settings.GROQ_API_KEY or "").strip() or None
+        self.groq_api_key = raw_key
 
         if self.groq_api_key and len(self.groq_api_key) > 10:
             try:
                 from groq import AsyncGroq  # noqa: F401
                 self.groq_available = True
                 logger.info("Groq initialized as primary AI provider")
-                if not settings.GROQ_API_KEY and not is_production:
-                    logger.warning("Groq is using a development fallback key (set GROQ_API_KEY for real usage).")
             except ImportError:
                 logger.error("Groq library not found. pip install groq")
             except Exception as e:

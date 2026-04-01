@@ -435,16 +435,21 @@ def google_login(
     Login or Register with Google ID Token.
     """
     try:
-        # Specify the CLIENT_ID of the app that accesses the backend:
-        # id_info = id_token.verify_oauth2_token(token_data.token, google_requests.Request(), CLIENT_ID)
-        # For now, we accept any audience or check specifics if known
-        id_info = id_token.verify_oauth2_token(token_data.token, google_requests.Request())
+        # Verify Google ID token.
+        # SECURITY: When GOOGLE_CLIENT_ID is configured, pass it as `audience`
+        # to restrict token acceptance to only your application's tokens.
+        google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None) or None
+        id_info = id_token.verify_oauth2_token(
+            token_data.token,
+            google_requests.Request(),
+            audience=google_client_id,
+        )
+        if not google_client_id:
+            logger.warning("Google login: GOOGLE_CLIENT_ID not set — accepting tokens from any audience.")
 
         # ID token is valid. Get the user's Google Account ID from the decoded token.
         email = _normalize_email_or_raise(id_info['email'])
         name = id_info.get('name', '')
-        
-        # Check if user exists
         user = crud.get_user_by_email(db, email=email)
         if not user:
             # Create user

@@ -1304,28 +1304,48 @@ def get_intelligence(user_id: str) -> Dict:
 
 
 # ══════════════════════════════════════════════════════════════
-# 10. FULL DASHBOARD
+# 10. FULL DASHBOARD — Parallel assembly from REAL data
 # ══════════════════════════════════════════════════════════════
 
 def get_full_dashboard(user_id: str) -> Dict:
-    """Build full dashboard from REAL precomputed data."""
+    """Build full dashboard from REAL precomputed data.
+
+    Each section query is dispatched to a thread pool so they run
+    concurrently.  Individual Redis caches still apply, so only
+    uncached sections incur DB cost.
+    """
     cached = redis_client.get_cached_dashboard(user_id)
     if cached:
         return cached
 
     year = datetime.now(timezone.utc).year
 
-    dashboard = {
-        "contributions": get_contributions(user_id, year),
-        "problemSolving": get_problem_stats(user_id),
-        "activity": get_activity_summary(user_id),
-        "timeAnalytics": get_time_analytics(user_id),
-        "topicMap": get_topic_map(user_id),
-        "streak": get_streak_data(user_id),
-        "badges": get_badges(user_id),
-        "intelligence": get_intelligence(user_id),
-        "lastUpdated": datetime.now(timezone.utc).isoformat(),
+    section_fns = {
+        "contributions": lambda: get_contributions(user_id, year),
+        "problemSolving": lambda: get_problem_stats(user_id),
+        "activity": lambda: get_activity_summary(user_id),
+        "timeAnalytics": lambda: get_time_analytics(user_id),
+        "topicMap": lambda: get_topic_map(user_id),
+        "streak": lambda: get_streak_data(user_id),
+        "badges": lambda: get_badges(user_id),
+        "intelligence": lambda: get_intelligence(user_id),
     }
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    dashboard: Dict[str, Any] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(section_fns))) as pool:
+        future_to_key = {pool.submit(fn): key for key, fn in section_fns.items()}
+        for future in as_completed(future_to_key):
+            key = future_to_key[future]
+            try:
+                dashboard[key] = future.result()
+            except Exception as exc:
+                logger.warning("Dashboard section '%s' failed: %s", key, exc)
+                dashboard[key] = {}
+
+    dashboard["lastUpdated"] = datetime.now(timezone.utc).isoformat()
 
     redis_client.cache_dashboard(user_id, dashboard)
     return dashboard
+

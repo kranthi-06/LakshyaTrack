@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
@@ -150,7 +150,13 @@ async def stream_updates(
 async def get_dashboard(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_full_dashboard(str(current_user.id))
+    data = analytics.get_full_dashboard(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={
+            "Cache-Control": "private, max-age=10, stale-while-revalidate=300",
+        },
+    )
 
 
 @router.get("/contributions")
@@ -160,42 +166,66 @@ async def get_contributions(
 ):
     if year is None:
         year = datetime.now(timezone.utc).year
-    return analytics.get_contributions(str(current_user.id), year)
+    data = analytics.get_contributions(str(current_user.id), year)
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
+    )
 
 
 @router.get("/problems")
 async def get_problems(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_problem_stats(str(current_user.id))
+    data = analytics.get_problem_stats(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=15, stale-while-revalidate=300"},
+    )
 
 
 @router.get("/activity")
 async def get_activity(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_activity_summary(str(current_user.id))
+    data = analytics.get_activity_summary(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=15, stale-while-revalidate=300"},
+    )
 
 
 @router.get("/time-analytics")
 async def get_time_analytics(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_time_analytics(str(current_user.id))
+    data = analytics.get_time_analytics(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=15, stale-while-revalidate=300"},
+    )
 
 
 @router.get("/topics")
 async def get_topics(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_topic_map(str(current_user.id))
+    data = analytics.get_topic_map(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
+    )
 
 
 @router.get("/streak")
 async def get_streak(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_streak_data(str(current_user.id))
+    data = analytics.get_streak_data(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=5, stale-while-revalidate=60"},
+    )
 
 
 @router.post("/streak/touch")
@@ -219,7 +249,11 @@ async def touch_streak(
 async def get_badges(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_badges(str(current_user.id))
+    data = analytics.get_badges(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
+    )
 
 
 @router.get("/timeline")
@@ -241,7 +275,11 @@ async def get_timeline(
 async def get_intelligence(
     current_user: User = Depends(get_current_user),
 ):
-    return analytics.get_intelligence(str(current_user.id))
+    data = analytics.get_intelligence(str(current_user.id))
+    return JSONResponse(
+        content=data,
+        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
+    )
 
 
 @router.post("/workers/flush")

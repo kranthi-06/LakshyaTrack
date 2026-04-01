@@ -67,21 +67,21 @@ const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Pro
               <SkeletonBlock className="h-8 w-32 rounded-full" />
             </div>
 
-            <div className={`relative z-10 mb-6 grid gap-4 md:grid-cols-[1fr,auto,1fr]`}>
+            <div className={`relative z-10 mb-4 grid gap-3 md:grid-cols-[1fr,auto,1fr]`}>
               {Array.from({ length: 2 }, (_, index) => (
-                <div key={index} className={`rounded-2xl border p-5 text-center ${panelClassName}`}>
+                <div key={index} className={`rounded-2xl border p-4 text-center ${panelClassName}`}>
                   <div className="mb-3 flex items-center justify-center">
                     <SkeletonCircle size={46} />
                   </div>
                   <div className="flex flex-col items-center gap-2">
-                    <SkeletonBlock className="h-12 w-20" />
+                    <SkeletonBlock className="h-10 w-16" />
                     <SkeletonBlock className="h-3 w-24" />
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="relative z-10 mb-5">
+            <div className="relative z-10 mb-4">
               <div className="mb-2 flex items-center justify-between">
                 <SkeletonBlock className="h-3 w-28" />
                 <SkeletonBlock className="h-3 w-12" />
@@ -94,14 +94,14 @@ const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Pro
               <div className="flex items-end justify-between gap-2">
                 {Array.from({ length: 7 }, (_, index) => (
                   <div key={index} className="flex flex-1 flex-col items-center gap-2">
-                    <SkeletonBlock className="h-12 w-full max-w-[32px] rounded-md" />
+                    <SkeletonBlock className="h-9 w-full max-w-[32px] rounded-md" />
                     <SkeletonBlock className="h-3 w-6" />
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="relative z-10 mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/70 pt-4 dark:border-slate-800/60">
+            <div className="relative z-10 mt-3 grid grid-cols-3 gap-3 border-t border-slate-200/70 pt-3 dark:border-slate-800/60">
               {Array.from({ length: 3 }, (_, index) => (
                 <div key={index} className="text-center">
                   <SkeletonBlock className="mx-auto h-6 w-14" />
@@ -133,13 +133,13 @@ const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Pro
           )}
         </div>
 
-        <div className={`relative z-10 mb-6 grid gap-4 md:grid-cols-[1fr,auto,1fr]`}>
-          <div className={`rounded-2xl border p-5 text-center ${panelClassName}`}>
+        <div className={`relative z-10 mb-4 grid gap-3 md:grid-cols-[1fr,auto,1fr]`}>
+          <div className={`rounded-2xl border p-4 text-center ${panelClassName}`}>
             <div className="mb-2 flex items-center justify-center">
               <FlameIcon size={46} active={data.currentStreak > 0} />
             </div>
             <motion.div
-              className={`text-5xl font-[900] tracking-tighter ${titleTextClassName}`}
+              className={`text-4xl font-[900] tracking-tighter ${titleTextClassName}`}
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 200, damping: 14, delay: 0.2 }}
@@ -151,10 +151,10 @@ const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Pro
 
           <div className="hidden h-full w-px self-stretch bg-slate-200 dark:bg-slate-800 md:block" />
 
-          <div className={`rounded-2xl border p-5 text-center ${panelClassName}`}>
+          <div className={`rounded-2xl border p-4 text-center ${panelClassName}`}>
             <div className="mb-2 flex items-center justify-center text-4xl text-amber-500">★</div>
             <motion.div
-              className="text-5xl font-[900] tracking-tighter text-amber-500"
+              className="text-4xl font-[900] tracking-tighter text-amber-500"
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 200, damping: 14, delay: 0.3 }}
@@ -165,7 +165,7 @@ const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Pro
           </div>
         </div>
 
-        <div className="relative z-10 mb-5">
+        <div className="relative z-10 mb-4">
           <div className={`mb-2 flex items-center justify-between text-xs ${mutedTextClassName}`}>
             <span>Progress to record</span>
             <span className="font-semibold text-amber-600 dark:text-amber-300">{streakPercentOfMax}%</span>
@@ -192,7 +192,7 @@ const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Pro
 
           <div className="flex items-end justify-between gap-2">
             {data.weeklyActivity.map((count, index) => {
-              const height = Math.max(8, (count / maxWeeklyCount) * 60);
+              const height = Math.max(8, (count / maxWeeklyCount) * 44);
               return (
                 <div key={index} className="flex flex-1 flex-col items-center gap-1.5">
                   <motion.div
@@ -213,7 +213,7 @@ const StreakDisplay = memo(function StreakDisplay({ data, loading = false }: Pro
           </div>
         </div>
 
-        <div className="relative z-10 mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/70 pt-4 dark:border-slate-800/60">
+        <div className="relative z-10 mt-3 grid grid-cols-3 gap-3 border-t border-slate-200/70 pt-3 dark:border-slate-800/60">
           <div className="text-center">
             <div className={`text-lg font-bold ${titleTextClassName}`}>{data.totalActiveDays}</div>
             <div className={`text-xs ${mutedTextClassName}`}>Active Days</div>

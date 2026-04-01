@@ -8,14 +8,18 @@ import {
   fetchDashboard,
   fetchIntelligence,
   getCachedDashboardSnapshot,
+  getCachedDashboardSnapshotAsync,
   invalidateCache as invalidateProgressApiCache,
   fetchProblemStats,
   fetchStreak,
   fetchTimeAnalytics,
   fetchTopicMap,
   getProgressDashboardData,
+  prefetchDashboard,
   subscribeToProgressUpdates,
   type ProgressStreamMessage,
+  type OptimisticPatch,
+  applyOptimisticPatches,
 } from '../services/progressApi';
 import type {
   ActivitySummary,
@@ -71,6 +75,7 @@ interface ProgressDashboardStoreState {
   refreshContributionYear: (year: number) => Promise<void>;
   setLiveStatus: (isLive: boolean) => void;
   setOnlineStatus: (isOnline: boolean) => void;
+  applyOptimistic: (patches: OptimisticPatch[]) => void;
 }
 
 const ALL_SECTIONS: DashboardSection[] = [
@@ -234,6 +239,11 @@ export const useProgressDashboardStore = create<ProgressDashboardStoreState>(() 
   refreshContributionYear: (year) => performContributionYearRefresh(year),
   setLiveStatus: (isLive) => useProgressDashboardStore.setState({ isLive }),
   setOnlineStatus: (isOnline) => useProgressDashboardStore.setState({ isOnline }),
+  applyOptimistic: (patches) => {
+    useProgressDashboardStore.setState((current) => ({
+      data: applyOptimisticPatches(current.data, patches),
+    }));
+  },
 }));
 
 let runtimeRefCount = 0;
@@ -561,6 +571,8 @@ function startRuntime(): void {
   ensureFallbackPolling();
 
   let state = useProgressDashboardStore.getState();
+
+  // Phase 1: Sync hydration (instant — same tick)
   if (!state.hasHydrated) {
     const cachedSnapshot = getCachedDashboardSnapshot();
     if (cachedSnapshot) {
@@ -575,6 +587,23 @@ function startRuntime(): void {
     }
   }
 
+  // Phase 2: Async IDB hydration (for when localStorage cache expired but IDB still has it)
+  if (!state.hasHydrated) {
+    void getCachedDashboardSnapshotAsync().then((idbSnapshot) => {
+      if (!idbSnapshot) return;
+      const currentState = useProgressDashboardStore.getState();
+      if (currentState.hasHydrated) return; // Another source hydrated first
+      useProgressDashboardStore.setState({
+        data: idbSnapshot.data,
+        isLoading: false,
+        hasHydrated: true,
+        loadedSections: buildLoadedSectionsState(true),
+        lastFetchAt: idbSnapshot.fetchedAt,
+      });
+    });
+  }
+
+  // Phase 3: Network fetch (always happens, either as initial load or background revalidation)
   if (!state.hasHydrated) {
     void performFullRefresh({
       showLoading: true,
@@ -583,11 +612,12 @@ function startRuntime(): void {
       reason: 'initial-load',
     });
   } else if (isStale(state.lastFetchAt)) {
+    // SWR: show cached data immediately, revalidate in background
     void performFullRefresh({
       showLoading: false,
       forceRefresh: true,
       fallbackToMock: false,
-      reason: 'stale-mount',
+      reason: 'stale-revalidate',
     });
   }
 
@@ -687,3 +717,6 @@ export function useProgressDashboardRuntime(): void {
     };
   }, []);
 }
+
+// Re-export prefetch for use by login/navigation hooks
+export { prefetchDashboard } from '../services/progressApi';

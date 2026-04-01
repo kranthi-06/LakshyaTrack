@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import { getActiveRoadmap, touchDailyStreak } from '../services/careerPlatform';
 import { prefetchRoute } from '../utils/routePrefetch';
 import { useAuthStore } from '../store/authStore';
-import { resetProgressDashboardStoreState, useProgressDashboardStore } from '../progress-system/store/useProgressDashboardStore';
+import { resetProgressDashboardStoreState, useProgressDashboardStore, prefetchDashboard } from '../progress-system/store/useProgressDashboardStore';
 import type { SubscriptionStatus } from '../services/subscription';
 
 interface User {
@@ -148,6 +148,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const warmDashboardTransition = useCallback(() => {
         prefetchRoute('/dashboard');
+
+        // Warm the progress intelligence cache (IndexedDB + memory)
+        prefetchDashboard();
 
         void useProgressDashboardStore.getState().refreshDashboard({
             forceRefresh: false,

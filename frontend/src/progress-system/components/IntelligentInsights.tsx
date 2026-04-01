@@ -185,21 +185,21 @@ const IntelligentInsights = memo(function IntelligentInsights({ data, loading = 
               <SkeletonBlock className="h-8 w-32 rounded-full" />
             </div>
 
-            <div className="mb-6 flex flex-wrap justify-center gap-8">
+            <div className="mb-4 flex flex-wrap justify-center gap-6">
               {Array.from({ length: 3 }, (_, index) => (
                 <div key={index} className="flex flex-col items-center gap-3">
-                  <SkeletonCircle size={88} />
+                  <SkeletonCircle size={72} />
                   <SkeletonBlock className="h-3 w-20" />
                 </div>
               ))}
             </div>
 
-            <div className={`mb-6 rounded-2xl border p-4 ${panelClassName}`}>
+            <div className={`mb-4 rounded-2xl border p-4 ${panelClassName}`}>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <SkeletonText lines={['w-28', 'w-44']} />
                 <SkeletonBlock className="h-3 w-20" />
               </div>
-              <SkeletonBlock className="h-[132px] w-full" />
+              <SkeletonBlock className="h-[110px] w-full" />
             </div>
 
             <div className="mb-5">
@@ -245,13 +245,13 @@ const IntelligentInsights = memo(function IntelligentInsights({ data, loading = 
           )}
         </div>
 
-        <div className="mb-6 flex flex-wrap justify-center gap-8">
-          <ScoreGauge value={data.consistencyScore} label="Consistency" color="#10b981" />
-          <ScoreGauge value={Math.min(100, Math.round(data.growthRate * 5))} label="Growth Rate" color="#6366f1" />
-          <ScoreGauge value={streakHealthScore} label="Streak Health" color={data.predictedStreakBreak ? '#ef4444' : '#f59e0b'} />
+        <div className="mb-4 flex flex-wrap justify-center gap-6">
+          <ScoreGauge value={data.consistencyScore} label="Consistency" color="#10b981" size={72} />
+          <ScoreGauge value={Math.min(100, Math.round(data.growthRate * 5))} label="Growth Rate" color="#6366f1" size={72} />
+          <ScoreGauge value={streakHealthScore} label="Streak Health" color={data.predictedStreakBreak ? '#ef4444' : '#f59e0b'} size={72} />
         </div>
 
-        <div className={`mb-6 rounded-2xl border p-4 ${panelClassName}`}>
+        <div className={`mb-4 rounded-2xl border p-4 ${panelClassName}`}>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className={`text-[11px] font-black uppercase tracking-widest ${mutedTextClassName}`}>Activity by Hour</div>
@@ -262,7 +262,7 @@ const IntelligentInsights = memo(function IntelligentInsights({ data, loading = 
             <div className={`text-xs ${mutedTextClassName}`}>Behavior rhythm</div>
           </div>
 
-          <div className="h-[132px]">
+          <div className="h-[110px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.activeHours} margin={{ top: 0, right: 0, bottom: 0, left: -10 }} barCategoryGap="28%">
                 <XAxis
@@ -294,7 +294,7 @@ const IntelligentInsights = memo(function IntelligentInsights({ data, loading = 
           </div>
         </div>
 
-        <div className="mb-5">
+        <div className="mb-3">
           <div className={`mb-2 text-[11px] font-black uppercase tracking-widest ${mutedTextClassName}`}>Suggested Focus Areas</div>
           {data.suggestedFocusAreas.length > 0 ? (
             <div className="flex flex-wrap gap-2">

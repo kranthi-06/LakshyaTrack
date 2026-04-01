@@ -1,6 +1,8 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
+  useState,
   lazy,
   Suspense,
   type ReactNode,
@@ -12,6 +14,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SkeletonBlock, SkeletonText } from '../progress-system/ui/loading';
+import { AnimatedNumber } from '../progress-system/ui/AnimatedNumber';
 
 import type { TopicBubble } from '../progress-system/types';
 import {
@@ -107,6 +110,20 @@ function formatRelativeSync(timestamp: string): string {
   if (deltaSeconds < 3600) return `${Math.round(deltaSeconds / 60)}m ago`;
   if (deltaSeconds < 86400) return `${Math.round(deltaSeconds / 3600)}h ago`;
   return `${Math.round(deltaSeconds / 86400)}d ago`;
+}
+
+/** Hook to keep the sync label auto-updating every 10s */
+function useLiveSyncLabel(timestamp: string | null): string | null {
+  const [label, setLabel] = useState<string | null>(() => timestamp ? formatRelativeSync(timestamp) : null);
+  useEffect(() => {
+    if (!timestamp) { setLabel(null); return; }
+    setLabel(formatRelativeSync(timestamp));
+    const interval = setInterval(() => {
+      setLabel(formatRelativeSync(timestamp));
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, [timestamp]);
+  return label;
 }
 
 function buildCategoryStats(topics: TopicBubble[]) {
@@ -282,7 +299,7 @@ export default function ProgressUnified() {
       ? 'Preparing your progress insights...'
       : 'Analyzing your activity...'
     : null;
-  const syncLabel = hasHydrated ? formatRelativeSync(data.lastUpdated) : null;
+  const syncLabel = useLiveSyncLabel(hasHydrated ? data.lastUpdated : null);
   const connectionLabel = !isOnline
     ? 'Offline cache'
     : isLive
@@ -298,6 +315,7 @@ export default function ProgressUnified() {
       {
         label: 'Streak',
         value: `${data.streak.currentStreak}`,
+        numericValue: data.streak.currentStreak,
         sub: 'days',
         accent: '#f59e0b',
         icon: '🔥',
@@ -305,6 +323,7 @@ export default function ProgressUnified() {
       {
         label: 'Problems solved',
         value: `${data.problemSolving.totalSolved}`,
+        numericValue: data.problemSolving.totalSolved,
         sub: 'total',
         accent: '#10b981',
         icon: '✅',
@@ -312,6 +331,7 @@ export default function ProgressUnified() {
       {
         label: 'Active days',
         value: `${data.activity.activeDays}`,
+        numericValue: data.activity.activeDays,
         sub: 'days',
         accent: '#38bdf8',
         icon: '📅',
@@ -319,6 +339,7 @@ export default function ProgressUnified() {
       {
         label: 'Badges',
         value: `${data.badges.totalUnlocked}`,
+        numericValue: data.badges.totalUnlocked,
         sub: `of ${data.badges.totalBadges}`,
         accent: '#8b5cf6',
         icon: '🏆',
@@ -409,9 +430,10 @@ export default function ProgressUnified() {
                         {stat.label}
                       </div>
                       <div className="mt-2 flex items-end gap-2">
-                        <div className="text-4xl font-[900] tracking-tighter text-slate-900 dark:text-white">
-                          {stat.value}
-                        </div>
+                        <AnimatedNumber
+                          value={stat.numericValue}
+                          className="text-4xl font-[900] tracking-tighter text-slate-900 dark:text-white"
+                        />
                         <div className="pb-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
                           {stat.sub}
                         </div>
@@ -483,7 +505,7 @@ export default function ProgressUnified() {
                     The streak engine stays intact and gets prime placement for a LeetCode-style “signal-first” feel.
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
                   <SectionBoundary title="Streak Engine">
                     <StreakDisplay data={data.streak} loading={!loadedSections.streak} />
                   </SectionBoundary>
@@ -506,7 +528,7 @@ export default function ProgressUnified() {
                     See solved distribution by difficulty, then spot which categories are consuming time vs yielding wins.
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
                   <SectionBoundary title="Problem Solving Stats">
                     <ProblemSolvingStats data={data.problemSolving} loading={!loadedSections.problemSolving} />
                   </SectionBoundary>

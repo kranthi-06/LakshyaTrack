@@ -266,7 +266,7 @@ def invalidate_streak_cache(user_id: str):
 # Dashboard Cache — Full precomputed dashboard
 # ══════════════════════════════════════════════════════════════
 
-DASHBOARD_CACHE_TTL = 300  # 5 minutes
+DASHBOARD_CACHE_TTL = 600  # 10 minutes (frontend uses SWR with 24h client cache)
 
 def cache_dashboard(user_id: str, dashboard_data: Dict):
     """Cache the full precomputed dashboard (TTL: 5 min)."""

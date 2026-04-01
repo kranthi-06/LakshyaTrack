@@ -2,6 +2,7 @@ import {
   useState,
   useMemo,
   useCallback,
+  useEffect,
   Suspense,
   lazy,
   type ReactNode,
@@ -23,6 +24,9 @@ const TimeAnalytics = lazy(() => import('./components/TimeAnalytics'));
 const ActivityTracking = lazy(() => import('./components/ActivityTracking'));
 const IntelligentInsights = lazy(() => import('./components/IntelligentInsights'));
 const ActivityTimeline = lazy(() => import('./components/ActivityTimeline'));
+
+import { AnimatedNumber } from './ui/AnimatedNumber';
+import { FadeUpdate } from './ui/FadeUpdate';
 
 type DashboardTab =
   | 'overview'
@@ -116,6 +120,19 @@ function formatRelativeSync(timestamp: string): string {
   return `${Math.round(deltaSeconds / 86400)}d ago`;
 }
 
+/** Hook to keep the sync label auto-updating every 10s */
+function useLiveSyncLabel(timestamp: string): string {
+  const [label, setLabel] = useState(() => formatRelativeSync(timestamp));
+  useEffect(() => {
+    setLabel(formatRelativeSync(timestamp));
+    const interval = setInterval(() => {
+      setLabel(formatRelativeSync(timestamp));
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, [timestamp]);
+  return label;
+}
+
 export default function ProgressDashboard() {
   useProgressDashboardRuntime();
 
@@ -143,6 +160,7 @@ export default function ProgressDashboard() {
       {
         label: 'Current Streak',
         value: `${data.streak.currentStreak}`,
+        numericValue: data.streak.currentStreak,
         icon: '🔥',
         color: '#f59e0b',
         sub: 'days',
@@ -151,6 +169,7 @@ export default function ProgressDashboard() {
       {
         label: 'Problems Solved',
         value: `${data.problemSolving.totalSolved}`,
+        numericValue: data.problemSolving.totalSolved,
         icon: '✅',
         color: '#10b981',
         sub: 'problems',
@@ -159,6 +178,7 @@ export default function ProgressDashboard() {
       {
         label: 'Badges Unlocked',
         value: `${data.badges.totalUnlocked}`,
+        numericValue: data.badges.totalUnlocked,
         icon: '🏆',
         color: '#8b5cf6',
         sub: `of ${data.badges.totalBadges}`,
@@ -167,6 +187,7 @@ export default function ProgressDashboard() {
       {
         label: 'Active Days',
         value: `${data.activity.activeDays}`,
+        numericValue: data.activity.activeDays,
         icon: '📅',
         color: '#38bdf8',
         sub: 'days',
@@ -185,7 +206,7 @@ export default function ProgressDashboard() {
       : isRefreshing
         ? 'Syncing'
         : 'Standby sync';
-  const syncLabel = formatRelativeSync(data.lastUpdated);
+  const syncLabel = useLiveSyncLabel(data.lastUpdated);
 
   const overviewContent = (
     <div className="space-y-7">
@@ -363,20 +384,22 @@ export default function ProgressDashboard() {
                 <div>
                   <div className="text-sm font-medium text-white/36">{stat.label}</div>
                   <div className="mt-3 flex items-end gap-2">
-                    <div className="text-4xl font-bold leading-none text-white">{stat.value}</div>
+                    <AnimatedNumber
+                      value={stat.numericValue}
+                      className="text-4xl font-bold leading-none text-white"
+                    />
                     <div className="pb-1 text-sm text-white/42">{stat.sub}</div>
                   </div>
                   <div className="mt-2 text-xs text-white/26">{stat.helper}</div>
                 </div>
-                <div
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl text-2xl transition-transform duration-300 group-hover:scale-110"
+                <FadeUpdate updateKey={`${stat.label}-${stat.value}`} className="flex h-12 w-12 items-center justify-center rounded-2xl text-2xl transition-transform duration-300 group-hover:scale-110"
                   style={{
                     background: `${stat.color}16`,
                     border: `1px solid ${stat.color}24`,
                   }}
                 >
                   {stat.icon}
-                </div>
+                </FadeUpdate>
               </div>
             </motion.div>
           ))}

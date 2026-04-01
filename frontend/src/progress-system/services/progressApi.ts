@@ -1,4 +1,4 @@
-﻿// ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // Progress Intelligence Dashboard — Real-Time Data Service
 // Replaces mock data with live API calls to Progress Engine.
 // Falls back to mock data when API is unavailable.
@@ -35,9 +35,71 @@ interface CacheEntry<T> {
 const _cache = new Map<string, CacheEntry<any>>();
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
 const DASHBOARD_TTL = 10 * 1000;
-const DASHBOARD_PERSIST_TTL = 60 * 1000;
+const DASHBOARD_PERSIST_TTL = 24 * 60 * 60 * 1000; // 24 hours — cache for instant load, revalidate in background
 const DASHBOARD_CACHE_STORAGE_PREFIX = 'progress:dashboard-cache:';
 const AUTH_USER_CACHE_KEY = 'auth:user-cache';
+
+// ── IndexedDB Cache Layer (async, larger storage) ─────────────
+
+const IDB_DB_NAME = 'lakshyatrack-progress-cache';
+const IDB_STORE_NAME = 'dashboard-snapshots';
+const IDB_VERSION = 1;
+
+function openIDB(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(IDB_DB_NAME, IDB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+          db.createObjectStore(IDB_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function idbGet<T>(key: string): Promise<T | null> {
+  const db = await openIDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE_NAME, 'readonly');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      const request = store.get(key);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function idbSet(key: string, value: unknown): Promise<void> {
+  const db = await openIDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(IDB_STORE_NAME);
+      store.put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+// Fire-and-forget IDB write (non-blocking)
+function idbSetAsync(key: string, value: unknown): void {
+  void idbSet(key, value);
+}
 
 function getCached<T>(key: string): T | null {
   const entry = _cache.get(key);
@@ -83,26 +145,30 @@ function getDashboardStorageKey(userKey: string): string {
 }
 
 function persistDashboardCache(data: ProgressDashboardData): void {
-  if (typeof localStorage === 'undefined') {
-    return;
-  }
-
   const userKey = getProgressCacheUserKey();
   if (!userKey) {
     return;
   }
 
-  try {
-    localStorage.setItem(
-      getDashboardStorageKey(userKey),
-      JSON.stringify({
-        data,
-        fetchedAt: Date.now(),
-        expiresAt: Date.now() + DASHBOARD_PERSIST_TTL,
-      }),
-    );
-  } catch {
-    // Ignore storage write failures.
+  const payload = {
+    data,
+    fetchedAt: Date.now(),
+    expiresAt: Date.now() + DASHBOARD_PERSIST_TTL,
+  };
+
+  // Write to IndexedDB (preferred — async, larger storage)
+  idbSetAsync(`dashboard:${userKey}`, payload);
+
+  // Also write to localStorage as fallback (sync read on cold start)
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(
+        getDashboardStorageKey(userKey),
+        JSON.stringify(payload),
+      );
+    } catch {
+      // Ignore storage write failures.
+    }
   }
 }
 
@@ -115,45 +181,70 @@ export function getCachedDashboardSnapshot(): { data: ProgressDashboardData; fet
     };
   }
 
-  if (typeof localStorage === 'undefined') {
-    return null;
-  }
-
+  // Synchronous localStorage check for instant cold-start hydration
   const userKey = getProgressCacheUserKey();
-  if (!userKey) {
-    return null;
+  if (userKey && typeof localStorage !== 'undefined') {
+    const storageKey = getDashboardStorageKey(userKey);
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          data?: Partial<ProgressDashboardData>;
+          fetchedAt?: number;
+          expiresAt?: number;
+        } | null;
+
+        if (parsed && typeof parsed.expiresAt === 'number' && parsed.expiresAt > Date.now()) {
+          const normalized = normalizeDashboardData(parsed.data);
+          setCache('dashboard', normalized, Math.max(1_000, parsed.expiresAt - Date.now()));
+          return {
+            data: normalized,
+            fetchedAt: typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : Date.now(),
+          };
+        }
+        localStorage.removeItem(storageKey);
+      }
+    } catch {
+      // Non-fatal: continue to IDB fallback
+    }
   }
 
-  const storageKey = getDashboardStorageKey(userKey);
+  return null;
+}
+
+/**
+ * Async version that also checks IndexedDB. Called during runtime startup
+ * to recover data even when localStorage cache has expired but IDB still has it.
+ */
+export async function getCachedDashboardSnapshotAsync(): Promise<{ data: ProgressDashboardData; fetchedAt: number } | null> {
+  // First try sync version
+  const syncResult = getCachedDashboardSnapshot();
+  if (syncResult) return syncResult;
+
+  // Try IndexedDB (larger, async storage)
+  const userKey = getProgressCacheUserKey();
+  if (!userKey) return null;
 
   try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as {
+    const stored = await idbGet<{
       data?: Partial<ProgressDashboardData>;
       fetchedAt?: number;
       expiresAt?: number;
-    } | null;
+    }>(`dashboard:${userKey}`);
 
-    if (!parsed || typeof parsed.expiresAt !== 'number' || parsed.expiresAt <= Date.now()) {
-      localStorage.removeItem(storageKey);
-      return null;
+    if (stored && typeof stored.expiresAt === 'number' && stored.expiresAt > Date.now()) {
+      const normalized = normalizeDashboardData(stored.data);
+      setCache('dashboard', normalized, Math.max(1_000, stored.expiresAt - Date.now()));
+      return {
+        data: normalized,
+        fetchedAt: typeof stored.fetchedAt === 'number' ? stored.fetchedAt : Date.now(),
+      };
     }
-
-    const normalized = normalizeDashboardData(parsed.data);
-    setCache('dashboard', normalized, Math.max(1_000, parsed.expiresAt - Date.now()));
-
-    return {
-      data: normalized,
-      fetchedAt: typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : Date.now(),
-    };
   } catch {
-    localStorage.removeItem(storageKey);
-    return null;
+    // Non-fatal
   }
+
+  return null;
 }
 
 export function invalidateCache(prefix?: string): void {
@@ -887,4 +978,43 @@ export function getProgressDashboardData(forceRefresh = false): ProgressDashboar
 
 export function getContributionsByYear(year: number): ContributionData {
   return generateContributions(year);
+}
+
+// ── Prefetch API (called on login / route hover) ─────────────
+
+let _prefetchInFlight: Promise<void> | null = null;
+
+export function prefetchDashboard(): void {
+  if (_prefetchInFlight) return;
+
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+  if (!token || token === 'undefined' || token === 'null') return;
+
+  // Don't prefetch if we have a very fresh cache
+  const memSnapshot = getCached<ProgressDashboardData>('dashboard');
+  if (memSnapshot) return;
+
+  _prefetchInFlight = fetchDashboard(true, false)
+    .then(() => { /* cache is now warm */ })
+    .catch(() => { /* non-fatal: the real load will fetch again */ })
+    .finally(() => { _prefetchInFlight = null; });
+}
+
+// ── Optimistic Update Support ─────────────────────────────────
+
+export interface OptimisticPatch {
+  section: keyof Omit<ProgressDashboardData, 'lastUpdated'>;
+  updater: (current: any) => any;
+}
+
+export function applyOptimisticPatches(
+  current: ProgressDashboardData,
+  patches: OptimisticPatch[],
+): ProgressDashboardData {
+  const next = { ...current };
+  for (const patch of patches) {
+    next[patch.section] = patch.updater(next[patch.section]);
+  }
+  next.lastUpdated = new Date().toISOString();
+  return next;
 }

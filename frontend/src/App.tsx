@@ -97,7 +97,7 @@ const AdminPage = memo(function AdminPage({ children, requireBlackAdmin }: { chi
 /** Prefetch commonly visited routes during idle time */
 function usePrefetchRoutes() {
   useEffect(() => {
-    const criticalRoutes = ['/dashboard', '/resume-builder', '/career', '/quiz', '/progress', '/profile'];
+    const criticalRoutes = ['/dashboard', '/resume-builder', '/career', '/quiz', '/progress', '/progress-dashboard', '/profile'];
     injectRoutePrefetchHints(criticalRoutes);
 
     const prefetch = () => {

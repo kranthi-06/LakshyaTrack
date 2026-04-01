@@ -11,11 +11,9 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     
     # Database
-    # Database
-    # This must be the PostgreSQL Connection String (starts with postgresql://)
-    # Get this from Supabase Dashboard > Settings > Database > Connection String
-    DATABASE_URL: str = "postgresql://postgres.prrbjfnmuzxbtesrtvmc:Ashok%40yeddula011003@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
-    # DATABASE_URL: str = "sqlite:///./local.db"
+    # Set DATABASE_URL via environment variable or .env file.
+    # For local development, defaults to SQLite. In production, must be PostgreSQL.
+    DATABASE_URL: str = "sqlite:///./local.db"
     MONGODB_URI: str = ""
     MONGODB_DB_NAME: str = "ai_career_platform"
     
@@ -28,7 +26,6 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     # External APIs
     OPENAI_API_KEY: str = ""
@@ -39,6 +36,7 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
     CLOUDINARY_URL: str = ""
+    GOOGLE_CLIENT_ID: str = ""  # For Google OAuth audience validation
     
     # Email
     SMTP_SERVER: str = "smtp.gmail.com"
@@ -93,13 +91,13 @@ settings = Settings()
 # Production guardrails:
 # Keep behavior unchanged for development, but prevent accidental production runs
 # with committed default secrets/URLs.
-_DEFAULT_DATABASE_URL = "postgresql://postgres.prrbjfnmuzxbtesrtvmc:Ashok%40yeddula011003@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+_DEFAULT_DATABASE_URL = "sqlite:///./local.db"
 _DEFAULT_SECRET_KEY = "temporary_secret_for_deployment"
 
 if settings.APP_ENV.lower() == "production":
     if not settings.MONGODB_URI:
         raise RuntimeError("Missing required env var: MONGODB_URI (production)")
-    if settings.DATABASE_URL == _DEFAULT_DATABASE_URL:
-        raise RuntimeError("DATABASE_URL must be set via env var in production (default is not allowed).")
+    if settings.DATABASE_URL == _DEFAULT_DATABASE_URL or "sqlite" in settings.DATABASE_URL:
+        raise RuntimeError("DATABASE_URL must be set to PostgreSQL via env var in production.")
     if settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
         raise RuntimeError("SECRET_KEY must be set via env var in production (default is not allowed).")

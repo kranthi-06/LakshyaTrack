@@ -20,8 +20,8 @@ interface Props {
 function CircularProgress({
   value,
   max,
-  size = 140,
-  strokeWidth = 10,
+  size = 110,
+  strokeWidth = 8,
   color,
   label,
   sublabel,
@@ -129,10 +129,10 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data, loading = 
               ))}
             </div>
 
-            <div className="mb-6 flex flex-wrap justify-center gap-8">
+            <div className="mb-5 flex flex-wrap justify-center gap-6">
               {Array.from({ length: 3 }, (_, index) => (
                 <div key={index} className="flex flex-col items-center gap-3">
-                  <SkeletonCircle size={140} />
+                  <SkeletonCircle size={110} />
                   <SkeletonBlock className="h-3 w-20" />
                   <SkeletonBlock className="h-3 w-12" />
                 </div>
@@ -204,7 +204,7 @@ const ProblemSolvingStats = memo(function ProblemSolvingStats({ data, loading = 
               ))}
             </div>
 
-            <div className="mb-6 flex flex-wrap justify-center gap-8">
+            <div className="mb-5 flex flex-wrap justify-center gap-6">
               {(['easy', 'medium', 'hard'] as const).map((difficulty, index) => (
                 <CircularProgress
                   key={difficulty}
