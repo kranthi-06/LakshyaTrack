@@ -1,0 +1,26 @@
+/**
+ * Lakshatrack Progress Intelligence — design tokens (scoped via .progress-intelligence-dashboard)
+ */
+.progress-intelligence-dashboard {
+  --lt-font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --lt-radius-sm: 0.5rem;
+  --lt-radius-md: 0.75rem;
+  --lt-radius-lg: 1rem;
+  --lt-radius-xl: 1.5rem;
+
+  --lt-shadow-card: 0 1px 0 rgba(15, 23, 42, 0.04), 0 12px 40px rgba(15, 23, 42, 0.06);
+  --lt-shadow-card-dark: 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 50px rgba(0, 0, 0, 0.35);
+
+  --lt-heatmap-cell: 14px;
+  --lt-heatmap-gap: 4px;
+
+  --lt-accent-streak: 245 158 11;
+  --lt-accent-problems: 16 185 129;
+  --lt-accent-days: 56 189 248;
+  --lt-accent-badges: 139 92 246;
+}
+
+.dark .progress-intelligence-dashboard {
+  --lt-shadow-card: var(--lt-shadow-card-dark);
+}

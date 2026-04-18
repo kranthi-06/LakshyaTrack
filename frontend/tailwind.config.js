@@ -18,6 +18,10 @@ export default {
       },
     },
     extend: {
+      screens: {
+        /** Wide dashboard / desktop (aligns with ~1440px layout spec) */
+        "3xl": "1440px",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

@@ -230,12 +230,14 @@ export default function ProgressDashboard() {
         <SectionLead
           eyebrow="Visuals"
           title="Calendar activity, hour-of-day rhythm, and live behavior"
-          description="Heatmap, hourly usage rhythm, and engagement tracking are grouped together to make your learning tempo easier to read without hunting through tabs."
+          description="Heatmap uses the full width row for GitHub-style scanning; time analytics and engagement tracking follow in dedicated sections."
         />
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="w-full min-w-0">
           <SectionBoundary title="Contribution Heatmap">
             <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
           </SectionBoundary>
+        </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <SectionBoundary title="Time Analytics">
             <TimeAnalytics data={data.timeAnalytics} hourlyActivity={data.intelligence.activeHours} />
           </SectionBoundary>
@@ -298,11 +300,13 @@ export default function ProgressDashboard() {
 
   const timeContent = (
     <div className="space-y-6">
+      <div className="w-full min-w-0">
+        <SectionBoundary title="Contribution Heatmap">
+          <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
+        </SectionBoundary>
+      </div>
       <SectionBoundary title="Time Analytics">
         <TimeAnalytics data={data.timeAnalytics} hourlyActivity={data.intelligence.activeHours} />
-      </SectionBoundary>
-      <SectionBoundary title="Contribution Heatmap">
-        <ContributionHeatmap data={data.contributions} onYearChange={handleYearChange} />
       </SectionBoundary>
     </div>
   );
