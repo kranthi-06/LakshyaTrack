@@ -35,9 +35,15 @@ import {
     ShieldCheck,
     Eye,
     Monitor,
+    Bookmark,
+    BookmarkCheck,
+    RotateCcw,
+    Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useExamMode } from '../hooks/useExamMode';
+import ExamLayout from '../components/exam/ExamLayout';
+import { AppLayout } from '../components/AppLayout';
 
 type QuizStep = 'setup' | 'active' | 'results';
 
@@ -131,6 +137,13 @@ export default function Quiz() {
     const [roadmapId, setRoadmapId] = useState<string | null>(null);
     const [passThreshold, setPassThreshold] = useState<number>(70);
     const [quizResult, setQuizResult] = useState<any>(null);
+
+    // ── Exam state additions ──────────
+    const [markedForReview, setMarkedForReview] = useState<Set<number>>(new Set());
+    const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+    const [examTimeRemaining, setExamTimeRemaining] = useState(0);
+    const [examStartTime, setExamStartTime] = useState<number | null>(null);
+    const examTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ── Exam proctoring state ──────────
     const [showExamInstructions, setShowExamInstructions] = useState(false);
@@ -258,8 +271,27 @@ export default function Quiz() {
         return () => {
             if (lockTimerRef.current) clearInterval(lockTimerRef.current);
             if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+            if (examTimerRef.current) clearInterval(examTimerRef.current);
         };
     }, []);
+
+    // Timer countdown effect — uses ref to avoid stale closure
+    const handleAutoSubmitRef = useRef<() => void>(() => {});
+    useEffect(() => {
+        if (step !== 'active' || examTimeRemaining <= 0) return;
+        examTimerRef.current = setInterval(() => {
+            setExamTimeRemaining(prev => {
+                if (prev <= 1) {
+                    if (examTimerRef.current) clearInterval(examTimerRef.current);
+                    // Use setTimeout to avoid calling setState during render
+                    setTimeout(() => handleAutoSubmitRef.current(), 0);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => { if (examTimerRef.current) clearInterval(examTimerRef.current); };
+    }, [step]);
 
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
@@ -292,6 +324,7 @@ export default function Quiz() {
     const handleStartQuiz = async () => {
         setIsLoading(true);
         try {
+            let questionsToUse = [];
             if (isRoadmapQuiz && roadmapSkillName && roadmapLevel) {
                 const count = parseInt(numQuestions);
                 const res = await generateSkillQuiz(
@@ -302,9 +335,11 @@ export default function Quiz() {
 
                 if (res.questions && res.questions.length > 0) {
                     setQuizQuestions(res.questions);
+                    questionsToUse = res.questions;
                     setPassThreshold(res.threshold || 70);
                 } else {
                     setQuizQuestions(questionsByTopic[topic] || questionsByTopic['JavaScript']);
+                    questionsToUse = questionsByTopic[topic] || questionsByTopic['JavaScript'];
                 }
             } else {
                 const count = parseInt(numQuestions);
@@ -316,22 +351,36 @@ export default function Quiz() {
 
                 if (data && data.length > 0) {
                     setQuizQuestions(data);
+                    questionsToUse = data;
                 } else {
                     console.warn("API returned empty questions, using fallback.");
                     setQuizQuestions(questionsByTopic[topic] || questionsByTopic['JavaScript']);
+                    questionsToUse = questionsByTopic[topic] || questionsByTopic['JavaScript'];
                 }
             }
+
+            const duration = questionsToUse.length * 120; // 2 min per question
+            setExamTimeRemaining(duration);
+            setExamStartTime(Date.now());
 
             setStep('active');
             setCurrentQuestion(0);
             setSelectedAnswers({});
             setQuizResult(null);
+            setMarkedForReview(new Set());
         } catch (error) {
             console.error("Failed to generate quiz:", error);
-            setQuizQuestions(questionsByTopic[topic] || questionsByTopic['JavaScript']);
+            const fallback = questionsByTopic[topic] || questionsByTopic['JavaScript'];
+            setQuizQuestions(fallback);
+            
+            const duration = fallback.length * 120;
+            setExamTimeRemaining(duration);
+            setExamStartTime(Date.now());
+
             setStep('active');
             setCurrentQuestion(0);
             setSelectedAnswers({});
+            setMarkedForReview(new Set());
         } finally {
             setIsLoading(false);
         }
@@ -341,6 +390,26 @@ export default function Quiz() {
         setSelectedAnswers({
             ...selectedAnswers,
             [currentQuestion]: optionIndex
+        });
+    };
+
+    const handleMarkForReview = () => {
+        setMarkedForReview(prev => {
+            const next = new Set(prev);
+            if (next.has(currentQuestion)) {
+                next.delete(currentQuestion);
+            } else {
+                next.add(currentQuestion);
+            }
+            return next;
+        });
+    };
+
+    const handleClearResponse = () => {
+        setSelectedAnswers(prev => {
+            const next = { ...prev };
+            delete next[currentQuestion];
+            return next;
         });
     };
 
@@ -364,51 +433,71 @@ export default function Quiz() {
         trackQuizCompleted(quizName, score, totalQuestions);
     };
 
+    const handleFinalSubmit = async () => {
+        if (examTimerRef.current) clearInterval(examTimerRef.current);
+        examMode.deactivateExamMode();
+        setStep('results');
+
+        if (isRoadmapQuiz && roadmapSkillId && roadmapSkillName && roadmapLevel) {
+            try {
+                const answers = buildQuizAnswers();
+
+                const result = await submitSkillQuiz(
+                    roadmapId,
+                    roadmapSkillId,
+                    roadmapSkillName,
+                    roadmapLevel,
+                    answers
+                );
+                setQuizResult(result);
+                trackCompletedQuiz(roadmapSkillName, result, answers);
+
+                try { await saveProgressSnapshot(0); } catch (_) { }
+            } catch (e) {
+                console.error("Failed to submit roadmap quiz:", e);
+            }
+        } else {
+            try {
+                const answers = buildQuizAnswers();
+
+                const result = await submitSkillQuiz(
+                    null,
+                    `standalone_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+                    topic,
+                    difficulty,
+                    answers
+                );
+                setQuizResult(result);
+                trackCompletedQuiz(topic, result, answers);
+
+                try { await saveProgressSnapshot(0); } catch (_) { }
+            } catch (e) {
+                console.error("Failed to submit standalone quiz:", e);
+            }
+        }
+    };
+
+    const handleAutoSubmit = async () => {
+        await handleFinalSubmit();
+    };
+
+    // Keep the auto-submit ref in sync for the timer
+    handleAutoSubmitRef.current = handleAutoSubmit;
+
+    const handleSubmitExam = () => {
+        setShowSubmitConfirm(true);
+    };
+
+    const handleConfirmSubmit = async () => {
+        setShowSubmitConfirm(false);
+        await handleFinalSubmit();
+    };
+
     const handleNext = async () => {
         if (currentQuestion < quizQuestions.length - 1) {
             setCurrentQuestion(prev => prev + 1);
         } else {
-            // Quiz finished — deactivate exam mode
-            examMode.deactivateExamMode();
-            setStep('results');
-
-            if (isRoadmapQuiz && roadmapSkillId && roadmapSkillName && roadmapLevel) {
-                try {
-                    const answers = buildQuizAnswers();
-
-                    const result = await submitSkillQuiz(
-                        roadmapId,
-                        roadmapSkillId,
-                        roadmapSkillName,
-                        roadmapLevel,
-                        answers
-                    );
-                    setQuizResult(result);
-                    trackCompletedQuiz(roadmapSkillName, result, answers);
-
-                    try { await saveProgressSnapshot(0); } catch (_) { }
-                } catch (e) {
-                    console.error("Failed to submit roadmap quiz:", e);
-                }
-            } else {
-                try {
-                    const answers = buildQuizAnswers();
-
-                    const result = await submitSkillQuiz(
-                        null,
-                        `standalone_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-                        topic,
-                        difficulty,
-                        answers
-                    );
-                    setQuizResult(result);
-                    trackCompletedQuiz(topic, result, answers);
-
-                    try { await saveProgressSnapshot(0); } catch (_) { }
-                } catch (e) {
-                    console.error("Failed to submit standalone quiz:", e);
-                }
-            }
+            handleSubmitExam();
         }
     };
 
@@ -431,434 +520,626 @@ export default function Quiz() {
         return acc + (ans === quizQuestions[parseInt(idx)].correct ? 1 : 0);
     }, 0);
 
-    const scorePercent = Math.round((score / quizQuestions.length) * 100);
+    const scorePercent = Math.round((score / quizQuestions.length) * 100) || 0;
+
+    const answeredQuestions = new Set(Object.keys(selectedAnswers).map(Number));
 
     // ── Render ──
-    return (
-        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
+    if (step === 'active') {
+        return (
+            <ExamLayout
+                examTitle={isRoadmapQuiz ? 'Skill Assessment' : 'Assessment'}
+                topic={isRoadmapQuiz ? (roadmapSkillName || topic) : topic}
+                currentQuestion={currentQuestion}
+                totalQuestions={quizQuestions.length}
+                timeRemaining={examTimeRemaining}
+                isExamActive={examMode.isExamActive}
+                isFullscreen={examMode.isFullscreen}
+                onSubmitExam={handleSubmitExam}
+                answeredQuestions={answeredQuestions}
+                markedForReview={markedForReview}
+                onQuestionSelect={setCurrentQuestion}
+            >
+                <div className="flex-1 flex flex-col justify-between">
+                    <Card className="p-6 sm:p-12 border-none shadow-xl bg-[#12121e] rounded-2xl sm:rounded-[3rem] space-y-8 sm:space-y-10 min-h-[400px] sm:min-h-[500px] flex flex-col justify-center border-slate-800/60 relative">
+                        <h2 className="text-2xl font-[900] text-white leading-snug">
+                            <span className="text-slate-500 mr-4">{currentQuestion + 1}.</span>
+                            {quizQuestions[currentQuestion].question}
+                        </h2>
 
-
-                            <main className={`max-w-4xl mx-auto px-3 sm:px-6 ${examMode.isExamActive ? 'pt-8' : 'pt-8 sm:pt-16'}`}>
-                    <AnimatePresence mode="wait">
-                        {step === 'setup' && (
-                            <motion.div
-                                key="setup"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -20 }}
-                                className="space-y-12"
-                            >
-                                <div className="text-center space-y-6">
-                                    <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto shadow-sm">
-                                        <div className="flex flex-wrap w-10 h-10 gap-1 translate-y-1">
-                                            <div className="w-4 h-4 bg-green-400 rounded-sm" />
-                                            <div className="w-4 h-4 bg-rose-400 rounded-sm" />
-                                            <div className="w-4 h-4 bg-blue-400 rounded-sm" />
-                                            <div className="w-4 h-4 bg-purple-400 rounded-sm" />
+                        <div className="space-y-4">
+                            {quizQuestions[currentQuestion].options.map((option: string, idx: number) => {
+                                const isSelected = selectedAnswers[currentQuestion] === idx;
+                                const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => handleOptionSelect(idx)}
+                                        className={`w-full p-4 sm:p-6 rounded-2xl border text-left font-bold transition-all flex items-center gap-4 ${isSelected
+                                            ? 'bg-[#5c52d2] text-white border-transparent shadow-xl ring-2 ring-[#5c52d2]/50 ring-offset-2 ring-offset-[#050510]'
+                                            : 'bg-[#0f0f1a] border-slate-700/60 text-slate-300 hover:border-slate-500 hover:bg-[#1a1a2e]'
+                                            }`}
+                                    >
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm border ${
+                                            isSelected ? 'bg-white text-[#5c52d2] border-white' : 'border-slate-600 text-slate-400'
+                                        }`}>
+                                            {OPTION_LABELS[idx]}
                                         </div>
+                                        <span>{option}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </Card>
+
+                    {/* Bottom Navigation */}
+                    <div className="flex flex-wrap justify-between items-center gap-4 pt-8">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Button
+                                variant="outline"
+                                onClick={handlePrevious}
+                                disabled={currentQuestion === 0}
+                                className="h-12 sm:h-14 px-6 sm:px-8 rounded-2xl border-slate-700 bg-[#0f0f1a] text-slate-300 font-bold hover:bg-[#1a1a2e] hover:text-white"
+                            >
+                                <ChevronLeft className="w-5 h-5 mr-1" /> Previous
+                            </Button>
+                            
+                            <Button
+                                variant="outline"
+                                onClick={handleMarkForReview}
+                                className={`h-12 sm:h-14 px-6 sm:px-8 rounded-2xl border-slate-700 font-bold flex items-center gap-2 ${
+                                    markedForReview.has(currentQuestion)
+                                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 hover:bg-amber-500/30'
+                                        : 'bg-[#0f0f1a] text-amber-500 hover:bg-[#1a1a2e]'
+                                }`}
+                            >
+                                {markedForReview.has(currentQuestion) ? <BookmarkCheck className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}
+                                {markedForReview.has(currentQuestion) ? 'Marked' : 'Mark for Review'}
+                            </Button>
+                            
+                            <Button
+                                variant="outline"
+                                onClick={handleClearResponse}
+                                disabled={selectedAnswers[currentQuestion] === undefined}
+                                className="h-12 sm:h-14 px-6 sm:px-8 rounded-2xl border-slate-700 bg-[#0f0f1a] text-slate-300 font-bold hover:bg-[#1a1a2e] hover:text-white disabled:opacity-50"
+                            >
+                                <RotateCcw className="w-5 h-5 mr-2" /> Clear Response
+                            </Button>
+                        </div>
+
+                        <Button
+                            onClick={handleNext}
+                            className="h-12 sm:h-14 px-8 sm:px-10 rounded-2xl bg-[#5c52d2] hover:bg-[#4a42b0] text-white font-black shadow-xl shadow-purple-900/20 transition-all gap-2"
+                        >
+                            {currentQuestion === quizQuestions.length - 1 ? (
+                                <>Submit Exam <Send className="w-5 h-5 ml-1" /></>
+                            ) : (
+                                <>Save & Next <ChevronRight className="w-5 h-5 ml-1" /></>
+                            )}
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Submit Confirmation Modal */}
+                <AnimatePresence>
+                    {showSubmitConfirm && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+                        >
+                            <motion.div
+                                initial={{ scale: 0.9, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.9, opacity: 0 }}
+                                className="bg-[#12121e] border border-slate-800 rounded-[2rem] max-w-md w-full overflow-hidden shadow-2xl"
+                            >
+                                <div className="p-8 space-y-6 text-center">
+                                    <div className="w-16 h-16 bg-[#5c52d2]/20 rounded-2xl flex items-center justify-center mx-auto">
+                                        <Send className="w-8 h-8 text-[#5c52d2]" />
                                     </div>
-                                    <div className="space-y-2">
-                                        <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight">
-                                            {isRoadmapQuiz ? `Skill Assessment: ${roadmapSkillName}` : 'Test Your Knowledge'}
-                                        </h1>
-                                        <p className="text-slate-400 text-lg font-medium max-w-lg mx-auto leading-relaxed">
-                                            {isRoadmapQuiz
-                                                ? `Pass this ${roadmapLevel} level quiz to unlock the next skill in your roadmap.`
-                                                : 'Choose a language and prove your expertise with our high-fidelity skill assessments.'
-                                            }
+                                    <div>
+                                        <h2 className="text-2xl font-[900] text-white mb-2">Submit Exam?</h2>
+                                        <p className="text-slate-400 font-medium">
+                                            You have answered {answeredQuestions.size} out of {quizQuestions.length} questions.
+                                            {markedForReview.size > 0 && ` ${markedForReview.size} marked for review.`}
+                                            <br/><br/>
+                                            Are you sure you want to submit?
                                         </p>
                                     </div>
-                                    {isRoadmapQuiz && (
-                                        <div className="flex items-center justify-center gap-2">
-                                            <Shield className="w-4 h-4 text-[#5c52d2]" />
-                                            <span className="text-xs font-black text-[#5c52d2] uppercase tracking-widest">
-                                                Pass threshold: {passThreshold}%
-                                            </span>
-                                        </div>
-                                    )}
+                                    <div className="flex gap-3 pt-4">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setShowSubmitConfirm(false)}
+                                            className="flex-1 h-12 rounded-xl border-slate-700 bg-transparent text-slate-300 font-bold hover:bg-[#1a1a2e]"
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            onClick={handleConfirmSubmit}
+                                            className="flex-1 h-12 rounded-xl bg-[#5c52d2] text-white font-bold hover:bg-[#4a42b0]"
+                                        >
+                                            Yes, Submit
+                                        </Button>
+                                    </div>
                                 </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
-                                {/* ── Lockout Banner ── */}
-                                {isLocked && (
+                {/* Fullscreen Exit Warning Popup */}
+                <AnimatePresence>
+                    {examMode.showFullscreenWarning && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+                        >
+                            <motion.div
+                                initial={{ scale: 0.9 }}
+                                animate={{ scale: 1 }}
+                                className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
+                            >
+                                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                                    <AlertTriangle className="w-10 h-10 text-red-500" />
+                                </div>
+                                <h2 className="text-xl font-[900] text-slate-900">Fullscreen Required</h2>
+                                <p className="text-sm font-medium text-slate-500">
+                                    You exited exam mode. Please return to fullscreen within{' '}
+                                    <span className="font-black text-red-500 text-lg">{examMode.fullscreenCountdown}</span>{' '}
+                                    seconds or the exam will be terminated.
+                                </p>
+                                <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
                                     <motion.div
-                                        initial={{ opacity: 0, y: -10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="max-w-2xl mx-auto p-6 rounded-[2rem] bg-red-50 border-2 border-red-200 space-y-3"
+                                        initial={{ width: '100%' }}
+                                        animate={{ width: `${(examMode.fullscreenCountdown / 30) * 100}%` }}
+                                        className="h-full bg-gradient-to-r from-red-500 to-red-400 rounded-full"
+                                        transition={{ duration: 0.3 }}
+                                    />
+                                </div>
+                                <Button
+                                    onClick={examMode.returnToFullscreen}
+                                    className="w-full h-14 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black shadow-lg"
+                                >
+                                    <Monitor className="w-5 h-5 mr-2" />
+                                    Return to Fullscreen
+                                </Button>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Tab Switch Warning Popup */}
+                <AnimatePresence>
+                    {examMode.showTabWarning && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+                        >
+                            <motion.div
+                                initial={{ scale: 0.9 }}
+                                animate={{ scale: 1 }}
+                                className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
+                            >
+                                <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+                                    <Eye className="w-10 h-10 text-amber-500" />
+                                </div>
+                                <h2 className="text-xl font-[900] text-slate-900">Warning: Tab Switch Detected</h2>
+                                <p className="text-sm font-medium text-slate-500">
+                                    You switched away from the exam tab. This is your{' '}
+                                    <span className="font-black text-amber-600">first warning</span>.
+                                    Another tab switch will <span className="font-black text-red-500">terminate the exam immediately</span>.
+                                </p>
+                                <Button
+                                    onClick={examMode.dismissTabWarning}
+                                    className="w-full h-14 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-white font-black shadow-lg"
+                                >
+                                    I Understand — Continue Exam
+                                </Button>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Exam Terminated Popup */}
+                <AnimatePresence>
+                    {examMode.isTerminated && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+                        >
+                            <motion.div
+                                initial={{ scale: 0.9 }}
+                                animate={{ scale: 1 }}
+                                className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
+                            >
+                                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                                    <XCircle className="w-10 h-10 text-red-500" />
+                                </div>
+                                <h2 className="text-2xl font-[900] text-red-600">Exam Terminated</h2>
+                                <p className="text-sm font-medium text-slate-500">
+                                    You exited exam mode or violated exam rules.
+                                </p>
+                                <p className="text-xs font-bold text-slate-400">
+                                    Please follow the instructions carefully before attempting again.
+                                </p>
+                                <div className="flex flex-col gap-3 pt-2">
+                                    <Button
+                                        onClick={handleRetryAfterTermination}
+                                        variant="outline"
+                                        className="w-full h-12 rounded-xl font-black text-slate-600"
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <Lock className="w-6 h-6 text-red-500" />
-                                            <span className="font-black text-red-700">Quizzes Locked</span>
-                                        </div>
-                                        <p className="text-sm font-bold text-red-600">{lockMessage}</p>
-                                        {lockRemainingSeconds > 0 && (
-                                            <div className="flex items-center gap-2 text-sm font-black text-red-500">
-                                                <Clock className="w-4 h-4" />
-                                                Unlocks in: {formatTime(lockRemainingSeconds)}
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                )}
-
-                                {/* ── Cooldown Banner ── */}
-                                {isInCooldown && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: -10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="max-w-2xl mx-auto p-6 rounded-[2rem] bg-amber-50 border-2 border-amber-200 space-y-3"
+                                        Try Again
+                                    </Button>
+                                    <Button
+                                        onClick={handleBackToLearningPath}
+                                        className="w-full h-12 rounded-xl bg-slate-900 text-white font-black"
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <Clock className="w-6 h-6 text-amber-500" />
-                                            <span className="font-black text-amber-700">Cooldown Active</span>
-                                        </div>
-                                        <p className="text-sm font-bold text-amber-600">{cooldownMessage}</p>
-                                        {cooldownRemainingSeconds > 0 && (
-                                            <div className="flex items-center gap-2 text-sm font-black text-amber-500">
-                                                <Timer className="w-4 h-4" />
-                                                Available in: {formatTime(cooldownRemainingSeconds)}
-                                            </div>
-                                        )}
-                                    </motion.div>
+                                        Back to {isRoadmapQuiz ? 'Roadmap' : 'Dashboard'}
+                                    </Button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </ExamLayout>
+        );
+    }
+
+    return (
+        <AppLayout>
+        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
+            <main className={`max-w-4xl mx-auto px-3 sm:px-6 ${examMode.isExamActive ? 'pt-8' : 'pt-8 sm:pt-16'}`}>
+                <AnimatePresence mode="wait">
+                    {step === 'setup' && (
+                        <motion.div
+                            key="setup"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            className="space-y-12"
+                        >
+                            <div className="text-center space-y-6">
+                                <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+                                    <div className="flex flex-wrap w-10 h-10 gap-1 translate-y-1">
+                                        <div className="w-4 h-4 bg-green-400 rounded-sm" />
+                                        <div className="w-4 h-4 bg-rose-400 rounded-sm" />
+                                        <div className="w-4 h-4 bg-blue-400 rounded-sm" />
+                                        <div className="w-4 h-4 bg-purple-400 rounded-sm" />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <h1 className="text-3xl sm:text-4xl font-[900] text-slate-900 tracking-tight">
+                                        {isRoadmapQuiz ? `Skill Assessment: ${roadmapSkillName}` : 'Test Your Knowledge'}
+                                    </h1>
+                                    <p className="text-slate-400 text-lg font-medium max-w-lg mx-auto leading-relaxed">
+                                        {isRoadmapQuiz
+                                            ? `Pass this ${roadmapLevel} level quiz to unlock the next skill in your roadmap.`
+                                            : 'Choose a language and prove your expertise with our high-fidelity skill assessments.'
+                                        }
+                                    </p>
+                                </div>
+                                {isRoadmapQuiz && (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <Shield className="w-4 h-4 text-[#5c52d2]" />
+                                        <span className="text-xs font-black text-[#5c52d2] uppercase tracking-widest">
+                                            Pass threshold: {passThreshold}%
+                                        </span>
+                                    </div>
                                 )}
+                            </div>
 
-                                <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[2.5rem] space-y-10 max-w-2xl mx-auto border border-white/20">
-                                    {/* Topic selection: show only for standard quizzes */}
-                                    {!isRoadmapQuiz && (
-                                        <div className="space-y-8">
-                                            {/* Smart Search Bar */}
-                                            <div className="space-y-4">
-                                                <div className="flex items-center gap-3 text-slate-400 text-xs font-black uppercase tracking-widest">
-                                                    <Target className="w-4 h-4 text-purple-500" />
-                                                    Any Topic, Skill, or subject
-                                                </div>
-                                                <div className="relative group">
-                                                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#5c52d2] transition-colors">
-                                                        <BrainCircuit className="w-5 h-5" />
-                                                    </div>
-                                                    <Input
-                                                        value={topic}
-                                                        onChange={(e) => setTopic(e.target.value)}
-                                                        placeholder="Type anything (e.g. 'React Hooks', 'Data Structures', 'AWS Basics')"
-                                                        className="pl-14 h-16 rounded-2xl border-2 border-slate-100 bg-white/50 backdrop-blur shadow-sm font-bold text-slate-900 focus-visible:ring-0 focus-visible:border-[#5c52d2] text-lg transition-all"
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter' && topic.trim()) {
-                                                                handleStartClick();
-                                                            }
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <div className="flex items-center gap-3 text-slate-400 text-xs font-black uppercase tracking-widest pt-4 border-t border-slate-100">
-                                                    <BookOpen className="w-4 h-4 text-blue-500" />
-                                                    Or Select Popular Languages
-                                                </div>
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                                    {languages.map((lang) => (
-                                                        <button
-                                                            key={lang.name}
-                                                            onClick={() => setTopic(lang.name)}
-                                                            className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all ${topic === lang.name
-                                                                ? `border-transparent shadow-xl ring-2 ring-slate-900 ${lang.bg} ${lang.color}`
-                                                                : 'border-slate-50 bg-slate-50/50 text-slate-400 hover:bg-white hover:border-slate-200'
-                                                                }`}
-                                                        >
-                                                            <BrainCircuit className="w-6 h-6" />
-                                                            <span className="text-[10px] font-black uppercase tracking-widest">{lang.name}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
+                            {/* ── Lockout Banner ── */}
+                            {isLocked && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="max-w-2xl mx-auto p-6 rounded-[2rem] bg-red-50 border-2 border-red-200 space-y-3"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Lock className="w-6 h-6 text-red-500" />
+                                        <span className="font-black text-red-700">Quizzes Locked</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-red-600">{lockMessage}</p>
+                                    {lockRemainingSeconds > 0 && (
+                                        <div className="flex items-center gap-2 text-sm font-black text-red-500">
+                                            <Clock className="w-4 h-4" />
+                                            Unlocks in: {formatTime(lockRemainingSeconds)}
                                         </div>
                                     )}
+                                </motion.div>
+                            )}
 
-                                    {/* If roadmap quiz, show skill info card */}
-                                    {isRoadmapQuiz && (
-                                        <div className="p-6 rounded-2xl bg-purple-50/60 border-2 border-purple-100 space-y-3">
-                                            <div className="flex items-center gap-3">
-                                                <Sparkles className="w-5 h-5 text-[#5c52d2]" />
-                                                <span className="font-black text-slate-900">Roadmap Skill Quiz</span>
-                                            </div>
-                                            <p className="text-sm font-bold text-slate-500">
-                                                Skill: <span className="text-[#5c52d2]">{roadmapSkillName}</span> •
-                                                Level: <span className="text-[#5c52d2]">{roadmapLevel}</span> •
-                                                Threshold: <span className="text-[#5c52d2]">{passThreshold}%</span>
-                                            </p>
+                            {/* ── Cooldown Banner ── */}
+                            {isInCooldown && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="max-w-2xl mx-auto p-6 rounded-[2rem] bg-amber-50 border-2 border-amber-200 space-y-3"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Clock className="w-6 h-6 text-amber-500" />
+                                        <span className="font-black text-amber-700">Cooldown Active</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-amber-600">{cooldownMessage}</p>
+                                    {cooldownRemainingSeconds > 0 && (
+                                        <div className="flex items-center gap-2 text-sm font-black text-amber-500">
+                                            <Timer className="w-4 h-4" />
+                                            Available in: {formatTime(cooldownRemainingSeconds)}
                                         </div>
                                     )}
+                                </motion.div>
+                            )}
 
-                                    <div className="grid sm:grid-cols-2 gap-8">
+                            <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[2.5rem] space-y-10 max-w-2xl mx-auto border border-white/20">
+                                {/* Topic selection: show only for standard quizzes */}
+                                {!isRoadmapQuiz && (
+                                    <div className="space-y-8">
+                                        {/* Smart Search Bar */}
                                         <div className="space-y-4">
                                             <div className="flex items-center gap-3 text-slate-400 text-xs font-black uppercase tracking-widest">
-                                                <Zap className="w-4 h-4 text-orange-500" />
-                                                Difficulty
+                                                <Target className="w-4 h-4 text-purple-500" />
+                                                Any Topic, Skill, or subject
                                             </div>
-                                            <div className="flex gap-2">
-                                                {['Easy', 'Medium', 'Hard'].map((lvl) => (
+                                            <div className="relative group">
+                                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#5c52d2] transition-colors">
+                                                    <BrainCircuit className="w-5 h-5" />
+                                                </div>
+                                                <Input
+                                                    value={topic}
+                                                    onChange={(e) => setTopic(e.target.value)}
+                                                    placeholder="Type anything (e.g. 'React Hooks', 'Data Structures', 'AWS Basics')"
+                                                    className="pl-14 h-16 rounded-2xl border-2 border-slate-100 bg-white/50 backdrop-blur shadow-sm font-bold text-slate-900 focus-visible:ring-0 focus-visible:border-[#5c52d2] text-lg transition-all"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' && topic.trim()) {
+                                                            handleStartClick();
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-3 text-slate-400 text-xs font-black uppercase tracking-widest pt-4 border-t border-slate-100">
+                                                <BookOpen className="w-4 h-4 text-blue-500" />
+                                                Or Select Popular Languages
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                {languages.map((lang) => (
                                                     <button
-                                                        key={lvl}
-                                                        onClick={() => !isRoadmapQuiz && setDifficulty(lvl)}
-                                                        className={`flex-1 h-12 rounded-xl border text-[10px] font-black tracking-widest uppercase transition-all ${difficulty === lvl
-                                                            ? 'bg-[#5c52d2] text-white border-transparent shadow-lg'
-                                                            : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
-                                                            } ${isRoadmapQuiz ? 'cursor-default' : ''}`}
+                                                        key={lang.name}
+                                                        onClick={() => setTopic(lang.name)}
+                                                        className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all ${topic === lang.name
+                                                            ? `border-transparent shadow-xl ring-2 ring-slate-900 ${lang.bg} ${lang.color}`
+                                                            : 'border-slate-50 bg-slate-50/50 text-slate-400 hover:bg-white hover:border-slate-200'
+                                                            }`}
                                                     >
-                                                        {lvl}
+                                                        <BrainCircuit className="w-6 h-6" />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">{lang.name}</span>
                                                     </button>
                                                 ))}
                                             </div>
                                         </div>
-
-                                        <div className="space-y-4">
-                                            <div className="flex items-center gap-3 text-slate-400 text-xs font-black uppercase tracking-widest">
-                                                <HelpCircle className="w-4 h-4 text-purple-500" />
-                                                Questions
-                                            </div>
-                                            <select
-                                                value={numQuestions}
-                                                onChange={(e) => setNumQuestions(e.target.value)}
-                                                className="w-full h-12 px-6 rounded-xl border border-slate-100 bg-slate-50/50 font-black text-xs uppercase tracking-widest focus:bg-white transition-all appearance-none cursor-pointer"
-                                            >
-                                                <option value="5">5 Questions</option>
-                                                <option value="10">10 Questions</option>
-                                                <option value="15">15 Questions</option>
-                                                <option value="20">20 Questions</option>
-                                                <option value="30">30 Questions</option>
-                                            </select>
-                                        </div>
                                     </div>
-
-                                    {/* ── Proctored Exam Badge ── */}
-                                    <div className="flex items-center justify-center gap-2 py-2">
-                                        <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                                            Proctored Exam Mode
-                                        </span>
-                                    </div>
-
-                                    <Button
-                                        onClick={handleStartClick}
-                                        disabled={isLoading || isLocked || isInCooldown || checkingEligibility}
-                                        className="w-full h-16 rounded-2xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black text-lg shadow-2xl shadow-purple-200 hover:scale-[1.02] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                                    >
-                                        {checkingEligibility ? (
-                                            <span className="flex items-center gap-2">
-                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                Checking eligibility...
-                                            </span>
-                                        ) : isLocked ? (
-                                            <span className="flex items-center gap-2">
-                                                <Lock className="w-5 h-5" />
-                                                Locked — {formatTime(lockRemainingSeconds)}
-                                            </span>
-                                        ) : isInCooldown ? (
-                                            <span className="flex items-center gap-2">
-                                                <Clock className="w-5 h-5" />
-                                                Cooldown — {formatTime(cooldownRemainingSeconds)}
-                                            </span>
-                                        ) : isLoading ? (
-                                            <span className="flex items-center gap-2">
-                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                Generating {numQuestions} Questions...
-                                            </span>
-                                        ) : (
-                                            isRoadmapQuiz ? `Start ${roadmapSkillName} Assessment` : `Start ${topic} Assessment`
-                                        )}
-                                    </Button>
-                                </Card>
-                            </motion.div>
-                        )}
-
-                        {step === 'active' && (
-                            <motion.div
-                                key="active"
-                                initial={{ opacity: 0, x: 20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -20 }}
-                                className="space-y-8"
-                            >
-                                <div className="flex justify-between items-center px-2">
-                                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                                        Question {currentQuestion + 1} of {quizQuestions.length}
-                                    </h3>
-                                    <div className="flex items-center gap-4">
-                                        {/* Exam mode indicator */}
-                                        {examMode.isExamActive && (
-                                            <div className="flex items-center gap-1.5 text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1.5 rounded-full">
-                                                <ShieldCheck className="w-3.5 h-3.5" />
-                                                EXAM MODE
-                                            </div>
-                                        )}
-                                        <div className="flex items-center gap-2 text-xs font-black text-blue-500 uppercase tracking-widest">
-                                            {isRoadmapQuiz ? `${roadmapSkillName} • ${roadmapLevel}` : `${topic} • ${difficulty}`}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                    <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${((currentQuestion + 1) / quizQuestions.length) * 100}%` }}
-                                        className="h-full bg-gradient-to-r from-[#5c52d2] to-[#7c3aed]"
-                                    />
-                                </div>
-
-                                <Card className="p-6 sm:p-12 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3rem] space-y-8 sm:space-y-10 min-h-[400px] sm:min-h-[500px] flex flex-col justify-center border border-white/20">
-                                    <h2 className="text-2xl font-[900] text-slate-900 leading-snug">
-                                        {quizQuestions[currentQuestion].question}
-                                    </h2>
-
-                                    <div className="space-y-4">
-                                        {quizQuestions[currentQuestion].options.map((option: string, idx: number) => (
-                                            <button
-                                                key={idx}
-                                                onClick={() => handleOptionSelect(idx)}
-                                                className={`w-full p-6 rounded-2xl border text-left font-bold transition-all ${selectedAnswers[currentQuestion] === idx
-                                                    ? 'bg-[#5c52d2] text-white border-transparent shadow-xl ring-2 ring-slate-900 ring-offset-2'
-                                                    : 'bg-white border-slate-100 text-slate-600 hover:border-blue-200 hover:bg-blue-50/30'
-                                                    }`}
-                                            >
-                                                {option}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </Card>
-
-                                <div className="flex justify-between items-center px-2 pt-8">
-                                    <Button
-                                        variant="outline"
-                                        onClick={handlePrevious}
-                                        disabled={currentQuestion === 0}
-                                        className="h-14 px-8 rounded-2xl border-slate-100 text-slate-400 font-black hover:bg-slate-50 gap-2"
-                                    >
-                                        — Previous
-                                    </Button>
-                                    <Button
-                                        onClick={handleNext}
-                                        className="h-14 px-10 rounded-2xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black shadow-xl shadow-purple-100 hover:scale-105 transition-all gap-2"
-                                    >
-                                        {currentQuestion === quizQuestions.length - 1 ? 'Submit Quiz' : 'Next Question'} →
-                                    </Button>
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {step === 'results' && (
-                            <motion.div
-                                key="results"
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="text-center space-y-12 py-10"
-                            >
-                                <div className="relative w-48 h-48 mx-auto">
-                                    <div className="absolute inset-0 bg-purple-100 rounded-full blur-3xl opacity-50" />
-                                    <div className="relative w-full h-full bg-white rounded-full flex items-center justify-center shadow-2xl border-4 border-white">
-                                        <div className="flex flex-col items-center">
-                                            <span className="text-6xl font-[900] text-[#5c52d2] tracking-tighter">
-                                                {scorePercent}%
-                                            </span>
-                                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mt-1">Score Captured</span>
-                                        </div>
-                                    </div>
-                                    <div className="absolute -top-4 -right-4 w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center text-white shadow-lg rotate-12">
-                                        <Trophy className="w-6 h-6" />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <h1 className="text-4xl font-[900] text-slate-900 tracking-tight">
-                                        {score === quizQuestions.length ? 'Perfect Score! 🥳' : score > quizQuestions.length / 2 ? 'Great Job! 👏' : 'Keep Practicing! 💪'}
-                                    </h1>
-                                    <p className="text-slate-500 text-lg font-medium">
-                                        You answered {score} out of {quizQuestions.length} questions correctly in {isRoadmapQuiz ? roadmapSkillName : topic}.
-                                    </p>
-                                </div>
-
-                                {/* Roadmap Quiz Result Banner */}
-                                {isRoadmapQuiz && quizResult && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className={`max-w-xl mx-auto p-6 rounded-[2rem] border-2 ${quizResult.passed
-                                            ? 'bg-emerald-50 border-emerald-200'
-                                            : 'bg-rose-50 border-rose-200'
-                                            }`}
-                                    >
-                                        <div className="flex items-center justify-center gap-3 mb-3">
-                                            {quizResult.passed
-                                                ? <CheckCircle2 className="w-6 h-6 text-emerald-500" />
-                                                : <Target className="w-6 h-6 text-rose-500" />
-                                            }
-                                            <span className={`text-lg font-black ${quizResult.passed ? 'text-emerald-700' : 'text-rose-700'}`}>
-                                                {quizResult.passed ? '🎉 Skill Mastered! Roadmap Progressed.' : `Need ${passThreshold}% to pass. Try again!`}
-                                            </span>
-                                        </div>
-                                        {quizResult.passed && quizResult.skill_unlocked && (
-                                            <p className="text-sm font-bold text-emerald-600">Next skill in your roadmap has been unlocked!</p>
-                                        )}
-                                    </motion.div>
                                 )}
 
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 max-w-2xl mx-auto pt-8">
-                                    <Card className="p-8 border-none bg-blue-50/90 backdrop-blur-sm rounded-3xl space-y-2 shadow-lg">
-                                        <Target className="w-6 h-6 text-blue-500 mx-auto" />
-                                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Accuracy</p>
-                                        <p className="text-2xl font-black text-blue-600">{scorePercent}%</p>
-                                    </Card>
-                                    <Card className="p-8 border-none bg-green-50/90 backdrop-blur-sm rounded-3xl space-y-2 shadow-lg">
-                                        <Zap className="w-6 h-6 text-green-500 mx-auto" />
-                                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Level</p>
-                                        <p className="text-2xl font-black text-green-600">{isRoadmapQuiz ? roadmapLevel : difficulty}</p>
-                                    </Card>
-                                    <Card className="p-8 border-none bg-purple-50/90 backdrop-blur-sm rounded-3xl space-y-2 shadow-lg">
-                                        <CheckCircle2 className="w-6 h-6 text-purple-500 mx-auto" />
-                                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Correct</p>
-                                        <p className="text-2xl font-black text-purple-600">{score}/{quizQuestions.length}</p>
-                                    </Card>
+                                {/* If roadmap quiz, show skill info card */}
+                                {isRoadmapQuiz && (
+                                    <div className="p-6 rounded-2xl bg-purple-50/60 border-2 border-purple-100 space-y-3">
+                                        <div className="flex items-center gap-3">
+                                            <Sparkles className="w-5 h-5 text-[#5c52d2]" />
+                                            <span className="font-black text-slate-900">Roadmap Skill Quiz</span>
+                                        </div>
+                                        <p className="text-sm font-bold text-slate-500">
+                                            Skill: <span className="text-[#5c52d2]">{roadmapSkillName}</span> •
+                                            Level: <span className="text-[#5c52d2]">{roadmapLevel}</span> •
+                                            Threshold: <span className="text-[#5c52d2]">{passThreshold}%</span>
+                                        </p>
+                                    </div>
+                                )}
+
+                                <div className="grid sm:grid-cols-2 gap-8">
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-3 text-slate-400 text-xs font-black uppercase tracking-widest">
+                                            <Zap className="w-4 h-4 text-orange-500" />
+                                            Difficulty
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {['Easy', 'Medium', 'Hard'].map((lvl) => (
+                                                <button
+                                                    key={lvl}
+                                                    onClick={() => !isRoadmapQuiz && setDifficulty(lvl)}
+                                                    className={`flex-1 h-12 rounded-xl border text-[10px] font-black tracking-widest uppercase transition-all ${difficulty === lvl
+                                                        ? 'bg-[#5c52d2] text-white border-transparent shadow-lg'
+                                                        : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
+                                                        } ${isRoadmapQuiz ? 'cursor-default' : ''}`}
+                                                >
+                                                    {lvl}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-3 text-slate-400 text-xs font-black uppercase tracking-widest">
+                                            <HelpCircle className="w-4 h-4 text-purple-500" />
+                                            Questions
+                                        </div>
+                                        <select
+                                            value={numQuestions}
+                                            onChange={(e) => setNumQuestions(e.target.value)}
+                                            className="w-full h-12 px-6 rounded-xl border border-slate-100 bg-slate-50/50 font-black text-xs uppercase tracking-widest focus:bg-white transition-all appearance-none cursor-pointer"
+                                        >
+                                            <option value="5">5 Questions</option>
+                                            <option value="10">10 Questions</option>
+                                            <option value="15">15 Questions</option>
+                                            <option value="20">20 Questions</option>
+                                            <option value="30">30 Questions</option>
+                                        </select>
+                                    </div>
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row gap-4 justify-center pt-10">
-                                    {isRoadmapQuiz ? (
-                                        <>
-                                            <Button
-                                                onClick={() => { checkCooldown(); setStep('setup'); }}
-                                                variant="outline"
-                                                className="h-14 px-10 rounded-2xl border-slate-100 font-black text-slate-600 hover:bg-slate-50"
-                                            >
-                                                Retry Quiz
-                                            </Button>
-                                            <Button
-                                                onClick={() => window.location.href = '/career'}
-                                                className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-black shadow-xl hover:bg-black transition-all gap-2"
-                                            >
-                                                Back to Roadmap <ArrowRight className="w-5 h-5" />
-                                            </Button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Button
-                                                onClick={() => { checkCooldown(); setStep('setup'); }}
-                                                variant="outline"
-                                                className="h-14 px-10 rounded-2xl border-slate-100 font-black text-slate-600 hover:bg-slate-50"
-                                            >
-                                                Try Another Quiz
-                                            </Button>
-                                            <Button
-                                                onClick={() => window.location.href = '/dashboard'}
-                                                className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-black shadow-xl hover:bg-black transition-all gap-2"
-                                            >
-                                                Back to Dashboard <ArrowRight className="w-5 h-5" />
-                                            </Button>
-                                        </>
-                                    )}
+                                {/* ── Proctored Exam Badge ── */}
+                                <div className="flex items-center justify-center gap-2 py-2">
+                                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                                        Proctored Exam Mode
+                                    </span>
                                 </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </main>
-            {/* ═══════════════════════════════════════════════════════════ */}
-            {/* EXAM MODE OVERLAYS (Popups) — rendered on top of everything */}
-            {/* ═══════════════════════════════════════════════════════════ */}
+
+                                <Button
+                                    onClick={handleStartClick}
+                                    disabled={isLoading || isLocked || isInCooldown || checkingEligibility}
+                                    className="w-full h-16 rounded-2xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black text-lg shadow-2xl shadow-purple-200 hover:scale-[1.02] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                >
+                                    {checkingEligibility ? (
+                                        <span className="flex items-center gap-2">
+                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Checking eligibility...
+                                        </span>
+                                    ) : isLocked ? (
+                                        <span className="flex items-center gap-2">
+                                            <Lock className="w-5 h-5" />
+                                            Locked — {formatTime(lockRemainingSeconds)}
+                                        </span>
+                                    ) : isInCooldown ? (
+                                        <span className="flex items-center gap-2">
+                                            <Clock className="w-5 h-5" />
+                                            Cooldown — {formatTime(cooldownRemainingSeconds)}
+                                        </span>
+                                    ) : isLoading ? (
+                                        <span className="flex items-center gap-2">
+                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Generating {numQuestions} Questions...
+                                        </span>
+                                    ) : (
+                                        isRoadmapQuiz ? `Start ${roadmapSkillName} Assessment` : `Start ${topic} Assessment`
+                                    )}
+                                </Button>
+                            </Card>
+                        </motion.div>
+                    )}
+
+                    {step === 'results' && (
+                        <motion.div
+                            key="results"
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="text-center space-y-12 py-10"
+                        >
+                            <div className="relative w-48 h-48 mx-auto">
+                                <div className="absolute inset-0 bg-purple-100 rounded-full blur-3xl opacity-50" />
+                                <div className="relative w-full h-full bg-white rounded-full flex items-center justify-center shadow-2xl border-4 border-white">
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-6xl font-[900] text-[#5c52d2] tracking-tighter">
+                                            {scorePercent}%
+                                        </span>
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mt-1">Score Captured</span>
+                                    </div>
+                                </div>
+                                <div className="absolute -top-4 -right-4 w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center text-white shadow-lg rotate-12">
+                                    <Trophy className="w-6 h-6" />
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h1 className="text-4xl font-[900] text-slate-900 tracking-tight">
+                                    {score === quizQuestions.length ? 'Perfect Score! 🥳' : score > quizQuestions.length / 2 ? 'Great Job! 👏' : 'Keep Practicing! 💪'}
+                                </h1>
+                                <p className="text-slate-500 text-lg font-medium">
+                                    You answered {score} out of {quizQuestions.length} questions correctly in {isRoadmapQuiz ? roadmapSkillName : topic}.
+                                </p>
+                            </div>
+
+                            {/* Roadmap Quiz Result Banner */}
+                            {isRoadmapQuiz && quizResult && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className={`max-w-xl mx-auto p-6 rounded-[2rem] border-2 ${quizResult.passed
+                                        ? 'bg-emerald-50 border-emerald-200'
+                                        : 'bg-rose-50 border-rose-200'
+                                        }`}
+                                >
+                                    <div className="flex items-center justify-center gap-3 mb-3">
+                                        {quizResult.passed
+                                            ? <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                                            : <Target className="w-6 h-6 text-rose-500" />
+                                        }
+                                        <span className={`text-lg font-black ${quizResult.passed ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                            {quizResult.passed ? '🎉 Skill Mastered! Roadmap Progressed.' : `Need ${passThreshold}% to pass. Try again!`}
+                                        </span>
+                                    </div>
+                                    {quizResult.passed && quizResult.skill_unlocked && (
+                                        <p className="text-sm font-bold text-emerald-600">Next skill in your roadmap has been unlocked!</p>
+                                    )}
+                                </motion.div>
+                            )}
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 max-w-2xl mx-auto pt-8">
+                                <Card className="p-8 border-none bg-blue-50/90 backdrop-blur-sm rounded-3xl space-y-2 shadow-lg">
+                                    <Target className="w-6 h-6 text-blue-500 mx-auto" />
+                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Accuracy</p>
+                                    <p className="text-2xl font-black text-blue-600">{scorePercent}%</p>
+                                </Card>
+                                <Card className="p-8 border-none bg-green-50/90 backdrop-blur-sm rounded-3xl space-y-2 shadow-lg">
+                                    <Zap className="w-6 h-6 text-green-500 mx-auto" />
+                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Level</p>
+                                    <p className="text-2xl font-black text-green-600">{isRoadmapQuiz ? roadmapLevel : difficulty}</p>
+                                </Card>
+                                <Card className="p-8 border-none bg-purple-50/90 backdrop-blur-sm rounded-3xl space-y-2 shadow-lg">
+                                    <CheckCircle2 className="w-6 h-6 text-purple-500 mx-auto" />
+                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Correct</p>
+                                    <p className="text-2xl font-black text-purple-600">{score}/{quizQuestions.length}</p>
+                                </Card>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-10">
+                                {isRoadmapQuiz ? (
+                                    <>
+                                        <Button
+                                            onClick={() => { checkCooldown(); setStep('setup'); }}
+                                            variant="outline"
+                                            className="h-14 px-10 rounded-2xl border-slate-100 font-black text-slate-600 hover:bg-slate-50"
+                                        >
+                                            Retry Quiz
+                                        </Button>
+                                        <Button
+                                            onClick={() => window.location.href = '/career'}
+                                            className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-black shadow-xl hover:bg-black transition-all gap-2"
+                                        >
+                                            Back to Roadmap <ArrowRight className="w-5 h-5" />
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Button
+                                            onClick={() => { checkCooldown(); setStep('setup'); }}
+                                            variant="outline"
+                                            className="h-14 px-10 rounded-2xl border-slate-100 font-black text-slate-600 hover:bg-slate-50"
+                                        >
+                                            Try Another Quiz
+                                        </Button>
+                                        <Button
+                                            onClick={() => window.location.href = '/dashboard'}
+                                            className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-black shadow-xl hover:bg-black transition-all gap-2"
+                                        >
+                                            Back to Dashboard <ArrowRight className="w-5 h-5" />
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </main>
 
             {/* ── Exam Instructions Popup ── */}
             <AnimatePresence>
@@ -926,127 +1207,7 @@ export default function Quiz() {
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            {/* ── Fullscreen Exit Warning Popup ── */}
-            <AnimatePresence>
-                {examMode.showFullscreenWarning && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9 }}
-                            animate={{ scale: 1 }}
-                            className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
-                        >
-                            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto">
-                                <AlertTriangle className="w-10 h-10 text-red-500" />
-                            </div>
-                            <h2 className="text-xl font-[900] text-slate-900">Fullscreen Required</h2>
-                            <p className="text-sm font-medium text-slate-500">
-                                You exited exam mode. Please return to fullscreen within{' '}
-                                <span className="font-black text-red-500 text-lg">{examMode.fullscreenCountdown}</span>{' '}
-                                seconds or the exam will be terminated.
-                            </p>
-                            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                                <motion.div
-                                    initial={{ width: '100%' }}
-                                    animate={{ width: `${(examMode.fullscreenCountdown / 30) * 100}%` }}
-                                    className="h-full bg-gradient-to-r from-red-500 to-red-400 rounded-full"
-                                    transition={{ duration: 0.3 }}
-                                />
-                            </div>
-                            <Button
-                                onClick={examMode.returnToFullscreen}
-                                className="w-full h-14 rounded-xl bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white font-black shadow-lg"
-                            >
-                                <Monitor className="w-5 h-5 mr-2" />
-                                Return to Fullscreen
-                            </Button>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* ── Tab Switch Warning Popup ── */}
-            <AnimatePresence>
-                {examMode.showTabWarning && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9 }}
-                            animate={{ scale: 1 }}
-                            className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
-                        >
-                            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
-                                <Eye className="w-10 h-10 text-amber-500" />
-                            </div>
-                            <h2 className="text-xl font-[900] text-slate-900">Warning: Tab Switch Detected</h2>
-                            <p className="text-sm font-medium text-slate-500">
-                                You switched away from the exam tab. This is your{' '}
-                                <span className="font-black text-amber-600">first warning</span>.
-                                Another tab switch will <span className="font-black text-red-500">terminate the exam immediately</span>.
-                            </p>
-                            <Button
-                                onClick={examMode.dismissTabWarning}
-                                className="w-full h-14 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-white font-black shadow-lg"
-                            >
-                                I Understand — Continue Exam
-                            </Button>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* ── Exam Terminated Popup ── */}
-            <AnimatePresence>
-                {examMode.isTerminated && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9 }}
-                            animate={{ scale: 1 }}
-                            className="bg-white rounded-[2rem] max-w-md w-full p-8 text-center space-y-6 shadow-2xl"
-                        >
-                            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto">
-                                <XCircle className="w-10 h-10 text-red-500" />
-                            </div>
-                            <h2 className="text-2xl font-[900] text-red-600">Exam Terminated</h2>
-                            <p className="text-sm font-medium text-slate-500">
-                                You exited exam mode or violated exam rules.
-                            </p>
-                            <p className="text-xs font-bold text-slate-400">
-                                Please follow the instructions carefully before attempting again.
-                            </p>
-                            <div className="flex flex-col gap-3 pt-2">
-                                <Button
-                                    onClick={handleRetryAfterTermination}
-                                    variant="outline"
-                                    className="w-full h-12 rounded-xl font-black text-slate-600"
-                                >
-                                    Try Again
-                                </Button>
-                                <Button
-                                    onClick={handleBackToLearningPath}
-                                    className="w-full h-12 rounded-xl bg-slate-900 text-white font-black"
-                                >
-                                    Back to {isRoadmapQuiz ? 'Roadmap' : 'Dashboard'}
-                                </Button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
         </div>
+        </AppLayout>
     );
 }

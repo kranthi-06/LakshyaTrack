@@ -163,7 +163,7 @@ function App() {
             <Route path="/evaluate" element={<ProtectedPage><Evaluate /></ProtectedPage>} />
             <Route path="/career" element={<ProtectedPage><CareerIntelligence /></ProtectedPage>} />
             <Route path="/learning" element={<ProtectedPage><LearningHub /></ProtectedPage>} />
-            <Route path="/quiz" element={<ProtectedPage><Quiz /></ProtectedPage>} />
+            <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
             <Route path="/interview" element={<ProtectedPage><Interview /></ProtectedPage>} />
             <Route path="/jobs" element={<ProtectedPage><Jobs /></ProtectedPage>} />
             <Route path="/progress" element={<ProtectedPage><Progress /></ProtectedPage>} />
