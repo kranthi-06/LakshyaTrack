@@ -9,7 +9,8 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from app.api.deps import get_current_user_optional, require_admin
+from app.api import deps
+from app.api.deps import get_current_active_user, get_current_user_optional, require_admin
 from app.models.user import User
 
 from app.services.reasoning_service import (
@@ -285,7 +286,7 @@ async def submit_test(
 ):
     """Submit a completed test and save results."""
     test_id = save_test_result(
-        user_id=str(current_user.id) if current_user else request.user_id,
+        user_id=str(current_user.id) if current_user else "anonymous",
         test_type=request.test_type,
         topic_or_company=request.category,
         score=request.score,
@@ -310,7 +311,7 @@ async def submit_answer(
 ):
     """Record a single answer for progress tracking."""
     record_user_answer(
-        user_id=str(current_user.id) if current_user else request.user_id,
+        user_id=str(current_user.id) if current_user else "anonymous",
         question_id=request.question_id,
         topic=request.topic,
         is_correct=request.is_correct,
@@ -319,8 +320,13 @@ async def submit_answer(
 
 
 @router.get("/progress/{user_id}")
-async def user_progress(user_id: str):
+async def user_progress(
+    user_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
     """Get user's topic-wise progress and accuracy."""
+    if user_id != str(current_user.id) and deps._resolve_user_role(current_user) not in {"admin", "black_admin"}:
+        raise HTTPException(status_code=403, detail="Not authorized to view this user's progress")
     progress = get_user_progress(user_id)
     return {"user_id": user_id, "progress": progress}
 

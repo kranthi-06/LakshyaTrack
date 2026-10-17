@@ -62,7 +62,6 @@ export default function PremiumGate({
             // Create checkout
             const checkoutResult = await checkout(microPlan.id, 'micro');
 
-            // Demo mode: immediately verify
             const result = await verifyPayment(checkoutResult.transaction_id);
 
             if (result.success) {

@@ -3,12 +3,11 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.api.endpoints import saved_resumes as saved_resume_endpoints
+from app.models.user import Profile
 from app.services import cloudinary_service, document_store_service, media_service, resume_service
 
 router = APIRouter()
-
-from app.models.user import Profile
-
+MAX_RESUME_BYTES = 10 * 1024 * 1024
 
 class ResumeEditAliasRequest(saved_resume_endpoints.ResumeUpdateRequest):
     resume_id: str
@@ -28,15 +27,20 @@ async def analyze_resume(
     
     try:
         filename = file.filename or "resume.pdf"
+        filename_length = len(filename)
 
         if not filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Invalid file type. Only PDF allowed.")
         
-        content = await file.read()
+        content = await file.read(MAX_RESUME_BYTES + 1)
+        if len(content) > MAX_RESUME_BYTES:
+            raise HTTPException(status_code=413, detail="Resume file must be 10 MB or smaller.")
         if not content:
             raise HTTPException(status_code=400, detail="The uploaded file is empty.")
-            
-        logger.info(f"Processing resume: {filename} ({len(content)} bytes)")
+        if not content.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
+
+        logger.info("Processing resume upload filename_length=%s size_bytes=%s", filename_length, len(content))
 
         upload_result = await cloudinary_service.upload_media(
             filename=filename,
@@ -57,17 +61,17 @@ async def analyze_resume(
 
         try:
             text = await resume_service.extract_text_from_pdf(content)
-        except Exception as e:
-            logger.error(f"Text extraction failed: {str(e)}")
+        except Exception:
+            logger.error("Text extraction failed for uploaded PDF")
             raise HTTPException(status_code=400, detail="Failed to parse PDF content")
         
         if not text.strip():
-            logger.warning(f"No text extracted from PDF: {filename}")
+            logger.warning("No text extracted from PDF filename_length=%s size_bytes=%s", filename_length, len(content))
             raise HTTPException(status_code=400, detail="Could not extract text from PDF. It might be a scanned image or empty.")
             
-        logger.info(f"Analysis started for {filename}")
+        logger.info("Resume analysis started filename_length=%s", filename_length)
         analysis = await resume_service.analyze_resume_with_ai(text, job_description)
-        logger.info(f"Analysis completed for {filename}")
+        logger.info("Resume analysis completed filename_length=%s", filename_length)
 
         user_id = str(current_user.id) if current_user else None
         document_store_service.record_resume_analysis(
@@ -84,8 +88,8 @@ async def analyze_resume(
             source="api",
             user_id=user_id,
             details={
-                "filename": filename,
-                "cloudinary_url": upload_result.secure_url,
+                "filename_length": filename_length,
+                "file_size_bytes": len(content),
                 "job_description_provided": bool(job_description.strip()),
             },
         )
@@ -119,7 +123,7 @@ async def analyze_resume(
             status="failed",
             source="api",
             user_id=str(current_user.id) if current_user else None,
-            details={"filename": file.filename or "resume.pdf"},
+            details={"filename_length": len(file.filename or "resume.pdf")},
         )
         raise
     except cloudinary_service.CloudinaryConfigurationError as e:
@@ -129,7 +133,7 @@ async def analyze_resume(
             status="failed",
             source="api",
             user_id=str(current_user.id) if current_user else None,
-            details={"filename": file.filename or "resume.pdf", "error": str(e)},
+            details={"filename_length": len(file.filename or "resume.pdf")},
         )
         raise HTTPException(status_code=500, detail="Media storage is not configured correctly")
     except ValueError as e:
@@ -138,17 +142,17 @@ async def analyze_resume(
             status="failed",
             source="api",
             user_id=str(current_user.id) if current_user else None,
-            details={"filename": file.filename or "resume.pdf", "error": str(e)},
+            details={"filename_length": len(file.filename or "resume.pdf")},
         )
         raise HTTPException(status_code=400, detail="Invalid resume input")
     except Exception as e:
-        logger.error(f"Unexpected error during resume analysis: {str(e)}", exc_info=True)
+        logger.error("Unexpected error during resume analysis", exc_info=True)
         document_store_service.record_task_log(
             task_name="resume_analysis",
             status="failed",
             source="api",
             user_id=str(current_user.id) if current_user else None,
-            details={"filename": file.filename or "resume.pdf", "error": str(e)},
+            details={"filename_length": len(file.filename or "resume.pdf")},
         )
         raise HTTPException(status_code=500, detail="Resume analysis failed")
 
@@ -170,9 +174,10 @@ async def analyze_resume_text(
         if not text.strip():
             raise HTTPException(status_code=400, detail="Resume text is empty.")
 
-        logger.info(f"Analysis started for text from {filename}")
+        filename_length = len(filename)
+        logger.info("Analysis started for resume text filename_length=%s text_length=%s", filename_length, len(text))
         analysis = await resume_service.analyze_resume_with_ai(text, job_description)
-        logger.info(f"Analysis completed for text from {filename}")
+        logger.info("Analysis completed for resume text filename_length=%s", filename_length)
 
         # --- NEW: Extract and auto-sync skills to profile ---
         if current_user and analysis and isinstance(analysis, dict):
@@ -205,7 +210,7 @@ async def analyze_resume_text(
             source="api",
             user_id=user_id,
             details={
-                "filename": filename,
+                "filename_length": filename_length,
                 "job_description_provided": bool(job_description.strip()),
             },
         )
@@ -220,7 +225,7 @@ async def analyze_resume_text(
             status="failed",
             source="api",
             user_id=str(current_user.id) if current_user else None,
-            details={"filename": filename},
+            details={"filename_length": len(filename)},
         )
         raise
     except Exception as e:
@@ -230,7 +235,7 @@ async def analyze_resume_text(
             status="failed",
             source="api",
             user_id=str(current_user.id) if current_user else None,
-            details={"filename": filename, "error": str(e)},
+            details={"filename_length": len(filename), "error": str(e)},
         )
         raise HTTPException(status_code=500, detail="Resume text analysis failed")
 

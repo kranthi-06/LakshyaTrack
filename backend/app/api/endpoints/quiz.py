@@ -37,9 +37,15 @@ async def generate_quiz(
         )
         
         if not questions:
-            raise HTTPException(status_code=500, detail="Failed to generate questions")
+            raise HTTPException(
+                status_code=503,
+                detail="AI question generation is temporarily unavailable, please retry",
+            )
             
         return questions
     except Exception as e:
         logger.exception("Quiz generation failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="Failed to generate quiz questions")
+        raise HTTPException(
+            status_code=503,
+            detail="AI question generation is temporarily unavailable, please retry",
+        )

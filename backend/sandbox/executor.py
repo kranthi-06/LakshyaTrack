@@ -15,7 +15,7 @@ SECURITY LAYERS (inside-container):
   - setrlimit for CPU time, memory, file size, processes
   - Timeout enforcement via subprocess
   - No environment variables leaked
-  - Runs as non-root (uid=65534)
+  - Runs as non-root (uid=10001)
   - Filesystem is read-only except /tmp/code
 """
 

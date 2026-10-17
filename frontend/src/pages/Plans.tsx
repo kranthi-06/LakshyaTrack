@@ -120,6 +120,7 @@ export default function Plans() {
     const [couponResult, setCouponResult] = useState<{ valid: boolean; discount: number; final_amount: number; message: string } | null>(null);
     const [processing, setProcessing] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [checkoutError, setCheckoutError] = useState('');
     const [showComparison, setShowComparison] = useState(false);
     const [limitPopup, setLimitPopup] = useState<{
         isOpen: boolean;
@@ -215,6 +216,7 @@ export default function Plans() {
     const handleCheckout = async () => {
         if (!selectedPlan) return;
         setProcessing(true);
+        setCheckoutError('');
 
         try {
             const checkoutResult = await checkout(
@@ -223,7 +225,6 @@ export default function Plans() {
                 couponResult?.valid ? couponCode : undefined,
             );
 
-            // Demo mode: verify immediately
             const result = await verifyPayment(checkoutResult.transaction_id);
 
             if (result.success) {
@@ -232,9 +233,11 @@ export default function Plans() {
                 setTimeout(() => {
                     navigate('/dashboard');
                 }, 2000);
+            } else {
+                setCheckoutError(result.message || 'Payment verification is unavailable. Please try again later.');
             }
         } catch (err: any) {
-            console.error('Checkout failed:', err);
+            setCheckoutError(err?.response?.data?.detail || 'Payment verification is unavailable. Please try again later.');
         } finally {
             setProcessing(false);
         }
@@ -889,6 +892,12 @@ export default function Plans() {
                                             )}
                                         </div>
 
+                                        {checkoutError && (
+                                            <p role="alert" className="text-sm font-medium text-red-500">
+                                                {checkoutError}
+                                            </p>
+                                        )}
+
                                         {/* Pay button */}
                                         <button
                                             onClick={handleCheckout}
@@ -909,7 +918,7 @@ export default function Plans() {
                                         </button>
 
                                         <p className="text-[11px] text-center text-slate-400 font-medium">
-                                            Demo mode: Payment is processed instantly
+                                            Payment verification is not configured yet.
                                         </p>
                                     </div>
                                 </>

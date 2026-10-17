@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.plan_limits import (
     CORE_FEATURE_FLAGS,
     PLAN_LIMITS,
@@ -592,6 +593,12 @@ def verify_payment_and_activate(
     Verify payment and activate the subscription/micro purchase.
     In demo mode, this immediately marks the transaction as successful.
     """
+    if settings.APP_ENV.lower() == "production" or not settings.PAYMENTS_DEMO_MODE:
+        return {
+            "success": False,
+            "message": "Online payment verification is not configured yet.",
+        }
+
     txn = (
         db.query(PaymentTransaction)
         .filter(

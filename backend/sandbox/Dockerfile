@@ -3,7 +3,7 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #
 # SECURITY PROPERTIES:
-#   - Runs as non-root (uid=65534)
+#   - Runs as non-root (uid=10001)
 #   - Read-only root filesystem (mounted at runtime)
 #   - No network access (--network=none at runtime)
 #   - All capabilities dropped (--cap-drop=ALL at runtime)
@@ -22,8 +22,8 @@ RUN apt-get update && \
     rm -rf /var/cache/apt /etc/apt/sources.list*
 
 # Create non-root sandbox user with no login shell and no home directory
-RUN groupadd -g 65534 sandbox && \
-    useradd -u 65534 -g sandbox -M -d /nonexistent -s /usr/sbin/nologin sandbox
+RUN groupadd -g 10001 sandbox && \
+    useradd -u 10001 -g sandbox -M -d /nonexistent -s /usr/sbin/nologin sandbox
 
 # Create working directories
 RUN mkdir -p /sandbox /tmp/code && \

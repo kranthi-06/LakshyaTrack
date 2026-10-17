@@ -237,7 +237,7 @@ class AIService:
                 json.dumps(cache_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
             ).hexdigest()
             cached = document_store_service.get_ai_cache(cache_key)
-            if cached and "response" in cached:
+            if cached and "response" in cached and cached.get("provider") != "mock":
                 logger.info("AI cache hit")
                 return str(cached["response"])
         except Exception:
@@ -363,6 +363,8 @@ class AIService:
                 logger.info("OpenAI circuit breaker OPEN — skipping")
 
         # ── 4. Mock Intelligence (Emergency Fallback) ──────────
+        if "quiz" in (system_prompt or "").lower():
+            raise RuntimeError("AI question generation is temporarily unavailable, please retry")
         logger.warning("ALL AI providers failed. Using Mock Intelligence fallback.")
         health_metrics.record_request("ai_mock", 0, success=True)
         mock_response = await self._generate_mock_response(messages, system_prompt)

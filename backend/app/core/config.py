@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     # - development: permissive defaults for local runs
     # - production: require explicit env vars for secrets/DB
     APP_ENV: str = "development"
+    SANDBOX_ALLOW_UNSAFE_FALLBACK: bool = False
+    PAYMENTS_DEMO_MODE: bool = False
     
     # Database
     # Set DATABASE_URL via environment variable or .env file.

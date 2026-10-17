@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, require_admin, require_black_admin
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.subscription import (
     Coupon, MicroPlan, PaymentTransaction, SubscriptionPlan,
@@ -196,6 +197,12 @@ def verify_payment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Verify payment and activate subscription/micro purchase."""
+    if settings.APP_ENV.lower() == "production" or not settings.PAYMENTS_DEMO_MODE:
+        raise HTTPException(
+            status_code=503,
+            detail="Online payment verification is not configured yet.",
+        )
+
     result = verify_payment_and_activate(
         db=db,
         transaction_id=request.transaction_id,

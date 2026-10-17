@@ -20,7 +20,7 @@ SECURITY ENFORCEMENT (per container):
   │  --cpus=1.0              Max 1 CPU core           │
   │  --pids-limit=64         Max 64 processes         │
   │  --tmpfs /tmp/code:...   Writable tmpfs (10MB)    │
-  │  --user=65534:65534      Non-root execution       │
+  │  --user=10001:10001      Non-root execution       │
   │  auto_remove=True        Destroyed after run      │
   └─────────────────────────────────────────────────┘
 """
@@ -30,6 +30,8 @@ import logging
 import os
 import time
 from typing import Dict, Any, Optional
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,7 @@ class SandboxController:
             logger.info("Docker daemon connected successfully")
         except Exception as e:
             self._docker_available = False
-            logger.warning(f"Docker not available: {e}. Sandbox will use fallback mode.")
+            logger.warning("Docker is not available; secure sandbox execution is unavailable.")
 
         return self._docker_available
 
@@ -151,12 +153,12 @@ class SandboxController:
             Dict with keys: stdout, stderr, exit_code, runtime_ms, timed_out, error
         """
         if not self.docker_available:
-            return self._fallback_execute(code, language, test_input, timeout)
+            return self._fallback_or_unavailable(code, language, test_input, timeout)
 
         try:
             self.ensure_image()
         except SandboxError:
-            return self._fallback_execute(code, language, test_input, timeout)
+            return self._fallback_or_unavailable(code, language, test_input, timeout)
 
         # Build the JSON payload to send via stdin
         payload = json.dumps({
@@ -180,11 +182,11 @@ class SandboxController:
                 # ── Security: Filesystem ──
                 read_only=True,
                 tmpfs={
-                    '/tmp/code': f'size={TMPFS_SIZE},noexec=off,nodev,nosuid,uid=65534,gid=65534',
+                    '/tmp/code': f'size={TMPFS_SIZE},noexec,nodev,nosuid,uid=10001,gid=10001',
                 },
 
                 # ── Security: User ──
-                user="65534:65534",
+                user="10001:10001",
 
                 # ── Security: Capabilities ──
                 cap_drop=["ALL"],
@@ -206,9 +208,11 @@ class SandboxController:
 
             # Send the payload via stdin
             sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
-            sock._sock.sendall(payload.encode('utf-8'))
-            sock._sock.shutdown(1)  # Close write end (EOF)
-            sock.close()
+            raw_socket = getattr(sock, "_sock", sock)
+            raw_socket.sendall(payload.encode('utf-8'))
+            raw_socket.shutdown(1)  # Close write end (EOF)
+            if raw_socket is not sock:
+                sock.close()
 
             # Wait for container to finish
             try:
@@ -276,6 +280,34 @@ class SandboxController:
                 'timed_out': False,
                 'error': f'Sandbox error: {str(e)}',
             }
+
+    def _fallback_or_unavailable(
+        self,
+        code: str,
+        language: str,
+        test_input: str,
+        timeout: float,
+    ) -> Dict[str, Any]:
+        if settings.APP_ENV.lower() == "production":
+            if settings.SANDBOX_ALLOW_UNSAFE_FALLBACK:
+                logger.warning("Ignoring SANDBOX_ALLOW_UNSAFE_FALLBACK in production.")
+            allow_fallback = False
+        else:
+            allow_fallback = settings.SANDBOX_ALLOW_UNSAFE_FALLBACK
+
+        if allow_fallback:
+            logger.warning("Executing code without container isolation in explicitly enabled demo mode.")
+            return self._fallback_execute(code, language, test_input, timeout)
+
+        message = "Secure code execution is temporarily unavailable"
+        return {
+            "stdout": "",
+            "stderr": message,
+            "exit_code": -1,
+            "runtime_ms": 0,
+            "timed_out": False,
+            "error": message,
+        }
 
     def _fallback_execute(
         self,

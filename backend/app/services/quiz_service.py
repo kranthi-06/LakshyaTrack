@@ -34,8 +34,6 @@ async def generate_quiz(topic: str, difficulty: str, count: int):
             
         return valid_questions
     except json.JSONDecodeError:
-        print(f"Failed to parse quiz JSON: {response}")
-        return []
+        raise RuntimeError("AI question generation is temporarily unavailable, please retry")
     except Exception as e:
-        print(f"Quiz Generation Error: {e}")
-        return []
+        raise RuntimeError("AI question generation is temporarily unavailable, please retry") from e
