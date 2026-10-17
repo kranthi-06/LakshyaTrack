@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Database
     # Set DATABASE_URL via environment variable or .env file.
     # For local development, defaults to SQLite. In production, must be PostgreSQL.
-    DATABASE_URL: str = "sqlite:///./local.db"
+    DATABASE_URL: str = "sqlite:///./sql_app.db"
     MONGODB_URI: str = ""
     MONGODB_DB_NAME: str = "ai_career_platform"
     

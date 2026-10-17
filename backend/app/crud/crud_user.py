@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from sqlalchemy.orm import Session, joinedload
 
@@ -14,14 +14,36 @@ def normalize_email(email: Optional[str]) -> Optional[str]:
     return normalized or None
 
 
-def get_user(db: Session, user_id: UUID):
-    """Fetch user by ID with profile eager-loaded (avoids N+1 on /users/me)."""
-    return (
-        db.query(User)
-        .options(joinedload(User.profile))
-        .filter(User.id == user_id)
-        .first()
-    )
+def get_user(db: Session, user_id: Union[UUID, int, str]):
+    """Fetch user by ID with profile eager-loaded (avoids N+1 on /users/me).
+
+    Supports both UUID (PostgreSQL) and Integer (SQLite) IDs.
+    """
+    # Try to convert to int first (SQLite), then UUID (PostgreSQL)
+    try:
+        int_id = int(user_id)
+        return (
+            db.query(User)
+            .options(joinedload(User.profile))
+            .filter(User.id == int_id)
+            .first()
+        )
+    except (ValueError, TypeError):
+        pass
+
+    # Try UUID
+    try:
+        uuid_id = UUID(str(user_id))
+        return (
+            db.query(User)
+            .options(joinedload(User.profile))
+            .filter(User.id == uuid_id)
+            .first()
+        )
+    except (ValueError, TypeError):
+        pass
+
+    return None
 
 def get_user_by_email(db: Session, email: str):
     """Fetch user by email with profile eager-loaded.

@@ -253,12 +253,8 @@ def get_current_user(
 
     user = None
     try:
-        import uuid
-
-        uuid_obj = uuid.UUID(str(user_id))
-        user = crud_user.get_user(db, user_id=uuid_obj)
-    except (ValueError, TypeError):
-        pass
+        # Use the updated get_user that handles both UUID and Integer
+        user = crud_user.get_user(db, user_id)
     except Exception:
         pass
 

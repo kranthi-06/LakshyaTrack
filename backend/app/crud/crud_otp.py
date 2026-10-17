@@ -8,6 +8,8 @@ def create_otp(db: Session, email: str, otp_code: str, expires_at: datetime, use
     # Ideally, we should maybe mark old ones as used or expired.
     # For now, let's just create a new record.
     hashed_otp = get_password_hash(otp_code)
+
+    # SQLite compatibility: don't pass id for auto-increment
     db_otp = OTP(
         email=email,
         hashed_otp=hashed_otp,

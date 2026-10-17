@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from uuid import uuid4
 
 from app.api.endpoints import auth, users
 
@@ -8,7 +7,7 @@ from app.api.endpoints import auth, users
 def _build_user_fixture():
     now = datetime(2026, 3, 27, 12, 0, 0, tzinfo=timezone.utc)
     return SimpleNamespace(
-        id=uuid4(),
+        id="1",  # Use string/integer instead of UUID for SQLite compatibility
         email="user@example.com",
         login_type="custom",
         is_active=True,

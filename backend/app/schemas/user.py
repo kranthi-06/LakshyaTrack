@@ -1,13 +1,14 @@
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr, UUID4
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime
+from uuid import UUID
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 class TokenData(BaseModel):
-    id: Optional[UUID4] = None
+    id: Optional[Union[str, int]] = None  # Support both UUID (PostgreSQL) and Integer (SQLite)
 
 class ProfileBase(BaseModel):
     full_name: Optional[str] = None
@@ -29,13 +30,13 @@ class ProfileUpdate(ProfileBase):
     pass
 
 class Profile(ProfileBase):
-    id: UUID4
+    id: Union[str, int]  # Support both UUID (PostgreSQL) and Integer (SQLite)
     role: Optional[str] = 'user'
     is_blacklisted: Optional[bool] = False
     last_active_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime]
-    
+
     class Config:
         from_attributes = True
 
@@ -53,7 +54,7 @@ class UserUpdate(UserBase):
     password: Optional[str] = None
 
 class UserInDBBase(UserBase):
-    id: Optional[UUID4] = None
+    id: Union[str, int, None] = None  # Support both UUID (PostgreSQL) and Integer (SQLite)
     role: Optional[str] = 'user'
     is_blacklisted: Optional[bool] = False
     last_active_at: Optional[datetime] = None
@@ -76,7 +77,7 @@ class UserInDB(UserInDBBase):
 
 # ── Admin Schemas ──────────────────────────────────────────
 class AdminUserView(BaseModel):
-    id: UUID4
+    id: Union[str, int]  # Support both UUID (PostgreSQL) and Integer (SQLite)
     email: str
     role: str
     is_active: bool
@@ -84,7 +85,7 @@ class AdminUserView(BaseModel):
     last_active_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     profile: Optional[Profile] = None
-    
+
     class Config:
         from_attributes = True
 
@@ -105,11 +106,11 @@ class DeleteUserRequest(BaseModel):
     user_id: str
 
 class BlacklistRecord(BaseModel):
-    user_id: UUID4
+    user_id: Union[str, int]  # Support both UUID (PostgreSQL) and Integer (SQLite)
     email: str
     reason: Optional[str] = None
     blacklisted_at: Optional[datetime] = None
-    blacklisted_by: Optional[UUID4] = None
-    
+    blacklisted_by: Optional[Union[str, int]] = None
+
     class Config:
         from_attributes = True
