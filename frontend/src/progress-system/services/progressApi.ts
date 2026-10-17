@@ -469,7 +469,7 @@ function normalizeBadges(raw: Partial<BadgeSystemData> | Record<string, unknown>
 
   return {
     badges,
-    totalUnlocked: asNumber((raw as any)?.totalUnlocked ?? (raw as any)?.total_unlocked, badges.filter((badge) => badge.isUnlocked).length),
+    totalUnlocked: asNumber((raw as any)?.totalUnlocked ?? (raw as any)?.total_unlocked, badges.filter((badge: Badge) => badge.isUnlocked).length),
     totalBadges: asNumber((raw as any)?.totalBadges ?? (raw as any)?.total_badges, badges.length),
     recentlyUnlocked: recentlyUnlockedRaw.map((entry: any, index: number) => normalizeBadge(entry, index)),
     nextToUnlock: nextToUnlockRaw ? normalizeBadge(nextToUnlockRaw, 0) : null,
@@ -541,7 +541,7 @@ async function apiGet<T>(path: string, cacheKey: string, ttl = DEFAULT_TTL, forc
 
 // ── Full Dashboard (single aggregated call) ──────────────────
 
-export async function fetchDashboard(forceRefresh = false, fallbackToMock = true): Promise<ProgressDashboardData> {
+export async function fetchDashboard(forceRefresh = false, fallbackToMock = false): Promise<ProgressDashboardData> {
   if (!forceRefresh) {
     const cached = getCached<ProgressDashboardData>('dashboard');
     if (cached) return cached;
@@ -572,7 +572,7 @@ export async function fetchDashboard(forceRefresh = false, fallbackToMock = true
 export async function fetchContributions(
   year?: number,
   forceRefresh = false,
-  fallbackToMock = true,
+  fallbackToMock = false,
 ): Promise<ContributionData> {
   const y = year || new Date().getFullYear();
   try {
@@ -587,7 +587,7 @@ export async function fetchContributions(
   }
 }
 
-export async function fetchProblemStats(forceRefresh = false, fallbackToMock = true): Promise<ProblemSolvingStats> {
+export async function fetchProblemStats(forceRefresh = false, fallbackToMock = false): Promise<ProblemSolvingStats> {
   try {
     return normalizeProblemStats(await apiGet('/problems', 'problems', 5 * 60 * 1000, forceRefresh));
   } catch {
@@ -598,7 +598,7 @@ export async function fetchProblemStats(forceRefresh = false, fallbackToMock = t
   }
 }
 
-export async function fetchActivity(forceRefresh = false, fallbackToMock = true): Promise<ActivitySummary> {
+export async function fetchActivity(forceRefresh = false, fallbackToMock = false): Promise<ActivitySummary> {
   try {
     return normalizeActivitySummary(await apiGet('/activity', 'activity', 5 * 60 * 1000, forceRefresh));
   } catch {
@@ -609,7 +609,7 @@ export async function fetchActivity(forceRefresh = false, fallbackToMock = true)
   }
 }
 
-export async function fetchTimeAnalytics(forceRefresh = false, fallbackToMock = true): Promise<TimeAnalyticsData> {
+export async function fetchTimeAnalytics(forceRefresh = false, fallbackToMock = false): Promise<TimeAnalyticsData> {
   try {
     return normalizeTimeAnalytics(
       await apiGet('/time-analytics', 'time-analytics', 5 * 60 * 1000, forceRefresh),
@@ -622,7 +622,7 @@ export async function fetchTimeAnalytics(forceRefresh = false, fallbackToMock = 
   }
 }
 
-export async function fetchTopicMap(forceRefresh = false, fallbackToMock = true): Promise<TopicMapData> {
+export async function fetchTopicMap(forceRefresh = false, fallbackToMock = false): Promise<TopicMapData> {
   try {
     return normalizeTopicMap(await apiGet('/topics', 'topics', 10 * 60 * 1000, forceRefresh));
   } catch {
@@ -633,7 +633,7 @@ export async function fetchTopicMap(forceRefresh = false, fallbackToMock = true)
   }
 }
 
-export async function fetchStreak(forceRefresh = false, fallbackToMock = true): Promise<StreakData> {
+export async function fetchStreak(forceRefresh = false, fallbackToMock = false): Promise<StreakData> {
   try {
     return normalizeStreak(await apiGet('/streak', 'streak', 60 * 1000, forceRefresh));
   } catch {
@@ -650,11 +650,11 @@ export async function touchStreak(): Promise<StreakData> {
     invalidateCache('streak');
     return data;
   } catch {
-    return generateStreakData();
+    throw new Error('Failed to update streak');
   }
 }
 
-export async function fetchBadges(forceRefresh = false, fallbackToMock = true): Promise<BadgeSystemData> {
+export async function fetchBadges(forceRefresh = false, fallbackToMock = false): Promise<BadgeSystemData> {
   try {
     return normalizeBadges(await apiGet('/badges', 'badges', 10 * 60 * 1000, forceRefresh));
   } catch {
@@ -665,7 +665,7 @@ export async function fetchBadges(forceRefresh = false, fallbackToMock = true): 
   }
 }
 
-export async function fetchIntelligence(forceRefresh = false, fallbackToMock = true): Promise<IntelligenceData> {
+export async function fetchIntelligence(forceRefresh = false, fallbackToMock = false): Promise<IntelligenceData> {
   try {
     return normalizeIntelligence(await apiGet('/intelligence', 'intelligence', 10 * 60 * 1000, forceRefresh));
   } catch {

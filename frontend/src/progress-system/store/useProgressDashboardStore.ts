@@ -14,8 +14,6 @@ import {
   fetchStreak,
   fetchTimeAnalytics,
   fetchTopicMap,
-  getProgressDashboardData,
-  prefetchDashboard,
   subscribeToProgressUpdates,
   type ProgressStreamMessage,
   type OptimisticPatch,
@@ -67,6 +65,7 @@ interface ProgressDashboardStoreState {
   isRefreshing: boolean;
   isLive: boolean;
   isOnline: boolean;
+  error: string | null;
   hasHydrated: boolean;
   loadedSections: LoadedSectionsState;
   selectedContributionYear: number;
@@ -115,6 +114,64 @@ const isEqualValue = (left: unknown, right: unknown): boolean => JSON.stringify(
 
 function getCurrentYear(): number {
   return new Date().getFullYear();
+}
+
+function createEmptyDashboardData(): ProgressDashboardData {
+  return {
+    contributions: { contributions: [], totalContributions: 0, longestStreak: 0, currentStreak: 0, year: getCurrentYear() },
+    problemSolving: {
+      totalSolved: 0,
+      totalAvailable: 0,
+      acceptanceRate: 0,
+      totalSubmissions: 0,
+      difficulty: {
+        easy: { solved: 0, total: 0 },
+        medium: { solved: 0, total: 0 },
+        hard: { solved: 0, total: 0 },
+      },
+      recentSubmissions: [],
+    },
+    activity: {
+      totalSessions: 0,
+      avgSessionDuration: 0,
+      totalActiveTime: 0,
+      totalIdleTime: 0,
+      mostVisitedPages: [],
+      mostUsedFeatures: [],
+      activeDays: 0,
+    },
+    timeAnalytics: {
+      dailyUsage: [],
+      weeklyTrends: [],
+      featureTimeSpent: [],
+      totalHoursThisWeek: 0,
+      totalHoursThisMonth: 0,
+      avgDailyMinutes: 0,
+      peakHour: 0,
+      peakDay: '',
+    },
+    topicMap: { topics: [], totalTopics: 0, strongestTopic: '', weakestTopic: '' },
+    streak: {
+      currentStreak: 0,
+      longestStreak: 0,
+      lastActiveDate: null,
+      streakHistory: [],
+      isAtRisk: false,
+      hoursUntilReset: 0,
+      totalActiveDays: 0,
+      weeklyActivity: [],
+    },
+    badges: { badges: [], totalUnlocked: 0, totalBadges: 0, recentlyUnlocked: [], nextToUnlock: null },
+    intelligence: {
+      insights: [],
+      activeHours: [],
+      consistencyScore: 0,
+      growthRate: 0,
+      predictedStreakBreak: false,
+      suggestedFocusAreas: [],
+    },
+    lastUpdated: '',
+  };
 }
 
 function isStale(lastFetchAt: number, thresholdMs = STALE_REFRESH_MS): boolean {
@@ -175,7 +232,7 @@ function mergeDashboardPatch(
     }
 
     if (isEqualValue(current[section], incomingValue)) {
-      nextData[section] = current[section];
+      nextData[section] = current[section] as never;
       continue;
     }
 
@@ -216,21 +273,29 @@ async function fetchSectionData(
   const results = await Promise.allSettled(
     requestedSections.map(async (section) => ({ section, value: await tasks[section]() })),
   );
+  if (results.some((result) => result.status === 'rejected')) {
+    useProgressDashboardStore.setState({
+      error: 'Some progress data could not be loaded. Retry to refresh it.',
+    });
+  } else {
+    useProgressDashboardStore.setState({ error: null });
+  }
 
   return results.reduce<Partial<DashboardSectionDataMap>>((patch, result) => {
     if (result.status === 'fulfilled') {
-      patch[result.value.section] = result.value.value;
+      patch[result.value.section] = result.value.value as never;
     }
     return patch;
   }, {});
 }
 
 export const useProgressDashboardStore = create<ProgressDashboardStoreState>(() => ({
-  data: initialDashboardSnapshot?.data ?? getProgressDashboardData(),
+  data: initialDashboardSnapshot?.data ?? createEmptyDashboardData(),
   isLoading: !initialDashboardSnapshot,
   isRefreshing: false,
   isLive: false,
   isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
+  error: null,
   hasHydrated: Boolean(initialDashboardSnapshot),
   loadedSections: buildLoadedSectionsState(Boolean(initialDashboardSnapshot)),
   selectedContributionYear: getCurrentYear(),
@@ -276,11 +341,12 @@ export function resetProgressDashboardStoreState(): void {
   invalidateProgressApiCache();
 
   useProgressDashboardStore.setState({
-    data: getProgressDashboardData(true),
+    data: createEmptyDashboardData(),
     isLoading: true,
     isRefreshing: false,
     isLive: false,
     isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
+    error: null,
     hasHydrated: false,
     loadedSections: buildLoadedSectionsState(false),
     selectedContributionYear: getCurrentYear(),
@@ -292,7 +358,7 @@ async function performFullRefresh(options: RefreshOptions = {}): Promise<void> {
   const state = useProgressDashboardStore.getState();
   const forceRefresh = options.forceRefresh ?? false;
   const showLoading = options.showLoading ?? !state.hasHydrated;
-  const fallbackToMock = options.fallbackToMock ?? !state.hasHydrated;
+  const fallbackToMock = options.fallbackToMock ?? false;
 
   if (fullRefreshPromise) {
     return fullRefreshPromise;
@@ -328,16 +394,12 @@ async function performFullRefresh(options: RefreshOptions = {}): Promise<void> {
         hasHydrated: true,
         loadedSections: buildLoadedSectionsState(true),
         lastFetchAt: Date.now(),
+        error: null,
       }));
     } catch {
-      if (!useProgressDashboardStore.getState().hasHydrated && fallbackToMock) {
-        useProgressDashboardStore.setState({
-          data: getProgressDashboardData(true),
-          hasHydrated: true,
-          loadedSections: buildLoadedSectionsState(true),
-          lastFetchAt: Date.now(),
-        });
-      }
+      useProgressDashboardStore.setState({
+        error: 'Unable to load progress data. Check your connection and retry.',
+      });
     } finally {
       useProgressDashboardStore.setState({
         isRefreshing: false,
@@ -423,7 +485,12 @@ async function performContributionYearRefresh(year: number): Promise<void> {
       data: mergeDashboardPatch(current.data, { contributions }),
       loadedSections: mergeLoadedSectionsState(current.loadedSections, ['contributions']),
       lastFetchAt: Date.now(),
+      error: null,
     }));
+  } catch {
+    useProgressDashboardStore.setState({
+      error: 'Contribution history could not be loaded. Retry to refresh it.',
+    });
   } finally {
     useProgressDashboardStore.setState({ isRefreshing: false });
   }
@@ -608,7 +675,7 @@ function startRuntime(): void {
     void performFullRefresh({
       showLoading: true,
       forceRefresh: false,
-      fallbackToMock: true,
+      fallbackToMock: false,
       reason: 'initial-load',
     });
   } else if (isStale(state.lastFetchAt)) {
@@ -657,7 +724,11 @@ function startRuntime(): void {
     }
 
     localEventTimer = window.setTimeout(() => {
-      scheduleSectionRefresh(sections, new Date(customEvent.detail?.timestamp ?? Date.now()).toISOString(), 0);
+      scheduleSectionRefresh(
+        sections as DashboardSection[],
+        new Date(customEvent.detail?.timestamp ?? Date.now()).toISOString(),
+        0,
+      );
     }, LOCAL_EVENT_DELAY_MS);
   }) as EventListener;
 

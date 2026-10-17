@@ -151,6 +151,7 @@ export default function ProgressUnified() {
   const isRefreshing = useProgressDashboardStore((state) => state.isRefreshing);
   const isLive = useProgressDashboardStore((state) => state.isLive);
   const isOnline = useProgressDashboardStore((state) => state.isOnline);
+  const error = useProgressDashboardStore((state) => state.error);
   const hasHydrated = useProgressDashboardStore((state) => state.hasHydrated);
   const loadedSections = useProgressDashboardStore((state) => state.loadedSections);
   const refreshDashboard = useProgressDashboardStore((state) => state.refreshDashboard);
@@ -281,6 +282,19 @@ export default function ProgressUnified() {
         <div className="col-span-12">
           <LoadingHint message={loadingHintMessage} />
         </div>
+        {error && (
+          <div className="col-span-12 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200" role="alert">
+            <span>{error} Previously loaded progress remains available.</span>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void refreshDashboard({ showLoading: false, forceRefresh: true, reason: 'retry' })}
+              disabled={isRefreshing}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
 
         <SummaryCards
           stats={summary}

@@ -12,17 +12,11 @@ import {
 } from '../ui/surfaces';
 import { SkeletonBlock, SkeletonCircle, SkeletonText } from '../ui/loading';
 import type { TopicMapData, TopicBubble } from '../types';
+import { packBubbles } from '../utils/topicBubbleLayout';
 
 interface Props {
   data: TopicMapData;
   loading?: boolean;
-}
-
-interface BubblePosition {
-  x: number;
-  y: number;
-  r: number;
-  topic: TopicBubble;
 }
 
 interface BubbleTooltipState {
@@ -45,8 +39,6 @@ const PROFICIENCY_LABELS: Record<string, string> = {
   expert: 'Expert',
 };
 
-const EDGE_PADDING = 18;
-const BUBBLE_PADDING = 12;
 const TEXT_INSET = 8;
 const surfaceCardClassName = `rounded-2xl p-5 ${surfaceClassName} ${surfaceHoverClassName}`;
 
@@ -124,75 +116,6 @@ function getBubbleLabelLayout(label: string, outerRadius: number) {
     subtitleY,
     showSubtitle,
   };
-}
-
-function packBubbles(topics: TopicBubble[], width: number, height: number): BubblePosition[] {
-  if (topics.length === 0) return [];
-
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const maxSize = Math.max(1, ...topics.map((topic) => Math.max(topic.size, 1)));
-  const minRadius = width < 700 ? 28 : 32;
-  const maxRadius = Math.min(width, height) * 0.16;
-
-  const bubbles: BubblePosition[] = topics
-    .map((topic) => {
-      const normalizedSize = Math.max(topic.size, 1) / maxSize;
-      const radius = minRadius + normalizedSize * (maxRadius - minRadius);
-      return { x: centerX, y: centerY, r: radius, topic };
-    })
-    .sort((left, right) => right.r - left.r);
-
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  bubbles.forEach((bubble, index) => {
-    if (index === 0) {
-      bubble.x = centerX;
-      bubble.y = centerY;
-      return;
-    }
-
-    const angle = index * goldenAngle;
-    const orbit = Math.sqrt(index) * (maxRadius * 0.92);
-    bubble.x = centerX + Math.cos(angle) * orbit;
-    bubble.y = centerY + Math.sin(angle) * orbit;
-  });
-
-  for (let iteration = 0; iteration < 120; iteration += 1) {
-    for (let first = 0; first < bubbles.length; first += 1) {
-      for (let second = first + 1; second < bubbles.length; second += 1) {
-        const left = bubbles[first];
-        const right = bubbles[second];
-        const dx = right.x - left.x;
-        const dy = right.y - left.y;
-        const distance = Math.hypot(dx, dy) || 0.0001;
-        const minDistance = left.r + right.r + BUBBLE_PADDING;
-
-        if (distance < minDistance) {
-          const overlap = (minDistance - distance) / 2;
-          const nx = dx / distance;
-          const ny = dy / distance;
-
-          if (first !== 0) {
-            left.x -= nx * overlap;
-            left.y -= ny * overlap;
-          }
-
-          right.x += nx * overlap;
-          right.y += ny * overlap;
-        }
-      }
-    }
-
-    bubbles.forEach((bubble, index) => {
-      const pullStrength = index === 0 ? 0.012 : 0.022;
-      bubble.x += (centerX - bubble.x) * pullStrength;
-      bubble.y += (centerY - bubble.y) * pullStrength;
-      bubble.x = clamp(bubble.x, bubble.r + EDGE_PADDING, width - bubble.r - EDGE_PADDING);
-      bubble.y = clamp(bubble.y, bubble.r + EDGE_PADDING, height - bubble.r - EDGE_PADDING);
-    });
-  }
-
-  return bubbles;
 }
 
 const TopicBubbleMap = memo(function TopicBubbleMap({ data, loading = false }: Props) {

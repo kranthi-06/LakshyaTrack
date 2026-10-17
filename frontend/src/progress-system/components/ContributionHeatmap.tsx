@@ -13,6 +13,12 @@ import {
 } from '../ui/surfaces';
 import { SkeletonBlock, SkeletonText } from '../ui/loading';
 import type { ContributionData, DailyContribution, HeatmapView } from '../types';
+import {
+  buildContributionGrid,
+  getUtcDateKey,
+  getUtcDayOfMonth,
+  getUtcMonth,
+} from '../utils/contributionGrid';
 
 interface Props {
   data: ContributionData;
@@ -46,8 +52,7 @@ const surfaceCardClassName = `rounded-2xl p-5 ${surfaceClassName} ${surfaceHover
 function weekHasMonthStart(week: (DailyContribution | null)[]): boolean {
   return week.some((cell) => {
     if (!cell) return false;
-    const dt = new Date(cell.date);
-    return dt.getDate() === 1;
+    return getUtcDayOfMonth(cell.date) === 1;
   });
 }
 
@@ -91,38 +96,19 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
   const cellRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const [view, setView] = useState<HeatmapView>('yearly');
   const [tooltip, setTooltip] = useState<{ x: number; y: number; data: DailyContribution } | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
-  const currentYear = new Date().getFullYear();
+  const currentDate = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(currentDate.getUTCMonth());
+  const currentYear = currentDate.getUTCFullYear();
   const years = [currentYear, currentYear - 1, currentYear - 2];
   const levelColors = isDark ? DARK_LEVEL_COLORS : LIGHT_LEVEL_COLORS;
   const axisLabelColor = isDark ? 'rgba(148,163,184,0.86)' : 'rgba(71,85,105,0.92)';
   const activeStroke = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.10)';
   const inactiveStroke = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.06)';
 
-  const grid = useMemo(() => {
-    const weeks: (DailyContribution | null)[][] = [];
-    let currentWeek: (DailyContribution | null)[] = [];
-
-    const firstDay = new Date(data.year, 0, 1).getDay();
-    for (let index = 0; index < firstDay; index += 1) {
-      currentWeek.push(null);
-    }
-
-    data.contributions.forEach((contribution) => {
-      currentWeek.push(contribution);
-      if (currentWeek.length === 7) {
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
-    });
-
-    if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) currentWeek.push(null);
-      weeks.push(currentWeek);
-    }
-
-    return weeks;
-  }, [data]);
+  const grid = useMemo(
+    () => buildContributionGrid(data.contributions, data.year),
+    [data.contributions, data.year],
+  );
 
   const monthLabelsByWeek = useMemo(() => {
     const labels: string[] = grid.map(() => '');
@@ -130,9 +116,8 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
     grid.forEach((week, wi) => {
       for (const cell of week) {
         if (!cell) continue;
-        const dt = new Date(cell.date);
-        if (dt.getDate() === 1) {
-          const m = dt.getMonth();
+        if (getUtcDayOfMonth(cell.date) === 1) {
+          const m = getUtcMonth(cell.date);
           if (!seen.has(m)) {
             seen.add(m);
             labels[wi] = MONTH_LABELS[m];
@@ -146,7 +131,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
 
   const monthlyGrid = useMemo(() => {
     if (view !== 'monthly') return [];
-    return data.contributions.filter((contribution) => new Date(contribution.date).getMonth() === selectedMonth);
+    return data.contributions.filter((contribution) => getUtcMonth(contribution.date) === selectedMonth);
   }, [data, view, selectedMonth]);
 
   const monthlyTotal = useMemo(
@@ -189,13 +174,13 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
   const firstDataCoord = useMemo(() => {
     for (let w = 0; w < grid.length; w += 1) {
       for (let d = 0; d < 7; d += 1) {
-        if (grid[w][d]) return [w, d] as const;
+        if (grid[w][d]) return [w, d] as [number, number];
       }
     }
-    return [0, 0] as const;
+    return [0, 0] as [number, number];
   }, [grid]);
 
-  const [tabStop, setTabStop] = useState<[number, number]>(() => firstDataCoord);
+  const [tabStop, setTabStop] = useState<[number, number]>(() => [...firstDataCoord]);
 
   useEffect(() => {
     setTabStop(firstDataCoord);
@@ -429,11 +414,12 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                                     />
                                   );
                                 }
-                                const dateLabel = new Date(cell.date).toLocaleDateString('en-US', {
+                                const dateLabel = new Date(`${getUtcDateKey(cell.date)}T00:00:00Z`).toLocaleDateString('en-US', {
                                   weekday: 'short',
                                   month: 'short',
                                   day: 'numeric',
                                   year: 'numeric',
+                                  timeZone: 'UTC',
                                 });
                                 return (
                                   <button
@@ -489,7 +475,7 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                         {day}
                       </div>
                     ))}
-                    {Array.from({ length: new Date(data.year, selectedMonth, 1).getDay() }, (_, index) => (
+                    {Array.from({ length: new Date(Date.UTC(data.year, selectedMonth, 1)).getUTCDay() }, (_, index) => (
                       <div key={`pad-${index}`} />
                     ))}
                     {monthlyGrid.map((cell, index) => (
@@ -506,14 +492,14 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                           color: cell.level > 2 ? '#f8fafc' : isDark ? '#e2e8f0' : '#334155',
                           borderColor: cell.level > 0 ? activeStroke : 'rgba(148,163,184,0.16)',
                         }}
-                        aria-label={`${new Date(cell.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, ${cell.count} activities`}
+                        aria-label={`${new Date(`${getUtcDateKey(cell.date)}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}, ${cell.count} activities`}
                         onMouseEnter={(event) => handleCellHover(event, cell)}
                         onMouseMove={(event) => handleCellHover(event, cell)}
                         onMouseLeave={handleCellLeave}
                         onFocus={(e) => handleCellFocusVisual(e, cell)}
                         onBlur={handleCellLeave}
                       >
-                        {new Date(cell.date).getDate()}
+                        {getUtcDayOfMonth(cell.date)}
                       </motion.button>
                     ))}
                   </div>
@@ -538,11 +524,12 @@ const ContributionHeatmap = memo(function ContributionHeatmap({ data, onYearChan
                       {tooltip.data.count} activit{tooltip.data.count === 1 ? 'y' : 'ies'}
                     </div>
                     <div className={`mt-0.5 ${mutedTextClassName}`}>
-                      {new Date(tooltip.data.date).toLocaleDateString('en-US', {
+                      {new Date(`${getUtcDateKey(tooltip.data.date)}T00:00:00Z`).toLocaleDateString('en-US', {
                         weekday: 'short',
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',
+                        timeZone: 'UTC',
                       })}
                     </div>
                   </motion.div>

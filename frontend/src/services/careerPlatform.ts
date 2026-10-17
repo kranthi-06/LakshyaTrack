@@ -373,6 +373,67 @@ export const recordExamViolation = async (
     return res.data;
 };
 
+type ObservedExamEvent = {
+    client_event_id: string;
+    event_type: string;
+    details: Record<string, unknown>;
+    exam_topic?: string;
+    exam_difficulty?: string;
+};
+
+const pendingExamEvents: ObservedExamEvent[] = [];
+let examEventFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let examEventFlushInProgress = false;
+
+const flushExamEvents = async () => {
+    if (examEventFlushInProgress || pendingExamEvents.length === 0 || !navigator.onLine) return;
+    examEventFlushInProgress = true;
+    const events = pendingExamEvents.splice(0, 50);
+    try {
+        await api.post('/exam/events', { events });
+    } catch {
+        pendingExamEvents.unshift(...events);
+        if (examEventFlushTimer) clearTimeout(examEventFlushTimer);
+        examEventFlushTimer = setTimeout(() => {
+            examEventFlushTimer = null;
+            void flushExamEvents();
+        }, 5000);
+    } finally {
+        examEventFlushInProgress = false;
+        if (pendingExamEvents.length > 0 && navigator.onLine && !examEventFlushTimer) {
+            examEventFlushTimer = setTimeout(() => {
+                examEventFlushTimer = null;
+                void flushExamEvents();
+            }, 250);
+        }
+    }
+};
+
+export const queueExamEvent = (
+    eventType: string,
+    details: Record<string, unknown> = {},
+    examTopic?: string,
+    examDifficulty?: string,
+) => {
+    pendingExamEvents.push({
+        client_event_id: crypto.randomUUID(),
+        event_type: eventType,
+        details,
+        exam_topic: examTopic,
+        exam_difficulty: examDifficulty,
+    });
+    if (navigator.onLine && !examEventFlushTimer) {
+        examEventFlushTimer = setTimeout(() => {
+            examEventFlushTimer = null;
+            void flushExamEvents();
+        }, 250);
+    }
+};
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => void flushExamEvents());
+}
+
 export const checkExamEligibility = async () => {
     const res = await api.get('/exam/check-eligibility');
     return res.data;
