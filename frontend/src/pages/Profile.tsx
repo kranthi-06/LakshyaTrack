@@ -334,9 +334,7 @@ export default function Profile() {
         try {
             await authorizeResumeDownload(resume.id);
             await refreshUsage();
-
-            const name = resume.resume_name.replace(/\s+/g, '_') || 'resume';
-            await exportToPDF(`resume-preview-${resume.id}`, `${name}.pdf`);
+            await exportToPDF(`resume-preview-${resume.id}`);
         } catch (error) {
             const limitInfo = extractLimitExceededError(error);
             if (limitInfo) {

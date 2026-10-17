@@ -419,7 +419,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             subscription.unsubscribe();
         };
-    }, [clearSessionCaches, fetchCurrentUser, markAuthReady, navigate, setStoreLoading, updateUser, warmDashboardTransition]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [clearSessionCaches, fetchCurrentUser, markAuthReady, navigate, setStoreLoading, updateUser, warmDashboardTransition]);  
 
     useEffect(() => {
         // Optional fast hydration: seed user from cache while revalidating with backend.

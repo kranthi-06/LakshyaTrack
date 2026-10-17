@@ -11,7 +11,7 @@ import { saveAs } from 'file-saver';
  *   • Correct colors and layouts
  *   • No dependency on html2canvas (which can't handle all CSS)
  */
-export async function exportToPDF(elementId: string, _filename: string = 'resume.pdf'): Promise<void> {
+export async function exportToPDF(elementId: string): Promise<void> {
     const source = document.getElementById(elementId);
     if (!source) throw new Error('Resume preview element not found');
 

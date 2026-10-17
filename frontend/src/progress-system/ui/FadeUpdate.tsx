@@ -29,19 +29,23 @@ function FadeUpdateInner({
     if (prevKeyRef.current === updateKey) return;
     prevKeyRef.current = updateKey;
 
-    // Fade out slightly, then fade back in
-    setOpacity(0.6);
-
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
     }
 
-    timerRef.current = window.setTimeout(() => {
-      setOpacity(1);
-      timerRef.current = null;
-    }, 50);
+    // Fade out slightly, then fade back in. Schedule the first setState on the
+    // next animation frame so it is not synchronous inside the effect body.
+    const handleFrame = () => {
+        setOpacity(0.6);
+        timerRef.current = window.setTimeout(() => {
+            setOpacity(1);
+            timerRef.current = null;
+        }, 50);
+    };
+    const raf = window.requestAnimationFrame(handleFrame);
 
     return () => {
+      window.cancelAnimationFrame(raf);
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current);
       }

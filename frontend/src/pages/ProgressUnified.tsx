@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   lazy,
   Suspense,
@@ -128,17 +129,24 @@ function formatRelativeSync(timestamp: string): string {
 
 function useLiveSyncLabel(timestamp: string | null): string | null {
   const [label, setLabel] = useState<string | null>(() => (timestamp ? formatRelativeSync(timestamp) : null));
+  const tsRef = useRef(timestamp);
   useEffect(() => {
-    if (!timestamp) {
-      setLabel(null);
-      return;
-    }
-    setLabel(formatRelativeSync(timestamp));
-    const interval = setInterval(() => {
-      setLabel(formatRelativeSync(timestamp));
-    }, 10_000);
-    return () => clearInterval(interval);
+    tsRef.current = timestamp;
   }, [timestamp]);
+  useEffect(() => {
+    // Schedule the immediate update on the next frame so setState is not synchronous
+    // inside the effect body, then keep the label ticking every 10s.
+    const raf = window.requestAnimationFrame(() => {
+        setLabel(tsRef.current ? formatRelativeSync(tsRef.current) : null);
+    });
+    const interval = setInterval(() => {
+        setLabel(tsRef.current ? formatRelativeSync(tsRef.current) : null);
+    }, 10_000);
+    return () => {
+        window.cancelAnimationFrame(raf);
+        clearInterval(interval);
+    };
+  }, []);
   return label;
 }
 

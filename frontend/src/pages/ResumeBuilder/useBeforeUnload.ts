@@ -8,7 +8,10 @@ export function useBeforeUnload(
     },
 ) {
     const optsRef = useRef(opts);
-    optsRef.current = opts;
+    // Keep the ref in sync with the latest opts after render (not during render).
+    useEffect(() => {
+        optsRef.current = opts;
+    }, [opts]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;

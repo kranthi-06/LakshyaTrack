@@ -142,7 +142,10 @@ function getAuthenticatedBaseUrl(): string {
 }
 
 function toApiEvents(queue: StoredProgressEvent[]): ProgressEvent[] {
-  return queue.map(({ queuedAt: _queuedAt, ...event }) => event);
+  return queue.map(({ queuedAt, ...event }) => {
+    void queuedAt; // intentionally excluded from the API event payload
+    return event;
+  });
 }
 
 async function flushQueue(maxBatches = 3): Promise<void> {

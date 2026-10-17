@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { makeStableRandom } from '@/lib/utils';
 import { useAuth } from '../context/AuthContext';
 import logoUrl from '../assets/logo.png';
 import { Button } from '@/components/ui/button';
@@ -33,15 +34,18 @@ const GoogleIcon = () => (
 );
 
 /* ─────────────── Animated Particles ─────────────── */
+// Module-level seeded random so particles are stable (no re-random per render)
+// and pure (no Math.random during render).
+const loginParticleRand = makeStableRandom(0x1234);
 function FloatingParticles() {
     const particles = useMemo(() => Array.from({ length: 40 }, (_, i) => ({
         id: i,
-        x: Math.random() * 100,
-        y: Math.random() * 100,
-        size: Math.random() * 3 + 1,
-        duration: Math.random() * 15 + 10,
-        delay: Math.random() * 8,
-        opacity: Math.random() * 0.5 + 0.1,
+        x: loginParticleRand() * 100,
+        y: loginParticleRand() * 100,
+        size: loginParticleRand() * 3 + 1,
+        duration: loginParticleRand() * 15 + 10,
+        delay: loginParticleRand() * 8,
+        opacity: loginParticleRand() * 0.5 + 0.1,
     })), []);
 
     return (

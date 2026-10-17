@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { makeStableRandom } from '@/lib/utils';
 import { useAuth } from '../context/AuthContext';
 import logoUrl from '../assets/logo.png';
 import { Button } from '@/components/ui/button';
@@ -32,15 +33,17 @@ const GoogleIcon = () => (
 );
 
 /* ─────────────── Animated Particles ─────────────── */
+// Module-level seeded random keeps particles stable and pure (no per-render re-random).
+const registerParticleRand = makeStableRandom(0xC0FFEE);
 function FloatingParticles() {
     const particles = useMemo(() => Array.from({ length: 40 }, (_, i) => ({
         id: i,
-        x: Math.random() * 100,
-        y: Math.random() * 100,
-        size: Math.random() * 3 + 1,
-        duration: Math.random() * 15 + 10,
-        delay: Math.random() * 8,
-        opacity: Math.random() * 0.5 + 0.1,
+        x: registerParticleRand() * 100,
+        y: registerParticleRand() * 100,
+        size: registerParticleRand() * 3 + 1,
+        duration: registerParticleRand() * 15 + 10,
+        delay: registerParticleRand() * 8,
+        opacity: registerParticleRand() * 0.5 + 0.1,
     })), []);
 
     return (
@@ -175,7 +178,7 @@ export default function Register() {
         setGoogleLoading(true);
         try {
             await signInWithGoogle();
-        } catch (err) {
+        } catch {
             showToast('Google sign-in failed', 'error');
             setGoogleLoading(false);
         }

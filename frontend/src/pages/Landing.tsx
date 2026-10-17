@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { MouseEvent } from 'react';
+import { makeStableRandom } from '@/lib/utils';
 import { motion, AnimatePresence, useScroll, useTransform, useSpring, useMotionValue } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { PremiumBackground } from '../components/PremiumBackground';
+
+// Module-level seeded random so floating particles are stable and pure.
+const landingParticleRand = makeStableRandom(0x5678);
 import {
     Sparkles,
     CheckCircle2,
@@ -90,16 +94,19 @@ export default function Landing() {
 
     const floatingParticles = useMemo(() => {
         const count = liteMode ? 0 : isMobile ? 5 : 20;
-        return Array.from({ length: count }).map((_, index) => ({
-            id: index,
-            width: Math.random() * 300 + 50,
-            height: Math.random() * 300 + 50,
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            moveY: Math.random() * 100 - 50,
-            moveX: Math.random() * 100 - 50,
-            duration: Math.random() * 10 + 10,
-        }));
+        return Array.from({ length: count }).map((_, index) => {
+            const r = landingParticleRand;
+            return {
+                id: index,
+                width: r() * 300 + 50,
+                height: r() * 300 + 50,
+                left: `${r() * 100}%`,
+                top: `${r() * 100}%`,
+                moveY: r() * 100 - 50,
+                moveX: r() * 100 - 50,
+                duration: r() * 10 + 10,
+            };
+        });
     }, [isMobile, liteMode]);
 
     const features = {

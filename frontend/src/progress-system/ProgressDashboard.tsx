@@ -124,7 +124,6 @@ function formatRelativeSync(timestamp: string): string {
 function useLiveSyncLabel(timestamp: string): string {
   const [label, setLabel] = useState(() => formatRelativeSync(timestamp));
   useEffect(() => {
-    setLabel(formatRelativeSync(timestamp));
     const interval = setInterval(() => {
       setLabel(formatRelativeSync(timestamp));
     }, 10_000);

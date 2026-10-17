@@ -710,11 +710,20 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
   const [testStarted, setTestStarted] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    getCompanyQuestions(company, 30)
-      .then((data) => setQuestions(data.questions || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const load = async () => {
+        // Yield so the initial setState is not synchronous inside the effect body.
+        await Promise.resolve();
+        if (cancelled) return;
+        setLoading(true);
+        try {
+            const data = await getCompanyQuestions(company, 30);
+            if (!cancelled) setQuestions(data.questions || []);
+        } catch {}
+        if (!cancelled) setLoading(false);
+    };
+    load();
+    return () => { cancelled = true; };
   }, [company]);
 
   const generateAITest = async () => {

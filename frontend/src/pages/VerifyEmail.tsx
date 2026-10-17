@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { makeStableRandom } from '@/lib/utils';
 import { useAuth } from '../context/AuthContext';
 import logoUrl from '../assets/logo.png';
 import { Button } from '@/components/ui/button';
@@ -8,17 +9,19 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, CheckCircle2, Clock3, Mail, ShieldCheck, Sparkles, BadgeCheck, LockKeyhole, RefreshCcw } from 'lucide-react';
 
+// Module-level seeded random keeps particles stable and pure (no per-render re-random).
+const verifyEmailParticleRand = makeStableRandom(0xCAFE);
 function FloatingParticles() {
     const particles = useMemo(
         () =>
             Array.from({ length: 40 }, (_, i) => ({
                 id: i,
-                x: Math.random() * 100,
-                y: Math.random() * 100,
-                size: Math.random() * 3 + 1,
-                duration: Math.random() * 15 + 10,
-                delay: Math.random() * 8,
-                opacity: Math.random() * 0.5 + 0.1,
+                x: verifyEmailParticleRand() * 100,
+                y: verifyEmailParticleRand() * 100,
+                size: verifyEmailParticleRand() * 3 + 1,
+                duration: verifyEmailParticleRand() * 15 + 10,
+                delay: verifyEmailParticleRand() * 8,
+                opacity: verifyEmailParticleRand() * 0.5 + 0.1,
             })),
         []
     );

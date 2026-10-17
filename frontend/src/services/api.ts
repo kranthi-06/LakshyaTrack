@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios';
+import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
 // ══════════════════════════════════════════════════════════════
 // PRODUCTION-GRADE API CLIENT
@@ -18,6 +18,26 @@ const RETRY_BASE_DELAY = 1000;     // 1s initial delay
 const CIRCUIT_BREAKER_THRESHOLD = 10;
 const CIRCUIT_BREAKER_RESET_MS = 60_000;
 
+/** Shape of an arbitrary JSON error body returned by the backend.
+ *  The backend echoes error details under `detail`, so we type access to it
+ *  defensively without resorting to `any`. */
+type ErrorBody = {
+    detail?: {
+        error?: string;
+        code?: string;
+        counter?: string;
+        counter_key?: string;
+        current?: number;
+        limit?: number;
+        message?: string;
+        upgrade_url?: string;
+        upgradeUrl?: string;
+        [key: string]: unknown;
+    };
+    message?: string;
+    [key: string]: unknown;
+} | null;
+
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || '/api/v1',
     timeout: DEFAULT_TIMEOUT,
@@ -27,7 +47,7 @@ const api = axios.create({
 // Coalesce identical concurrent GET requests into a single network call.
 // This prevents redundant backend hits when multiple React components
 // request the same data simultaneously (e.g. during StrictMode double-renders).
-const _inflightRequests = new Map<string, Promise<any>>();
+const _inflightRequests = new Map<string, Promise<AxiosResponse<unknown>>>();
 
 type DedupedRequestConfig = InternalAxiosRequestConfig & {
     _baseAdapter?: AxiosAdapter;
@@ -208,6 +228,10 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function asString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+}
+
 api.interceptors.response.use(
     (response) => {
         recordSuccess();
@@ -252,7 +276,8 @@ api.interceptors.response.use(
             // Do NOT retry these — the user needs to upgrade their plan.
             const isLimitExceeded =
                 error.response?.status === 429 &&
-                (error.response?.data as any)?.detail?.error === 'LIMIT_EXCEEDED';
+                (((error.response?.data as ErrorBody | undefined)?.detail as { error?: string } | undefined)
+                    ?.error === 'LIMIT_EXCEEDED');
 
             if (isLimitExceeded) {
                 return Promise.reject(error);
@@ -316,9 +341,11 @@ export async function safeApiCall<T>(
 ): Promise<T> {
     try {
         return await apiCall();
-    } catch (error: any) {
-        const status = error?.response?.status;
-        const message = error?.response?.data?.detail || error?.message || 'Unknown error';
+    } catch (error) {
+        const axiosError = error as AxiosError | undefined;
+        const data = axiosError?.response?.data as ErrorBody | undefined;
+        const status = axiosError?.response?.status;
+        const message = data?.detail || axiosError?.message || 'Unknown error';
         console.warn(`${context} failed (status: ${status}): ${message}`);
         return fallback;
     }
@@ -354,22 +381,26 @@ const LIMIT_COUNTER_FALLBACKS: Record<string, string> = {
 export function extractLimitExceededError(error: unknown): LimitExceededInfo | null {
     const axiosError = error as AxiosError | undefined;
     const response = axiosError?.response;
-    const payload = (response?.data as any)?.detail ?? (response?.data as any);
+    const body = response?.data as ErrorBody | undefined;
+    const payload = (body?.detail as Record<string, unknown> | undefined) ?? (body as Record<string, unknown> | undefined);
 
     if (!payload || typeof payload !== 'object') return null;
 
-    const code = payload.code || payload.error;
+    const code = asString(payload.code) || asString(payload.error);
     if (code !== 'LIMIT_EXCEEDED') return null;
 
+    const counterKey = asString(payload.counter_key) || asString(payload.counterKey);
+    const detail = body?.detail as { message?: string } | undefined;
     return {
-        counter: payload.counter || LIMIT_COUNTER_FALLBACKS[payload.counter_key || payload.counterKey],
-        counterKey: payload.counter_key || payload.counterKey,
+        counter: asString(payload.counter) || (counterKey ? LIMIT_COUNTER_FALLBACKS[counterKey] : undefined),
+        counterKey,
         current: typeof payload.current === 'number' ? payload.current : undefined,
         limit: typeof payload.limit === 'number' ? payload.limit : undefined,
         message:
-            payload.message ||
+            asString(payload.message) ||
+            asString(detail?.message) ||
             "You've reached your current plan limit for this action.",
-        upgradeUrl: payload.upgrade_url || payload.upgradeUrl,
+        upgradeUrl: asString(payload.upgrade_url) || asString(payload.upgradeUrl),
     };
 }
 

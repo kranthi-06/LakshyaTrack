@@ -217,12 +217,17 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
 
     // In edit mode, initialise selected template from editMeta
     useEffect(() => {
-        if (editMeta?.templateId) {
-            setSelectedId(editMeta.templateId);
-        }
-        if (editMeta?.theme && editMeta.theme !== 'default') {
-            setCustomColor(editMeta.theme);
-        }
+        const apply = async () => {
+            // Yield so the state updates are not synchronous inside the effect body.
+            await Promise.resolve();
+            if (editMeta?.templateId) {
+                setSelectedId(editMeta.templateId);
+            }
+            if (editMeta?.theme && editMeta.theme !== 'default') {
+                setCustomColor(editMeta.theme);
+            }
+        };
+        apply();
     }, [editMeta]);
 
     // Filtered catalog
@@ -354,8 +359,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
             try {
                 await authorizeResumeDownload();
                 await refreshUsage();
-                const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
-                await exportToPDF('resume-preview-container', `${name}_Resume.pdf`);
+                await exportToPDF('resume-preview-container');
             } catch (e) {
                 const limitInfo = extractLimitExceededError(e);
                 if (limitInfo) {

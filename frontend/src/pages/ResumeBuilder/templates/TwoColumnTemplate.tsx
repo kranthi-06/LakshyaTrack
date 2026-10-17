@@ -1,4 +1,5 @@
 import type { ResumeData } from '../types';
+import { makeStableRandom } from '@/lib/utils';
 
 interface TemplateProps {
     data: ResumeData;
@@ -48,7 +49,7 @@ export function TwoColumnTemplate({ data, accentColor = '#0ea5e9' }: TemplatePro
                                         <span className="text-[10px] font-bold">{s}</span>
                                     </div>
                                     <div className="w-16 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                                        <div className="h-full bg-white/80 rounded-full" style={{ width: `${80 + Math.random() * 20}%` }} />
+                                        <div className="h-full bg-white/80 rounded-full" style={{ width: `${80 + makeStableRandom(0xBEEF + i)() * 20}%` }} />
                                     </div>
                                 </div>
                             ))}

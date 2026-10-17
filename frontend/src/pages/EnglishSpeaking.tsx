@@ -64,16 +64,16 @@ function useSpeechRecognition() {
     recognition.lang = 'en-US';
 
     recognition.onresult = (event: any) => {
-      let finalArr: string[] = [];
-      let interimArr: string[] = [];
+      const finalArr: string[] = [];
+      const interimArr: string[] = [];
 
       for (let i = 0; i < event.results.length; i++) {
-        let text = event.results[i][0].transcript.trim();
+        const text = event.results[i][0].transcript.trim();
         if (!text) continue;
 
         if (event.results[i].isFinal) {
           if (finalArr.length > 0) {
-            let prev = finalArr[finalArr.length - 1];
+            const prev = finalArr[finalArr.length - 1];
             if (text.toLowerCase().startsWith(prev.toLowerCase())) {
               finalArr[finalArr.length - 1] = text;
             } else {
@@ -84,7 +84,7 @@ function useSpeechRecognition() {
           }
         } else {
           if (interimArr.length > 0) {
-            let prev = interimArr[interimArr.length - 1];
+            const prev = interimArr[interimArr.length - 1];
             if (text.toLowerCase().startsWith(prev.toLowerCase())) {
               interimArr[interimArr.length - 1] = text;
             } else {
@@ -96,7 +96,7 @@ function useSpeechRecognition() {
         }
       }
 
-      let finalStr = finalArr.join(' ');
+      const finalStr = finalArr.join(' ');
       let interimStr = interimArr.join(' ');
 
       if (finalStr && interimStr.toLowerCase().startsWith(finalStr.toLowerCase())) {

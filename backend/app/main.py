@@ -348,6 +348,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Production guard: never allow wildcard origins with credentials.
+if settings.APP_ENV.lower() == "production" and "*" in settings.get_cors_origins():
+    raise RuntimeError(
+        "CORS_ORIGINS must not be '*' with allow_credentials=True in production. "
+        "Set CORS_ORIGINS to the exact frontend origin(s)."
+    )
+
 # GZip compression for larger responses
 app.add_middleware(GZipMiddleware, minimum_size=500)
 

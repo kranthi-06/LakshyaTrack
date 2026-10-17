@@ -49,7 +49,10 @@ class Settings(BaseSettings):
     
     # Admin System
     BLACK_ADMIN_EMAILS: str = ""  # Comma-separated emails for permanent super-admin access
-    CORS_ORIGINS: str = "*"
+    # CORS: explicit authorized origins only. Never use a wildcard with credentials.
+    # Local development defaults to the Vite dev server origin. Production MUST set
+    # CORS_ORIGINS to the exact frontend origin(s) via environment variable.
+    CORS_ORIGINS: str = "http://localhost:5173"
 
     # AI caching (MongoDB Atlas)
     AI_CACHE_TTL_SECONDS: int = 60 * 60 * 24 * 7  # 7 days
@@ -59,7 +62,7 @@ class Settings(BaseSettings):
     IDEMPOTENCY_MAX_RESPONSE_BYTES: int = 1024 * 1024  # 1MB
 
     # Request protection and load tuning
-    RATE_LIMIT_ENABLED: bool = False
+    RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_BACKEND: str = "auto"  # auto | memory | redis
     RATE_LIMIT_GLOBAL_PER_MINUTE: int = 12000
     RATE_LIMIT_IP_PER_MINUTE: int = 2400
