@@ -2,6 +2,9 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthLoadingScreen from './AuthLoadingScreen';
+import AuthRecoveryScreen from './AuthRecoveryScreen';
+import { resolveRouteGuardState } from './routeGuardState';
+import { useRouteGuardWait } from './useRouteGuardWait';
 
 interface AdminRouteProps {
     children: React.ReactElement;
@@ -10,15 +13,28 @@ interface AdminRouteProps {
 
 export const AdminRoute = ({ children, requireBlackAdmin = false }: AdminRouteProps) => {
     const { user, loading, authReady } = useAuth();
+    const waitExpired = useRouteGuardWait({
+        loading,
+        authReady,
+        hasUser: Boolean(user),
+        hasToken: false,
+    });
+    const state = resolveRouteGuardState({
+        loading,
+        authReady,
+        hasUser: Boolean(user),
+        hasToken: false,
+        waitExpired,
+    });
 
     // ── AUTH LOADING GUARD ──────────────────────────────────────
-    if (loading) {
+    if (state === 'loading') {
         return <AuthLoadingScreen />;
     }
 
     // Wait for full auth pipeline before redirecting
-    if (!authReady) {
-        return <AuthLoadingScreen />;
+    if (state === 'recover') {
+        return <AuthRecoveryScreen reloadOnRetry={loading || !authReady} />;
     }
 
     // ── REDIRECT DECISIONS (only after auth loading is complete) ──

@@ -2,6 +2,9 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthLoadingScreen from './AuthLoadingScreen';
+import AuthRecoveryScreen from './AuthRecoveryScreen';
+import { resolveRouteGuardState } from './routeGuardState';
+import { useRouteGuardWait } from './useRouteGuardWait';
 
 const TOKEN_KEY = 'token';
 
@@ -12,34 +15,40 @@ function hasToken(): boolean {
 
 export const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
     const { user, loading, authReady } = useAuth();
+    const tokenPresent = hasToken();
+    const waitExpired = useRouteGuardWait({
+        loading,
+        authReady,
+        hasUser: Boolean(user),
+        hasToken: tokenPresent,
+    });
+    const state = resolveRouteGuardState({
+        loading,
+        authReady,
+        hasUser: Boolean(user),
+        hasToken: tokenPresent,
+        waitExpired,
+    });
 
     // ── AUTH LOADING GUARD ──────────────────────────────────────
     // Wait until the authentication state is FULLY resolved before
     // making any redirect decisions. This prevents incorrect redirects
     // during slow network conditions or delayed Supabase responses.
-    if (loading) {
+    if (state === 'loading') {
         return <AuthLoadingScreen />;
     }
 
-    // Even if `loading` just turned false, make sure the full init
-    // pipeline has completed (authReady). If not, keep showing the
-    // loading screen briefly — the init will finish momentarily.
-    if (!authReady) {
-        return <AuthLoadingScreen />;
+    // Waiting too long (auth unresolved, or a token exists but the user
+    // can't be fetched) → offer retry / sign out instead of an endless loader.
+    if (state === 'recover') {
+        return <AuthRecoveryScreen reloadOnRetry={loading || !authReady} />;
     }
 
     // ── REDIRECT DECISIONS (only after auth loading is complete) ──
 
     // User object is available → render normally
-    if (user) {
+    if (state === 'render') {
         return children;
-    }
-
-    // Keep the user on the authenticated route while a valid token still exists.
-    // This prevents OAuth users from bouncing back to /login during temporary
-    // backend hydration issues right after callback or refresh.
-    if (hasToken()) {
-        return <AuthLoadingScreen />;
     }
 
     // Genuinely not authenticated — redirect to login
