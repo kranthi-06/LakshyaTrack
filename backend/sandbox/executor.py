@@ -33,7 +33,8 @@ import uuid
 # ─── Resource Limits ─────────────────────────────────────
 MAX_CPU_TIME_SEC = 10          # Hard CPU time limit
 MAX_WALL_TIME_SEC = 12         # Wall-clock timeout (slightly > CPU)
-MAX_MEMORY_BYTES = 256 * 1024 * 1024   # 256 MB
+MAX_MEMORY_BYTES = 256 * 1024 * 1024   # 256 MB physical memory (Docker cgroup limit)
+MAX_ADDRESS_SPACE_BYTES = 1 * 1024 * 1024 * 1024  # 1 GB virtual address space (Node needs this)
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB (prevent filling disk)
 MAX_PROCESSES = 32             # Max child processes/threads
 MAX_OUTPUT_CHARS = 50_000      # Truncate output beyond this
@@ -54,8 +55,10 @@ def _set_resource_limits():
     try:
         # CPU time limit (seconds)
         resource.setrlimit(resource.RLIMIT_CPU, (MAX_CPU_TIME_SEC, MAX_CPU_TIME_SEC))
-        # Address space limit (bytes)
-        resource.setrlimit(resource.RLIMIT_AS, (MAX_MEMORY_BYTES, MAX_MEMORY_BYTES))
+        # Address space limit (bytes) — 256 MB is too small for Node.js,
+        # which reserves a large virtual code range at startup. 1 GB still
+        # bounds runaway address space while letting Node start.
+        resource.setrlimit(resource.RLIMIT_AS, (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES))
         # Max output file size (bytes) — prevents filling /tmp
         resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_BYTES))
         # Max number of processes
@@ -204,13 +207,22 @@ def execute(payload: dict) -> dict:
             # Clean file paths from error messages
             stderr = stderr.replace(code_file, '<your_code>')
 
+            # A child killed by a signal (negative return code) — e.g. the
+            # RLIMIT_CPU limit hit by an infinite loop — is treated as a time
+            # limit exceeded so callers can detect it reliably.
+            timed_out = False
+            error = None
+            if result.returncode < 0:
+                timed_out = True
+                error = 'Time Limit Exceeded'
+
             return {
                 'stdout': stdout,
                 'stderr': stderr,
                 'exit_code': result.returncode,
                 'runtime_ms': round(elapsed_ms, 1),
-                'timed_out': False,
-                'error': None,
+                'timed_out': timed_out,
+                'error': error,
             }
 
         except subprocess.TimeoutExpired:

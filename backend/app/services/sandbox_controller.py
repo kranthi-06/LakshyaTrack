@@ -28,7 +28,9 @@ SECURITY ENFORCEMENT (per container):
 import json
 import logging
 import os
+import subprocess
 import time
+import uuid
 from typing import Dict, Any, Optional
 
 from app.core.config import settings
@@ -167,108 +169,66 @@ class SandboxController:
             'test_input': test_input,
         })
 
+        # Unique name for this ephemeral container so cleanup is deterministic.
+        exec_id = uuid.uuid4().hex[:8]
+        container_name = f"lakshyatrack-exec-{exec_id}"
+
         start = time.perf_counter()
 
         try:
-            # Run the container with all security constraints
-            container = self.client.containers.run(
-                image=SANDBOX_IMAGE_NAME,
-                stdin_open=True,
-                detach=True,
-
-                # ── Security: Network ──
-                network_mode="none",
-
-                # ── Security: Filesystem ──
-                read_only=True,
-                tmpfs={
-                    '/tmp/code': f'size={TMPFS_SIZE},noexec,nodev,nosuid,uid=10001,gid=10001',
-                },
-
-                # ── Security: User ──
-                user="10001:10001",
-
-                # ── Security: Capabilities ──
-                cap_drop=["ALL"],
-                security_opt=SECURITY_OPTS,
-
-                # ── Security: Resources ──
-                mem_limit=CONTAINER_MEMORY_LIMIT,
-                memswap_limit=CONTAINER_MEMORY_LIMIT,  # No swap
-                cpu_period=100000,
-                cpu_quota=int(CONTAINER_CPU_LIMIT * 100000),
-                pids_limit=CONTAINER_PIDS_LIMIT,
-
-                # ── Lifecycle ──
-                auto_remove=False,     # We remove manually after collecting logs
-
-                # ── No environment variables ──
-                environment={},
+            # Run the container synchronously, piping the payload to stdin and
+            # capturing the executor's stdout. `docker run --rm` (rather than
+            # detach + attach_socket) reliably delivers stdin EOF and the
+            # executor's stdout on this platform, and --rm destroys the
+            # container as soon as it exits.
+            proc = subprocess.run(
+                [
+                    'docker', 'run', '--rm', '--interactive',
+                    '--name', container_name,
+                    # ── Security: Network ──
+                    '--network=none',
+                    # ── Security: Filesystem ──
+                    '--read-only',
+                    '--tmpfs',
+                    f'/tmp/code:size={TMPFS_SIZE},noexec,nodev,nosuid,uid=10001,gid=10001',
+                    # ── Security: User ──
+                    '--user=10001:10001',
+                    # ── Security: Capabilities ──
+                    '--cap-drop=ALL',
+                    '--security-opt=no-new-privileges:true',
+                    # ── Security: Resources ──
+                    '--memory=256m',
+                    '--cpus=1.0',
+                    '--pids-limit=64',
+                    SANDBOX_IMAGE_NAME,
+                ],
+                input=payload,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
-
-            # Send the payload via stdin
-            sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
-            raw_socket = getattr(sock, "_sock", sock)
-            raw_socket.sendall(payload.encode('utf-8'))
-            raw_socket.shutdown(1)  # Close write end (EOF)
-            if raw_socket is not sock:
-                sock.close()
-
-            # Wait for container to finish
-            try:
-                exit_result = container.wait(timeout=timeout)
-                exit_code = exit_result.get('StatusCode', -1)
-                timed_out = False
-            except Exception:
-                # Timeout — force kill
+            stdout_raw = proc.stdout
+            stderr_raw = proc.stderr
+            exit_code = proc.returncode
+            timed_out = False
+        except subprocess.TimeoutExpired:
+            # Best-effort cleanup if the docker run process was killed while
+            # the container was still running.
+            for cleanup_cmd in (['docker', 'kill', container_name],
+                                ['docker', 'rm', '-f', container_name]):
                 try:
-                    container.kill()
+                    subprocess.run(cleanup_cmd, capture_output=True, timeout=5)
                 except Exception:
                     pass
-                exit_code = -1
-                timed_out = True
-
             elapsed_ms = (time.perf_counter() - start) * 1000
-
-            # Collect logs
-            try:
-                stdout_raw = container.logs(stdout=True, stderr=False).decode('utf-8', errors='replace')
-                stderr_raw = container.logs(stdout=False, stderr=True).decode('utf-8', errors='replace')
-            except Exception:
-                stdout_raw = ''
-                stderr_raw = ''
-
-            # Remove container
-            try:
-                container.remove(force=True)
-            except Exception:
-                pass
-
-            if timed_out:
-                return {
-                    'stdout': '',
-                    'stderr': f'Time Limit Exceeded ({timeout}s)',
-                    'exit_code': -1,
-                    'runtime_ms': round(elapsed_ms, 1),
-                    'timed_out': True,
-                    'error': 'Time Limit Exceeded',
-                }
-
-            # The executor writes JSON to stdout — parse it
-            try:
-                result = json.loads(stdout_raw.strip())
-                return result
-            except json.JSONDecodeError:
-                # Executor didn't produce valid JSON — raw output
-                return {
-                    'stdout': stdout_raw[:10000],
-                    'stderr': stderr_raw[:10000],
-                    'exit_code': exit_code,
-                    'runtime_ms': round(elapsed_ms, 1),
-                    'timed_out': False,
-                    'error': 'Sandbox executor produced invalid output',
-                }
-
+            return {
+                'stdout': '',
+                'stderr': f'Time Limit Exceeded ({timeout}s)',
+                'exit_code': -1,
+                'runtime_ms': round(elapsed_ms, 1),
+                'timed_out': True,
+                'error': 'Time Limit Exceeded',
+            }
         except Exception as e:
             elapsed_ms = (time.perf_counter() - start) * 1000
             logger.error(f"Sandbox execution failed: {e}", exc_info=True)
@@ -279,6 +239,20 @@ class SandboxController:
                 'runtime_ms': round(elapsed_ms, 1),
                 'timed_out': False,
                 'error': f'Sandbox error: {str(e)}',
+            }
+
+        # The executor writes JSON to stdout — parse it
+        try:
+            return json.loads(stdout_raw.strip())
+        except json.JSONDecodeError:
+            # Executor didn't produce valid JSON — surface raw output
+            return {
+                'stdout': stdout_raw[:10000],
+                'stderr': stderr_raw[:10000],
+                'exit_code': exit_code,
+                'runtime_ms': round((time.perf_counter() - start) * 1000, 1),
+                'timed_out': False,
+                'error': 'Sandbox executor produced invalid output',
             }
 
     def _fallback_or_unavailable(

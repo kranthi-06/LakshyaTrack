@@ -28,6 +28,25 @@ class TestSandboxSecurity:
     def test_valid_js(self):
         assert self.c.execute("console.log(2+2);", 'javascript', '')['stdout'].strip() == '4'
 
+    def test_valid_python_structured_result(self):
+        """Regression: valid code must return a real structured result, not an
+        empty/fallback response (the sandbox previously returned empty stdout
+        because stdin EOF was never delivered to the container)."""
+        r = self.c.execute("print(2+2)", 'python', '')
+        assert r['exit_code'] == 0
+        assert r['error'] is None
+        assert not r.get('timed_out', False)
+        assert r['stdout'].strip() == '4'
+
+    def test_valid_js_structured_result(self):
+        """Regression: JavaScript must execute inside the sandbox (it previously
+        OOM'd because RLIMIT_AS was too low to reserve Node's code range)."""
+        r = self.c.execute("console.log(2+2);", 'javascript', '')
+        assert r['exit_code'] == 0
+        assert r['error'] is None
+        assert not r.get('timed_out', False)
+        assert r['stdout'].strip() == '4'
+
 class TestCodeExecutionService:
     def test_empty(self): assert run_code('','python',[])['status']=='error'
     def test_syntax(self): assert run_code('def f(:','python',[{'input':'','expected_output':''}])['status']=='compilation_error'
