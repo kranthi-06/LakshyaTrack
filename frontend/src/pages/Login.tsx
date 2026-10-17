@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import logoUrl from '../assets/logo.png';
-import AuthLoadingScreen from '../components/AuthLoadingScreen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -100,7 +99,7 @@ export default function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
-    const { login, signInWithGoogle, user, loading: authLoading } = useAuth();
+    const { login, signInWithGoogle, user } = useAuth();
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
@@ -145,11 +144,6 @@ export default function Login() {
             showToast(fallback, 'error');
         }
     }, [showToast]);
-
-    // Show premium loading screen while auth state is being resolved
-    if (authLoading) {
-        return <AuthLoadingScreen />;
-    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

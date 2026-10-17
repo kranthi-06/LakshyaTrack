@@ -15,10 +15,34 @@
   <!-- DNS prefetch for CDNs used -->
   <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
   <link rel="dns-prefetch" href="https://unpkg.com" />
+  <style>
+    #root .startup-splash {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      gap: 18px;
+      background: linear-gradient(135deg, #1e1b4b, #312e81 48%, #4338ca);
+      color: white;
+      font: 800 26px/1.2 Inter, "Segoe UI", system-ui, sans-serif;
+      letter-spacing: -0.5px;
+    }
+    #root .startup-splash img {
+      width: 96px;
+      height: 96px;
+      object-fit: contain;
+    }
+  </style>
 </head>
 
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div class="startup-splash" role="status" aria-label="Loading LakshyaTrack">
+      <img src="/favicon-wide.png?v=10" alt="" />
+      <span>LakshyaTrack</span>
+    </div>
+  </div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

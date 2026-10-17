@@ -124,6 +124,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const authInProgressRef = useRef(false); // Prevents duplicate auth flows
     const explicitLogoutRef = useRef(false); // Tracks if user explicitly clicked logout
     const initCompleteRef = useRef(false); // Has the init pipeline finished?
+    const callbackSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const markAuthReady = useCallback(() => {
+        if (callbackSafetyTimerRef.current) {
+            clearTimeout(callbackSafetyTimerRef.current);
+            callbackSafetyTimerRef.current = null;
+        }
+        if (mountedRef.current) {
+            setStoreLoading(false);
+            setAuthReady(true);
+        }
+    }, [setStoreLoading]);
 
     const updateUser = useCallback((u: User | null) => {
         userRef.current = u;
@@ -155,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         void useProgressDashboardStore.getState().refreshDashboard({
             forceRefresh: false,
             showLoading: false,
-            fallbackToMock: true,
+            fallbackToMock: false,
             reason: 'auth-transition',
         }).catch(() => { });
 
@@ -276,8 +288,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (supabaseSession) {
                     // Supabase has a valid session — store the token and fetch user
                     localStorage.setItem(TOKEN_KEY, supabaseSession.access_token);
+                    const sessionUser = buildSessionFallbackUser(supabaseSession);
+                    if (sessionUser && mountedRef.current) {
+                        updateUser(sessionUser);
+                        if (window.location.pathname === '/auth/callback') {
+                            markAuthReady();
+                        }
+                    }
                     const backendUser = await fetchCurrentUser(true);
-                    const resolvedUser = backendUser || buildSessionFallbackUser(supabaseSession);
+                    const resolvedUser = backendUser || sessionUser;
                     if (mountedRef.current) updateUser(resolvedUser);
                 } else {
                     // No Supabase session — try local token (custom email/password login)
@@ -302,16 +321,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     window.location.pathname === '/auth/callback';
 
                 if (isOAuthCallback) {
-                    // Safety net: clear loading after a generous timeout
-                    setTimeout(() => {
-                        if (mountedRef.current) {
-                            setStoreLoading(false);
-                            setAuthReady(true);
-                        }
-                    }, AUTH_CALLBACK_SAFETY_TIMEOUT_MS);
+                    if (userRef.current && hasValidToken()) {
+                        markAuthReady();
+                    } else {
+                        callbackSafetyTimerRef.current = setTimeout(
+                            markAuthReady,
+                            AUTH_CALLBACK_SAFETY_TIMEOUT_MS,
+                        );
+                    }
                 } else {
-                    setStoreLoading(false);
-                    setAuthReady(true);
+                    markAuthReady();
                 }
             }
         };
@@ -326,7 +345,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 invalidateCache('auth:');
                 localStorage.setItem(TOKEN_KEY, session.access_token);
                 resetProgressDashboardStoreState();
-                warmDashboardTransition();
 
                 try {
                     const backendUser = await fetchCurrentUser();
@@ -339,9 +357,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                     // Navigate only when the user is on a public / callback page
                     const currentPath = window.location.pathname;
-                    if (PUBLIC_PATHS.includes(currentPath)) {
+                    if (PUBLIC_PATHS.includes(currentPath) && currentPath !== '/auth/callback') {
                         navigate('/dashboard', { replace: true });
                     }
+                    window.setTimeout(() => {
+                        if (mountedRef.current) warmDashboardTransition();
+                    }, 1000);
                 } catch (err: any) {
                     // ── STRICT OAUTH FIX ──────────────────────────────────
                     // Do NOT redirect to /login during SIGNED_IN. The backend
@@ -359,10 +380,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // For network / timeout / 500 errors, keep the token —
                     // the user has a valid Google session even if our backend
                     // is temporarily unreachable.
+                } finally {
+                    markAuthReady();
                 }
             } else if (event === 'TOKEN_REFRESHED' && session) {
                 // Silent refresh — just update the token, don't navigate anywhere
                 localStorage.setItem(TOKEN_KEY, session.access_token);
+                const sessionUser = buildSessionFallbackUser(session);
+                if (!userRef.current && sessionUser) updateUser(sessionUser);
+                markAuthReady();
             } else if (event === 'SIGNED_OUT') {
                 // ── CRITICAL FIX ──────────────────────────────────────────
                 // Supabase can fire spurious SIGNED_OUT events during network
@@ -387,9 +413,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         return () => {
             mountedRef.current = false;
+            if (callbackSafetyTimerRef.current) {
+                clearTimeout(callbackSafetyTimerRef.current);
+                callbackSafetyTimerRef.current = null;
+            }
             subscription.unsubscribe();
         };
-    }, [clearSessionCaches, fetchCurrentUser, navigate, setStoreLoading, updateUser, warmDashboardTransition]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [clearSessionCaches, fetchCurrentUser, markAuthReady, navigate, setStoreLoading, updateUser, warmDashboardTransition]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         // Optional fast hydration: seed user from cache while revalidating with backend.
@@ -431,12 +461,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             invalidateCache('roadmap:');
             invalidateCache('progress:');
             resetProgressDashboardStoreState();
-            warmDashboardTransition();
             const userData = response.user ?? await getMe();
             updateUser(userData);
             // Best-effort daily streak touch (non-blocking).
             touchDailyStreak().catch(() => { });
             navigate('/dashboard', { replace: true });
+            window.setTimeout(warmDashboardTransition, 1000);
         }
     }, [navigate, updateUser, warmDashboardTransition]);
 
@@ -457,10 +487,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             invalidateCache('roadmap:');
             invalidateCache('progress:');
             resetProgressDashboardStoreState();
-            warmDashboardTransition();
             const userData = response.user ?? await getMe();
             updateUser(userData);
             touchDailyStreak().catch(() => { });
+            window.setTimeout(warmDashboardTransition, 1000);
         }
     }, [updateUser, warmDashboardTransition]);
 

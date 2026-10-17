@@ -1,35 +1,32 @@
 import { useState, useEffect } from 'react';
 import loadingLogoUrl from '../assets/favicon.png';
-
-const statusMessages = [
-    'Checking your session...',
-    'Verifying your identity...',
-    'Connecting to your account...',
-    'Loading your dashboard...',
-    'Almost there...',
-];
+import {
+    acquireLoadingSession,
+    computeLoadingProgress,
+    getLoadingJourneyStep,
+    LOADING_JOURNEY,
+    releaseLoadingSession,
+} from './authLoadingProgress';
 
 export default function AuthLoadingScreen({ message }: { message?: string }) {
-    const [messageIndex, setMessageIndex] = useState(0);
-    const [progress, setProgress] = useState(0);
+    const [progress, setProgress] = useState(8);
+    const [animateEntrance, setAnimateEntrance] = useState(false);
+    const currentStep = getLoadingJourneyStep(progress);
 
-    // Cycle through status messages
     useEffect(() => {
+        const session = acquireLoadingSession();
+        const entranceTimer = window.setTimeout(() => {
+            setAnimateEntrance(session.animateEntrance);
+            setProgress(computeLoadingProgress(Date.now() - session.startedAt));
+        }, 0);
         const interval = setInterval(() => {
-            setMessageIndex((prev) => (prev + 1) % statusMessages.length);
-        }, 2000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Animate progress bar
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setProgress((prev) => {
-                if (prev >= 90) return 90; // Cap at 90 until actually done
-                return prev + Math.random() * 8 + 2;
-            });
-        }, 400);
-        return () => clearInterval(interval);
+            setProgress(computeLoadingProgress(Date.now() - session.startedAt));
+        }, 100);
+        return () => {
+            window.clearTimeout(entranceTimer);
+            clearInterval(interval);
+            releaseLoadingSession();
+        };
     }, []);
 
     return (
@@ -43,7 +40,7 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
             <div className="auth-loading-orb auth-loading-orb-3" />
 
             {/* Center content */}
-            <div className="auth-loading-content">
+            <div className={`auth-loading-content${animateEntrance ? ' auth-loading-content-enter' : ''}`}>
                 {/* Logo with glow */}
                 <div className="auth-loading-logo-wrapper" style={{ width: '160px', height: '160px' }}>
                     <div className="auth-loading-logo-glow" style={{ inset: '-24px' }} />
@@ -58,31 +55,37 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                 {/* Brand name */}
                 <h1 className="auth-loading-brand">LakshyaTrack</h1>
 
-                {/* Status message with fade */}
                 <div className="auth-loading-message-container">
-                    <p
-                        className="auth-loading-message"
-                        key={messageIndex}
-                    >
-                        {message || statusMessages[messageIndex]}
+                    <p className="auth-loading-message">
+                        {message ?? LOADING_JOURNEY[currentStep]}
                     </p>
                 </div>
 
-                {/* Progress bar */}
                 <div className="auth-loading-progress-track">
                     <div
                         className="auth-loading-progress-fill"
-                        style={{ width: `${Math.min(progress, 100)}%` }}
+                        style={{ transform: `scaleX(${Math.min(progress, 100) / 100})` }}
                     />
                     <div className="auth-loading-progress-shimmer" />
                 </div>
 
-                {/* Subtle dots animation */}
                 <div className="auth-loading-dots">
                     <span className="auth-loading-dot" style={{ animationDelay: '0s' }} />
                     <span className="auth-loading-dot" style={{ animationDelay: '0.2s' }} />
                     <span className="auth-loading-dot" style={{ animationDelay: '0.4s' }} />
                 </div>
+
+                <ol className="auth-loading-journey" aria-label="LakshyaTrack career journey">
+                    {LOADING_JOURNEY.map((step, index) => (
+                        <li
+                            key={step}
+                            className={index === currentStep ? 'is-current' : index < currentStep ? 'is-complete' : ''}
+                            aria-current={index === currentStep ? 'step' : undefined}
+                        >
+                            {step}
+                        </li>
+                    ))}
+                </ol>
             </div>
 
             <style>{`
@@ -95,19 +98,15 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                     overflow: hidden;
                     z-index: 9999;
                     font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+                    padding: 20px;
+                    box-sizing: border-box;
                 }
 
                 .auth-loading-bg {
                     position: absolute;
                     inset: 0;
                     background: linear-gradient(135deg, #1e1b4b 0%, #312e81 25%, #4338ca 50%, #6366f1 75%, #818cf8 100%);
-                    background-size: 400% 400%;
-                    animation: authBgShift 8s ease infinite;
-                }
-
-                @keyframes authBgShift {
-                    0%, 100% { background-position: 0% 50%; }
-                    50% { background-position: 100% 50%; }
+                    background-size: cover;
                 }
 
                 /* Floating orbs */
@@ -162,6 +161,10 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                     flex-direction: column;
                     align-items: center;
                     gap: 24px;
+                    width: min(100%, 520px);
+                }
+
+                .auth-loading-content-enter {
                     animation: authContentFadeIn 0.8s ease-out;
                 }
 
@@ -250,6 +253,7 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                     overflow: hidden;
                     display: flex;
                     align-items: center;
+                    max-width: 100%;
                 }
 
                 .auth-loading-message {
@@ -279,11 +283,12 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                 }
 
                 .auth-loading-progress-fill {
-                    height: 100%;
+                    position: absolute;
+                    inset: 0;
                     background: linear-gradient(90deg, #818cf8, #c084fc, #f0abfc);
                     border-radius: 100px;
-                    transition: width 0.4s ease-out;
-                    position: relative;
+                    transform-origin: left center;
+                    transition: transform 0.4s ease-out;
                 }
 
                 .auth-loading-progress-shimmer {
@@ -321,6 +326,60 @@ export default function AuthLoadingScreen({ message }: { message?: string }) {
                 @keyframes authDotBounce {
                     0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
                     40% { transform: scale(1); opacity: 1; }
+                }
+
+                .auth-loading-journey {
+                    display: flex;
+                    justify-content: center;
+                    flex-wrap: wrap;
+                    gap: 7px;
+                    width: 100%;
+                    padding: 0;
+                    margin: 0;
+                    list-style: none;
+                }
+
+                .auth-loading-journey li {
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 999px;
+                    padding: 6px 9px;
+                    color: rgba(255, 255, 255, 0.56);
+                    font-size: clamp(8px, 2.2vw, 10px);
+                    font-weight: 700;
+                    line-height: 1.2;
+                    text-align: center;
+                }
+
+                .auth-loading-journey li.is-complete {
+                    color: rgba(255, 255, 255, 0.82);
+                    border-color: rgba(192, 132, 252, 0.45);
+                }
+
+                .auth-loading-journey li.is-current {
+                    color: white;
+                    border-color: #c084fc;
+                    background: rgba(192, 132, 252, 0.2);
+                }
+
+                @media (max-width: 400px) {
+                    .auth-loading-content { gap: 18px; }
+                    .auth-loading-brand { font-size: 28px; }
+                    .auth-loading-progress-track { width: min(240px, 80vw); }
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                    .auth-loading-content-enter,
+                    .auth-loading-orb,
+                    .auth-loading-logo-glow,
+                    .auth-loading-logo-ring-spinner,
+                    .auth-loading-logo,
+                    .auth-loading-message,
+                    .auth-loading-progress-fill,
+                    .auth-loading-progress-shimmer,
+                    .auth-loading-dot {
+                        animation: none !important;
+                        transition: none !important;
+                    }
                 }
             `}</style>
         </div>
