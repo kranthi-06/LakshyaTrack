@@ -7,6 +7,7 @@ import {
     submitSkillQuiz,
     saveProgressSnapshot,
     recordExamViolation,
+    queueExamEvent,
     checkExamEligibility,
     checkExamCooldown,
 } from '../services/careerPlatform';
@@ -46,6 +47,64 @@ import ExamLayout from '../components/exam/ExamLayout';
 import { AppLayout } from '../components/AppLayout';
 
 type QuizStep = 'setup' | 'active' | 'results';
+type SavedExamAttempt = {
+    attemptId: string;
+    updatedAt: number;
+    questions: any[];
+    answers: Record<number, number>;
+    marked: number[];
+    currentQuestion: number;
+    topic: string;
+    difficulty: string;
+    numQuestions: string;
+    startedAt: number;
+    remainingSeconds: number;
+    isRoadmapQuiz: boolean;
+    roadmapSkillId: string | null;
+    roadmapSkillName: string | null;
+    roadmapLevel: string | null;
+    roadmapId: string | null;
+    passThreshold: number;
+};
+
+const ACTIVE_EXAM_ATTEMPT_KEY = 'lakshyatrack:active-exam-attempt';
+const EXAM_ATTEMPT_PREFIX = 'lakshyatrack:exam-attempt:';
+
+function readSavedExamAttempt(): SavedExamAttempt | null {
+    try {
+        const attemptId = sessionStorage.getItem(ACTIVE_EXAM_ATTEMPT_KEY);
+        if (!attemptId) return null;
+        const storageKey = `${EXAM_ATTEMPT_PREFIX}${attemptId}`;
+        const raw = sessionStorage.getItem(storageKey);
+        if (!raw) {
+            sessionStorage.removeItem(ACTIVE_EXAM_ATTEMPT_KEY);
+            return null;
+        }
+        const attempt = JSON.parse(raw) as SavedExamAttempt;
+        const elapsed = Math.floor((Date.now() - attempt.updatedAt) / 1000);
+        attempt.remainingSeconds -= elapsed;
+        if (
+            attempt.attemptId !== attemptId ||
+            attempt.remainingSeconds <= 0 ||
+            !Array.isArray(attempt.questions) ||
+            attempt.questions.length === 0
+        ) {
+            sessionStorage.removeItem(storageKey);
+            sessionStorage.removeItem(ACTIVE_EXAM_ATTEMPT_KEY);
+            return null;
+        }
+        return attempt;
+    } catch {
+        sessionStorage.removeItem(ACTIVE_EXAM_ATTEMPT_KEY);
+        return null;
+    }
+}
+
+function clearSavedExamAttempt(attemptId?: string | null) {
+    const id = attemptId || sessionStorage.getItem(ACTIVE_EXAM_ATTEMPT_KEY);
+    if (id) sessionStorage.removeItem(`${EXAM_ATTEMPT_PREFIX}${id}`);
+    sessionStorage.removeItem(ACTIVE_EXAM_ATTEMPT_KEY);
+}
 
 const questionsByTopic: Record<string, any[]> = {
     'JavaScript': [
@@ -120,29 +179,36 @@ const EXAM_RULES = [
 ];
 
 export default function Quiz() {
+    const [savedAttempt, setSavedAttempt] = useState<SavedExamAttempt | null>(() => readSavedExamAttempt());
+    const [showResumePrompt, setShowResumePrompt] = useState(() => Boolean(savedAttempt));
+    const attemptIdRef = useRef<string | null>(savedAttempt?.attemptId ?? null);
     const [step, setStep] = useState<QuizStep>('setup');
-    const [currentQuestion, setCurrentQuestion] = useState(0);
-    const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
-    const [topic, setTopic] = useState('JavaScript');
-    const [difficulty, setDifficulty] = useState('Medium');
-    const [numQuestions, setNumQuestions] = useState('5');
-    const [quizQuestions, setQuizQuestions] = useState<any[]>(questionsByTopic['JavaScript']);
+    const [currentQuestion, setCurrentQuestion] = useState(savedAttempt?.currentQuestion ?? 0);
+    const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>(savedAttempt?.answers ?? {});
+    const [topic, setTopic] = useState(savedAttempt?.topic ?? 'JavaScript');
+    const [difficulty, setDifficulty] = useState(savedAttempt?.difficulty ?? 'Medium');
+    const [numQuestions, setNumQuestions] = useState(savedAttempt?.numQuestions ?? '5');
+    const [quizQuestions, setQuizQuestions] = useState<any[]>(savedAttempt?.questions ?? questionsByTopic['JavaScript']);
     const [isLoading, setIsLoading] = useState(false);
 
     // ── Roadmap-linked quiz state ──────────
-    const [isRoadmapQuiz, setIsRoadmapQuiz] = useState(false);
-    const [roadmapSkillId, setRoadmapSkillId] = useState<string | null>(null);
-    const [roadmapSkillName, setRoadmapSkillName] = useState<string | null>(null);
-    const [roadmapLevel, setRoadmapLevel] = useState<string | null>(null);
-    const [roadmapId, setRoadmapId] = useState<string | null>(null);
-    const [passThreshold, setPassThreshold] = useState<number>(70);
+    const [isRoadmapQuiz, setIsRoadmapQuiz] = useState(savedAttempt?.isRoadmapQuiz ?? false);
+    const [roadmapSkillId, setRoadmapSkillId] = useState<string | null>(savedAttempt?.roadmapSkillId ?? null);
+    const [roadmapSkillName, setRoadmapSkillName] = useState<string | null>(savedAttempt?.roadmapSkillName ?? null);
+    const [roadmapLevel, setRoadmapLevel] = useState<string | null>(savedAttempt?.roadmapLevel ?? null);
+    const [roadmapId, setRoadmapId] = useState<string | null>(savedAttempt?.roadmapId ?? null);
+    const [passThreshold, setPassThreshold] = useState<number>(savedAttempt?.passThreshold ?? 70);
     const [quizResult, setQuizResult] = useState<any>(null);
 
     // ── Exam state additions ──────────
-    const [markedForReview, setMarkedForReview] = useState<Set<number>>(new Set());
+    const [markedForReview, setMarkedForReview] = useState<Set<number>>(new Set(savedAttempt?.marked ?? []));
     const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-    const [examTimeRemaining, setExamTimeRemaining] = useState(0);
-    const [examStartTime, setExamStartTime] = useState<number | null>(null);
+    const [examTimeRemaining, setExamTimeRemaining] = useState(savedAttempt?.remainingSeconds ?? 0);
+    const [examStartTime, setExamStartTime] = useState<number | null>(savedAttempt?.startedAt ?? null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState('');
+    const [questionGenerationError, setQuestionGenerationError] = useState('');
+    const submitInProgressRef = useRef(false);
     const examTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ── Exam proctoring state ──────────
@@ -159,6 +225,10 @@ export default function Quiz() {
 
     // ── Exam mode hook ──────────
     const handleExamTerminate = useCallback(async (reason: string) => {
+        clearSavedExamAttempt(attemptIdRef.current);
+        attemptIdRef.current = null;
+        setSavedAttempt(null);
+        setShowResumePrompt(false);
         // Record the violation on the server
         try {
             await recordExamViolation('terminated', topic, difficulty);
@@ -167,7 +237,11 @@ export default function Quiz() {
         }
     }, [topic, difficulty]);
 
-    const examMode = useExamMode(handleExamTerminate);
+    const handleObservedExamEvent = useCallback((eventType: string, details?: Record<string, unknown>) => {
+        queueExamEvent(eventType, details, topic, difficulty);
+    }, [topic, difficulty]);
+
+    const examMode = useExamMode(handleExamTerminate, handleObservedExamEvent);
 
     // Check URL params for roadmap-linked quiz on mount
     useEffect(() => {
@@ -293,6 +367,37 @@ export default function Quiz() {
         return () => { if (examTimerRef.current) clearInterval(examTimerRef.current); };
     }, [step]);
 
+    useEffect(() => {
+        if (step !== 'active') return;
+        const attemptId = attemptIdRef.current ?? crypto.randomUUID();
+        attemptIdRef.current = attemptId;
+        const attempt: SavedExamAttempt = {
+            attemptId,
+            updatedAt: Date.now(),
+            questions: quizQuestions,
+            answers: selectedAnswers,
+            marked: [...markedForReview],
+            currentQuestion,
+            topic,
+            difficulty,
+            numQuestions,
+            startedAt: examStartTime ?? Date.now(),
+            remainingSeconds: examTimeRemaining,
+            isRoadmapQuiz,
+            roadmapSkillId,
+            roadmapSkillName,
+            roadmapLevel,
+            roadmapId,
+            passThreshold,
+        };
+        sessionStorage.setItem(ACTIVE_EXAM_ATTEMPT_KEY, attemptId);
+        sessionStorage.setItem(`${EXAM_ATTEMPT_PREFIX}${attemptId}`, JSON.stringify(attempt));
+    }, [
+        step, quizQuestions, selectedAnswers, markedForReview, currentQuestion, topic, difficulty,
+        numQuestions, examStartTime, examTimeRemaining, isRoadmapQuiz, roadmapSkillId,
+        roadmapSkillName, roadmapLevel, roadmapId, passThreshold,
+    ]);
+
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -321,6 +426,13 @@ export default function Quiz() {
         await handleStartQuiz();
     };
 
+    const handleResumeAttempt = async () => {
+        if (!savedAttempt) return;
+        await examMode.activateExamMode();
+        setShowResumePrompt(false);
+        setStep('active');
+    };
+
     const handleStartQuiz = async () => {
         setIsLoading(true);
         try {
@@ -338,8 +450,7 @@ export default function Quiz() {
                     questionsToUse = res.questions;
                     setPassThreshold(res.threshold || 70);
                 } else {
-                    setQuizQuestions(questionsByTopic[topic] || questionsByTopic['JavaScript']);
-                    questionsToUse = questionsByTopic[topic] || questionsByTopic['JavaScript'];
+                    throw new Error('AI question generation is temporarily unavailable, please retry');
                 }
             } else {
                 const count = parseInt(numQuestions);
@@ -353,9 +464,7 @@ export default function Quiz() {
                     setQuizQuestions(data);
                     questionsToUse = data;
                 } else {
-                    console.warn("API returned empty questions, using fallback.");
-                    setQuizQuestions(questionsByTopic[topic] || questionsByTopic['JavaScript']);
-                    questionsToUse = questionsByTopic[topic] || questionsByTopic['JavaScript'];
+                    throw new Error('AI question generation is temporarily unavailable, please retry');
                 }
             }
 
@@ -368,19 +477,19 @@ export default function Quiz() {
             setSelectedAnswers({});
             setQuizResult(null);
             setMarkedForReview(new Set());
+            clearSavedExamAttempt(attemptIdRef.current);
+            attemptIdRef.current = crypto.randomUUID();
+            setSavedAttempt(null);
+            setShowResumePrompt(false);
+            setSubmitError('');
+            setQuestionGenerationError('');
         } catch (error) {
-            console.error("Failed to generate quiz:", error);
-            const fallback = questionsByTopic[topic] || questionsByTopic['JavaScript'];
-            setQuizQuestions(fallback);
-            
-            const duration = fallback.length * 120;
-            setExamTimeRemaining(duration);
-            setExamStartTime(Date.now());
-
-            setStep('active');
-            setCurrentQuestion(0);
-            setSelectedAnswers({});
-            setMarkedForReview(new Set());
+            await examMode.deactivateExamMode();
+            setStep('setup');
+            setQuestionGenerationError(
+                (error as any)?.response?.data?.detail ||
+                'AI question generation is temporarily unavailable, please retry.',
+            );
         } finally {
             setIsLoading(false);
         }
@@ -434,46 +543,40 @@ export default function Quiz() {
     };
 
     const handleFinalSubmit = async () => {
+        if (submitInProgressRef.current) return;
+        if (examMode.isOffline) {
+            setSubmitError('You are offline. Your answers are saved; reconnect before submitting.');
+            return;
+        }
+        submitInProgressRef.current = true;
+        setIsSubmitting(true);
+        setSubmitError('');
         if (examTimerRef.current) clearInterval(examTimerRef.current);
         examMode.deactivateExamMode();
-        setStep('results');
-
-        if (isRoadmapQuiz && roadmapSkillId && roadmapSkillName && roadmapLevel) {
-            try {
-                const answers = buildQuizAnswers();
-
-                const result = await submitSkillQuiz(
-                    roadmapId,
-                    roadmapSkillId,
-                    roadmapSkillName,
-                    roadmapLevel,
-                    answers
-                );
-                setQuizResult(result);
-                trackCompletedQuiz(roadmapSkillName, result, answers);
-
-                try { await saveProgressSnapshot(0); } catch (_) { }
-            } catch (e) {
-                console.error("Failed to submit roadmap quiz:", e);
-            }
-        } else {
-            try {
-                const answers = buildQuizAnswers();
-
-                const result = await submitSkillQuiz(
+        try {
+            const answers = buildQuizAnswers();
+            const result = isRoadmapQuiz && roadmapSkillId && roadmapSkillName && roadmapLevel
+                ? await submitSkillQuiz(roadmapId, roadmapSkillId, roadmapSkillName, roadmapLevel, answers)
+                : await submitSkillQuiz(
                     null,
                     `standalone_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
                     topic,
                     difficulty,
-                    answers
+                    answers,
                 );
-                setQuizResult(result);
-                trackCompletedQuiz(topic, result, answers);
-
-                try { await saveProgressSnapshot(0); } catch (_) { }
-            } catch (e) {
-                console.error("Failed to submit standalone quiz:", e);
-            }
+            setQuizResult(result);
+            trackCompletedQuiz(isRoadmapQuiz && roadmapSkillName ? roadmapSkillName : topic, result, answers);
+            try { await saveProgressSnapshot(0); } catch (_) { }
+            clearSavedExamAttempt(attemptIdRef.current);
+            attemptIdRef.current = null;
+            setSavedAttempt(null);
+            setStep('results');
+        } catch {
+            setSubmitError('Submission failed. Your answers are saved. Check your connection and retry.');
+            setStep('active');
+        } finally {
+            submitInProgressRef.current = false;
+            setIsSubmitting(false);
         }
     };
 
@@ -485,10 +588,15 @@ export default function Quiz() {
     handleAutoSubmitRef.current = handleAutoSubmit;
 
     const handleSubmitExam = () => {
+        if (examMode.isOffline) {
+            setSubmitError('You are offline. Your answers are saved; reconnect before submitting.');
+            return;
+        }
         setShowSubmitConfirm(true);
     };
 
     const handleConfirmSubmit = async () => {
+        if (examMode.isOffline || isSubmitting) return;
         setShowSubmitConfirm(false);
         await handleFinalSubmit();
     };
@@ -540,6 +648,24 @@ export default function Quiz() {
                 markedForReview={markedForReview}
                 onQuestionSelect={setCurrentQuestion}
             >
+                {examMode.isOffline && (
+                    <div role="status" className="mb-4 rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 text-sm font-semibold text-amber-200">
+                        You are offline. Your answers are being saved on this device; submission is available when you reconnect.
+                    </div>
+                )}
+                {examMode.showFocusWarning && (
+                    <div role="status" className="mb-4 rounded-xl border border-sky-500/40 bg-sky-500/10 p-4 text-sm font-semibold text-sky-200">
+                        Focus was lost while this page remained visible. This observation does not terminate your exam.
+                    </div>
+                )}
+                {submitError && (
+                    <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm font-semibold text-rose-200">
+                        <span>{submitError}</span>
+                        <Button onClick={handleFinalSubmit} disabled={examMode.isOffline || isSubmitting}>
+                            {isSubmitting ? 'Submitting…' : 'Retry submission'}
+                        </Button>
+                    </div>
+                )}
                 <div className="flex-1 flex flex-col justify-between">
                     <Card className="p-6 sm:p-12 border-none shadow-xl bg-[#12121e] rounded-2xl sm:rounded-[3rem] space-y-8 sm:space-y-10 min-h-[400px] sm:min-h-[500px] flex flex-col justify-center border-slate-800/60 relative">
                         <h2 className="text-2xl font-[900] text-white leading-snug">
@@ -658,9 +784,10 @@ export default function Quiz() {
                                         </Button>
                                         <Button
                                             onClick={handleConfirmSubmit}
+                                            disabled={isSubmitting || examMode.isOffline}
                                             className="flex-1 h-12 rounded-xl bg-[#5c52d2] text-white font-bold hover:bg-[#4a42b0]"
                                         >
-                                            Yes, Submit
+                                            {isSubmitting ? 'Submitting…' : 'Yes, Submit'}
                                         </Button>
                                     </div>
                                 </div>
@@ -879,6 +1006,27 @@ export default function Quiz() {
                             )}
 
                             <Card className="p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-[2.5rem] space-y-10 max-w-2xl mx-auto border border-white/20">
+                                {showResumePrompt && savedAttempt && (
+                                    <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 space-y-3">
+                                        <p className="font-bold text-indigo-900">
+                                            An unfinished exam is available to resume ({formatTime(savedAttempt.remainingSeconds)} remaining).
+                                        </p>
+                                        <div className="flex flex-wrap gap-3">
+                                            <Button onClick={handleResumeAttempt}>Resume exam</Button>
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => {
+                                                    clearSavedExamAttempt(savedAttempt.attemptId);
+                                                    attemptIdRef.current = null;
+                                                    setSavedAttempt(null);
+                                                    setShowResumePrompt(false);
+                                                }}
+                                            >
+                                                Discard saved exam
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
                                 {/* Topic selection: show only for standard quizzes */}
                                 {!isRoadmapQuiz && (
                                     <div className="space-y-8">
@@ -1020,7 +1168,10 @@ export default function Quiz() {
                                             Generating {numQuestions} Questions...
                                         </span>
                                     ) : (
-                                        isRoadmapQuiz ? `Start ${roadmapSkillName} Assessment` : `Start ${topic} Assessment`
+                                        <span className="flex flex-col items-center gap-1">
+                                            {questionGenerationError && <span role="alert" className="text-sm">{questionGenerationError}</span>}
+                                            {questionGenerationError ? 'Retry question generation' : isRoadmapQuiz ? `Start ${roadmapSkillName} Assessment` : `Start ${topic} Assessment`}
+                                        </span>
                                     )}
                                 </Button>
                             </Card>

@@ -113,7 +113,7 @@ def test_event_ingestion_is_idempotent_and_uses_authenticated_user():
 
     assert result == {"accepted": 1, "duplicates": 1}
     assert len(db.events) == 1
-    assert db.events[0].user_id == str(user_id)
+    assert db.events[0].user_id == user_id
 
     repeated_result = record_events(request, db=db, current_user=current_user)
     assert repeated_result == {"accepted": 0, "duplicates": 2}

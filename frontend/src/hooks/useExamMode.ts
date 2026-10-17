@@ -13,6 +13,8 @@ interface ExamModeState {
     showTabWarning: boolean;
     isTerminated: boolean;
     terminationReason: string;
+    showFocusWarning: boolean;
+    isOffline: boolean;
 }
 
 interface UseExamModeReturn extends ExamModeState {
@@ -22,8 +24,24 @@ interface UseExamModeReturn extends ExamModeState {
     returnToFullscreen: () => Promise<void>;
 }
 
+type AttachedExamHandlers = {
+    fullscreenchange: () => void;
+    visibilitychange: () => void;
+    keydown: (event: KeyboardEvent) => void;
+    contextmenu: (event: MouseEvent) => void;
+    copy: (event: ClipboardEvent) => void;
+    paste: (event: ClipboardEvent) => void;
+    selectstart: (event: Event) => void;
+    beforeunload: (event: BeforeUnloadEvent) => string | void;
+    blur: () => void;
+    focus: () => void;
+    offline: () => void;
+    online: () => void;
+};
+
 export function useExamMode(
     onTerminate: (reason: string) => void,
+    onObservedEvent: (eventType: string, details?: Record<string, unknown>) => void = () => {},
 ): UseExamModeReturn {
     const [isExamActive, setIsExamActive] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -33,30 +51,77 @@ export function useExamMode(
     const [showTabWarning, setShowTabWarning] = useState(false);
     const [isTerminated, setIsTerminated] = useState(false);
     const [terminationReason, setTerminationReason] = useState('');
+    const [showFocusWarning, setShowFocusWarning] = useState(false);
+    const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
 
     const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isExamActiveRef = useRef(false);
     const tabSwitchCountRef = useRef(0);
-
+    const terminatedRef = useRef(false);
+    const fullscreenCountdownRef = useRef(30);
+    const blurStartedAtRef = useRef<number | null>(null);
+    const offlineRef = useRef(typeof navigator !== 'undefined' && !navigator.onLine);
+    const attachedHandlersRef = useRef<AttachedExamHandlers | null>(null);
+    const previousUserSelectRef = useRef<{ userSelect: string; webkitUserSelect: string } | null>(null);
+    const onTerminateRef = useRef(onTerminate);
+    const onObservedEventRef = useRef(onObservedEvent);
     // Keep refs in sync
+    useEffect(() => {
+        onTerminateRef.current = onTerminate;
+        onObservedEventRef.current = onObservedEvent;
+    }, [onTerminate, onObservedEvent]);
     useEffect(() => { isExamActiveRef.current = isExamActive; }, [isExamActive]);
     useEffect(() => { tabSwitchCountRef.current = tabSwitchCount; }, [tabSwitchCount]);
 
-    const terminateExam = useCallback((reason: string) => {
-        setIsTerminated(true);
-        setTerminationReason(reason);
-        setIsExamActive(false);
-        setShowFullscreenWarning(false);
+    const detachExamListeners = useCallback(() => {
+        const handlers = attachedHandlersRef.current;
+        if (handlers) {
+            document.removeEventListener('fullscreenchange', handlers.fullscreenchange);
+            document.removeEventListener('visibilitychange', handlers.visibilitychange);
+            document.removeEventListener('keydown', handlers.keydown, true);
+            document.removeEventListener('contextmenu', handlers.contextmenu);
+            document.removeEventListener('copy', handlers.copy);
+            document.removeEventListener('paste', handlers.paste);
+            document.removeEventListener('selectstart', handlers.selectstart);
+            window.removeEventListener('beforeunload', handlers.beforeunload);
+            window.removeEventListener('blur', handlers.blur);
+            window.removeEventListener('focus', handlers.focus);
+            window.removeEventListener('offline', handlers.offline);
+            window.removeEventListener('online', handlers.online);
+            attachedHandlersRef.current = null;
+        }
+        isExamActiveRef.current = false;
         if (countdownRef.current) {
             clearInterval(countdownRef.current);
             countdownRef.current = null;
         }
-        // Exit fullscreen if still in it
+        if (blurTimerRef.current) {
+            clearTimeout(blurTimerRef.current);
+            blurTimerRef.current = null;
+        }
+        blurStartedAtRef.current = null;
+        const previousStyle = previousUserSelectRef.current;
+        if (previousStyle) {
+            document.body.style.userSelect = previousStyle.userSelect;
+            document.body.style.webkitUserSelect = previousStyle.webkitUserSelect;
+            previousUserSelectRef.current = null;
+        }
+    }, []);
+
+    const terminateExam = useCallback((reason: string) => {
+        if (terminatedRef.current) return;
+        terminatedRef.current = true;
+        detachExamListeners();
+        setIsTerminated(true);
+        setTerminationReason(reason);
+        setIsExamActive(false);
+        setShowFullscreenWarning(false);
         if (document.fullscreenElement) {
             document.exitFullscreen().catch(() => { });
         }
-        onTerminate(reason);
-    }, [onTerminate]);
+        onTerminateRef.current(reason);
+    }, [detachExamListeners]);
 
     // ── Fullscreen change handler ──
     const handleFullscreenChange = useCallback(() => {
@@ -69,17 +134,14 @@ export function useExamMode(
             // User exited fullscreen — start 30s countdown
             setShowFullscreenWarning(true);
             setFullscreenCountdown(30);
+            fullscreenCountdownRef.current = 30;
 
             if (countdownRef.current) clearInterval(countdownRef.current);
             countdownRef.current = setInterval(() => {
-                setFullscreenCountdown(prev => {
-                    if (prev <= 1) {
-                        if (countdownRef.current) clearInterval(countdownRef.current);
-                        terminateExam('Fullscreen exit timeout');
-                        return 0;
-                    }
-                    return prev - 1;
-                });
+                const next = fullscreenCountdownRef.current - 1;
+                fullscreenCountdownRef.current = next;
+                setFullscreenCountdown(next);
+                if (next <= 0) terminateExam('Fullscreen exit timeout');
             }, 1000);
         } else {
             // User returned to fullscreen — cancel countdown
@@ -95,7 +157,13 @@ export function useExamMode(
     const handleVisibilityChange = useCallback(() => {
         if (!isExamActiveRef.current) return;
         if (document.hidden) {
+            if (blurTimerRef.current) {
+                clearTimeout(blurTimerRef.current);
+                blurTimerRef.current = null;
+            }
+            blurStartedAtRef.current = null;
             const newCount = tabSwitchCountRef.current + 1;
+            tabSwitchCountRef.current = newCount;
             setTabSwitchCount(newCount);
 
             if (newCount >= 2) {
@@ -109,23 +177,69 @@ export function useExamMode(
     // ── Keyboard shortcut blocker ──
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
         if (!isExamActiveRef.current) return;
+        const key = e.key.toLowerCase();
+        const shortcutKey = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+        let combo: string | null = null;
+        if (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(key)) {
+            combo = `Ctrl+Shift+${shortcutKey}`;
+        } else if (e.ctrlKey && ['c', 'v', 'u', 'a', 's', 'p'].includes(key)) {
+            combo = `Ctrl+${shortcutKey}`;
+        } else if (e.key === 'F12') {
+            combo = 'F12';
+        } else if (e.key === 'PrintScreen' || e.code === 'PrintScreen') {
+            combo = 'PrintScreen';
+        } else if (e.altKey && !['Alt', 'Control', 'Shift', 'Meta'].includes(e.key)) {
+            combo = `Alt+${shortcutKey}`;
+        } else if (e.metaKey && !['Alt', 'Control', 'Shift', 'Meta'].includes(e.key)) {
+            combo = `Meta+${shortcutKey}`;
+        }
+        if (combo) {
+            onObservedEventRef.current('restricted_shortcut', { combo });
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, []);
 
-        // Block Ctrl+C, Ctrl+V, Ctrl+U, Ctrl+A, Ctrl+S, Ctrl+P, F12
-        if (e.ctrlKey && ['c', 'v', 'u', 'a', 's', 'p'].includes(e.key.toLowerCase())) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
+    const handleBlur = useCallback(() => {
+        if (!isExamActiveRef.current || document.visibilityState !== 'visible' || blurTimerRef.current) return;
+        const startedAt = Date.now();
+        blurStartedAtRef.current = startedAt;
+        blurTimerRef.current = setTimeout(() => {
+            blurTimerRef.current = null;
+            if (
+                isExamActiveRef.current &&
+                document.visibilityState === 'visible' &&
+                blurStartedAtRef.current === startedAt
+            ) {
+                setShowFocusWarning(true);
+                onObservedEventRef.current('focus_lost', { duration_ms: Date.now() - startedAt });
+            }
+            blurStartedAtRef.current = null;
+        }, 2000);
+    }, []);
+
+    const handleFocus = useCallback(() => {
+        if (blurTimerRef.current) {
+            clearTimeout(blurTimerRef.current);
+            blurTimerRef.current = null;
         }
-        if (e.key === 'F12') {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
+        blurStartedAtRef.current = null;
+        setShowFocusWarning(false);
+    }, []);
+
+    const handleOffline = useCallback(() => {
+        if (!offlineRef.current) {
+            offlineRef.current = true;
+            setIsOffline(true);
+            onObservedEventRef.current('network_offline');
         }
-        // Block Ctrl+Shift+I (DevTools)
-        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'i') {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
+    }, []);
+
+    const handleOnline = useCallback(() => {
+        if (offlineRef.current) {
+            offlineRef.current = false;
+            setIsOffline(false);
+            onObservedEventRef.current('network_online');
         }
     }, []);
 
@@ -162,6 +276,7 @@ export function useExamMode(
 
     // ── Activate exam mode ──
     const activateExamMode = useCallback(async () => {
+        detachExamListeners();
         try {
             await document.documentElement.requestFullscreen();
             setIsFullscreen(true);
@@ -170,55 +285,65 @@ export function useExamMode(
         }
 
         setIsExamActive(true);
+        isExamActiveRef.current = true;
+        terminatedRef.current = false;
         setIsTerminated(false);
         setTerminationReason('');
+        tabSwitchCountRef.current = 0;
         setTabSwitchCount(0);
         setShowFullscreenWarning(false);
         setShowTabWarning(false);
-
-        // Attach event listeners
-        document.addEventListener('fullscreenchange', handleFullscreenChange);
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        document.addEventListener('keydown', handleKeyDown, true);
-        document.addEventListener('contextmenu', handleContextMenu);
-        document.addEventListener('copy', handleCopy);
-        document.addEventListener('paste', handlePaste);
-        document.addEventListener('selectstart', handleSelectStart);
-        window.addEventListener('beforeunload', handleBeforeUnload);
+        setShowFocusWarning(false);
+        offlineRef.current = typeof navigator !== 'undefined' && !navigator.onLine;
+        setIsOffline(offlineRef.current);
+        if (offlineRef.current) onObservedEventRef.current('network_offline');
+        previousUserSelectRef.current = {
+            userSelect: document.body.style.userSelect,
+            webkitUserSelect: document.body.style.webkitUserSelect,
+        };
+        const handlers: AttachedExamHandlers = {
+            fullscreenchange: handleFullscreenChange,
+            visibilitychange: handleVisibilityChange,
+            keydown: handleKeyDown,
+            contextmenu: handleContextMenu,
+            copy: handleCopy,
+            paste: handlePaste,
+            selectstart: handleSelectStart,
+            beforeunload: handleBeforeUnload,
+            blur: handleBlur,
+            focus: handleFocus,
+            offline: handleOffline,
+            online: handleOnline,
+        };
+        attachedHandlersRef.current = handlers;
+        document.addEventListener('fullscreenchange', handlers.fullscreenchange);
+        document.addEventListener('visibilitychange', handlers.visibilitychange);
+        document.addEventListener('keydown', handlers.keydown, true);
+        document.addEventListener('contextmenu', handlers.contextmenu);
+        document.addEventListener('copy', handlers.copy);
+        document.addEventListener('paste', handlers.paste);
+        document.addEventListener('selectstart', handlers.selectstart);
+        window.addEventListener('beforeunload', handlers.beforeunload);
+        window.addEventListener('blur', handlers.blur);
+        window.addEventListener('focus', handlers.focus);
+        window.addEventListener('offline', handlers.offline);
+        window.addEventListener('online', handlers.online);
 
         // Apply no-select style
         document.body.style.userSelect = 'none';
         document.body.style.webkitUserSelect = 'none';
-    }, [handleFullscreenChange, handleVisibilityChange, handleKeyDown, handleContextMenu, handleCopy, handlePaste, handleBeforeUnload, handleSelectStart]);
+    }, [detachExamListeners, handleFullscreenChange, handleVisibilityChange, handleKeyDown, handleContextMenu, handleCopy, handlePaste, handleBeforeUnload, handleSelectStart, handleBlur, handleFocus, handleOffline, handleOnline]);
 
     // ── Deactivate exam mode ──
     const deactivateExamMode = useCallback(() => {
         setIsExamActive(false);
-
-        if (countdownRef.current) {
-            clearInterval(countdownRef.current);
-            countdownRef.current = null;
-        }
-
-        // Remove event listeners
-        document.removeEventListener('fullscreenchange', handleFullscreenChange);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        document.removeEventListener('keydown', handleKeyDown, true);
-        document.removeEventListener('contextmenu', handleContextMenu);
-        document.removeEventListener('copy', handleCopy);
-        document.removeEventListener('paste', handlePaste);
-        document.removeEventListener('selectstart', handleSelectStart);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-
-        // Restore selection
-        document.body.style.userSelect = '';
-        document.body.style.webkitUserSelect = '';
+        detachExamListeners();
 
         // Exit fullscreen if still in it
         if (document.fullscreenElement) {
             document.exitFullscreen().catch(() => { });
         }
-    }, [handleFullscreenChange, handleVisibilityChange, handleKeyDown, handleContextMenu, handleCopy, handlePaste, handleBeforeUnload, handleSelectStart]);
+    }, [detachExamListeners]);
 
     const dismissTabWarning = useCallback(() => {
         setShowTabWarning(false);
@@ -234,20 +359,8 @@ export function useExamMode(
 
     // Cleanup on unmount
     useEffect(() => {
-        return () => {
-            if (countdownRef.current) clearInterval(countdownRef.current);
-            document.removeEventListener('fullscreenchange', handleFullscreenChange);
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            document.removeEventListener('keydown', handleKeyDown, true);
-            document.removeEventListener('contextmenu', handleContextMenu);
-            document.removeEventListener('copy', handleCopy);
-            document.removeEventListener('paste', handlePaste);
-            document.removeEventListener('selectstart', handleSelectStart);
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-            document.body.style.userSelect = '';
-            document.body.style.webkitUserSelect = '';
-        };
-    }, []);
+        return () => detachExamListeners();
+    }, [detachExamListeners]);
 
     return {
         isExamActive,
@@ -258,6 +371,8 @@ export function useExamMode(
         showTabWarning,
         isTerminated,
         terminationReason,
+        showFocusWarning,
+        isOffline,
         activateExamMode,
         deactivateExamMode,
         dismissTabWarning,

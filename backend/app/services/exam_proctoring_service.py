@@ -54,6 +54,26 @@ def record_violation(
     Record an exam violation and compute the lockout period.
     Returns the violation record and lockout info.
     """
+    duplicate = (
+        db.query(ExamViolation)
+        .filter(
+            ExamViolation.user_id == user_id,
+            ExamViolation.violation_type == violation_type,
+            ExamViolation.created_at >= datetime.now(timezone.utc) - timedelta(seconds=60),
+        )
+        .order_by(ExamViolation.created_at.desc())
+        .first()
+    )
+    if duplicate:
+        return {
+            "violation_id": str(duplicate.id),
+            "violation_number": get_violation_count(user_id, db),
+            "violation_type": duplicate.violation_type,
+            "penalty_hours": duplicate.penalty_hours,
+            "locked_until": duplicate.locked_until.isoformat() if duplicate.locked_until else None,
+            "duplicate": True,
+        }
+
     current_count = get_violation_count(user_id, db)
     new_count = current_count + 1
     penalty_hours = get_penalty_hours(new_count)
@@ -82,6 +102,7 @@ def record_violation(
         "violation_type": violation_type,
         "penalty_hours": penalty_hours,
         "locked_until": locked_until.isoformat(),
+        "duplicate": False,
     }
 
 

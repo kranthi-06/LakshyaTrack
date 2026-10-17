@@ -4,7 +4,7 @@ These are ADDITIVE — no existing tables are modified.
 """
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, DateTime, Text,
-    ForeignKey, UniqueConstraint
+    ForeignKey, UniqueConstraint, Index, JSON
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
@@ -92,6 +92,23 @@ class ExamViolation(Base):
     penalty_hours = Column(Float, default=1.0)          # Hours locked after this violation
     locked_until = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExamEvent(Base):
+    __tablename__ = "exam_events"
+    __table_args__ = (
+        UniqueConstraint("user_id", "client_event_id", name="uq_exam_events_user_client_event"),
+        Index("ix_exam_events_user_created", "user_id", "created_at"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    client_event_id = Column(String(120), nullable=False)
+    event_type = Column(String(50), nullable=False)
+    details = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    exam_topic = Column(String(200), nullable=True)
+    exam_difficulty = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class InterviewSession(Base):
