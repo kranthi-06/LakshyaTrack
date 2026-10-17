@@ -5,11 +5,13 @@ from app.models.career import ProgressSnapshot, QuizAttempt
 from app.models.user import User
 
 
-def get_users_with_profiles(db: Session) -> list[User]:
+def get_users_with_profiles(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
     return (
         db.query(User)
         .options(joinedload(User.profile))
         .order_by(User.created_at.desc())
+        .offset(skip)
+        .limit(limit)
         .all()
     )
 

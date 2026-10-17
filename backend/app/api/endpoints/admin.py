@@ -18,10 +18,11 @@ Routes:
 """
 
 from datetime import datetime, timezone, timedelta
+import logging
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sql_func
+from sqlalchemy import func as sql_func, or_
 
 from app.api import deps
 from app.models.user import User, Profile, Blacklist
@@ -34,6 +35,7 @@ from app.core.config import settings
 import uuid
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -44,27 +46,31 @@ router = APIRouter()
 def list_all_users(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.require_admin),
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
     search: Optional[str] = None,
 ) -> Any:
     """List all users with profile details. Accessible by admin + black_admin."""
     from sqlalchemy.orm import joinedload
     from app.models.career import Roadmap, ProgressSnapshot
 
-    query = db.query(User).options(joinedload(User.profile))
+    query = db.query(User).outerjoin(Profile, Profile.id == User.id).options(joinedload(User.profile))
 
-    if search:
-        search_pattern = f"%{search}%"
+    if search is not None and search.strip():
+        escaped_search = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        search_pattern = f"%{escaped_search}%"
         query = query.filter(
-            (User.email.ilike(search_pattern))
+            or_(
+                User.email.ilike(search_pattern, escape="\\"),
+                Profile.full_name.ilike(search_pattern, escape="\\"),
+            )
         )
 
     total = query.count()
-    users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+    users = query.order_by(User.created_at.desc(), User.id.asc()).offset(skip).limit(limit).all()
 
     if not users:
-        return {"users": [], "total": total}
+        return {"users": [], "total": total, "skip": skip, "limit": limit}
 
     user_ids = [u.id for u in users]
 
@@ -99,50 +105,73 @@ def list_all_users(
 
     result = []
     for u in users:
-        # Compute progress status from pre-fetched roadmap
-        roadmap = roadmap_map.get(u.id)
+        user_row_id = str(getattr(u, "id", "unknown"))
         progress_status = "No Roadmap"
-        if roadmap and roadmap.roadmap_data and "levels" in roadmap.roadmap_data:
-            levels = roadmap.roadmap_data["levels"]
-            current_stage = 1
-            for idx, lvl in enumerate(levels):
-                is_completed = all(s.get("status") == "completed" for s in lvl.get("skills", []))
-                if not is_completed:
-                    current_stage = idx + 1
-                    break
-            else:
-                current_stage = len(levels)
-            progress_status = f"Stage {current_stage}: {roadmap.target_role}"
+        roadmap = roadmap_map.get(u.id)
+        if roadmap:
+            try:
+                roadmap_data = roadmap.roadmap_data
+                if not isinstance(roadmap_data, dict):
+                    raise ValueError("roadmap data is not an object")
+                levels = roadmap_data.get("levels", [])
+                if not isinstance(levels, list):
+                    raise ValueError("roadmap levels are not a list")
+                current_stage = len(levels) or 1
+                for idx, level in enumerate(levels):
+                    if not isinstance(level, dict):
+                        raise ValueError("roadmap level is malformed")
+                    skills = level.get("skills") or []
+                    if not isinstance(skills, list):
+                        raise ValueError("roadmap skills are malformed")
+                    if not all(
+                        isinstance(skill, dict) and skill.get("status") == "completed"
+                        for skill in skills
+                    ):
+                        current_stage = idx + 1
+                        break
+                progress_status = f"Stage {current_stage}: {roadmap.target_role or 'Unknown'}"
+            except (TypeError, ValueError, AttributeError):
+                logger.warning("Invalid roadmap data for admin user row id=%s", user_row_id)
 
-        snap = snap_map.get(u.id)
+        try:
+            snap = snap_map.get(u.id)
+            email = u.email or ""
+            profile = getattr(u, "profile", None)
+            full_name = getattr(profile, "full_name", None) if profile else None
+            if not full_name:
+                full_name = email.split("@", 1)[0] if email else "Unknown user"
+            result.append({
+                "id": user_row_id,
+                "email": email,
+                "role": u.role or "user",
+                "is_active": bool(u.is_active),
+                "is_blacklisted": bool(u.is_blacklisted),
+                "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "full_name": full_name,
+                "progress_status": progress_status,
+                "career_score": float(snap.career_readiness_score or 0.0) if snap else 0.0,
+                "quizzes_passed": int(snap.total_quizzes_passed or 0) if snap else 0,
+                "interviews_done": int(snap.total_interviews_done or 0) if snap else 0,
+            })
+        except Exception:
+            logger.warning("Skipping malformed admin user row id=%s", user_row_id)
 
-        result.append({
-            "id": str(u.id),
-            "email": u.email,
-            "role": u.role or "user",
-            "is_active": u.is_active,
-            "is_blacklisted": u.is_blacklisted,
-            "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
-            "created_at": u.created_at.isoformat() if u.created_at else None,
-            "full_name": u.profile.full_name if u.profile else u.email.split("@")[0],
-            "progress_status": progress_status,
-            "career_score": snap.career_readiness_score if snap else 0.0,
-            "quizzes_passed": snap.total_quizzes_passed if snap else 0,
-            "interviews_done": snap.total_interviews_done if snap else 0,
-        })
-
-    return {"users": result, "total": total}
+    return {"users": result, "total": total, "skip": skip, "limit": limit}
 
 
 @router.get("/progress")
 def view_all_progress(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.require_admin),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
 ) -> Any:
     """View all user progress. Accessible by admin + black_admin."""
-    users = admin_repository.get_users_with_profiles(db)
+    total = db.query(User).count()
+    users = admin_repository.get_users_with_profiles(db, skip=skip, limit=limit)
     if not users:
-        return {"progress": []}
+        return {"progress": [], "total": total, "skip": skip, "limit": limit}
 
     user_ids = [u.id for u in users]
     quiz_counts = admin_repository.get_quiz_counts_by_user(db, user_ids)
@@ -166,7 +195,7 @@ def view_all_progress(
             } if progress else None,
         })
     
-    return {"progress": result}
+    return {"progress": result, "total": total, "skip": skip, "limit": limit}
 
 
 @router.get("/inactivity")
@@ -174,6 +203,8 @@ def inactivity_dashboard(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.require_admin),
     days: int = Query(default=7, ge=1, le=365),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
 ) -> Any:
     """
     Inactivity Dashboard - show users inactive for N days.
@@ -182,9 +213,11 @@ def inactivity_dashboard(
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     
     # Users who either never had activity OR were last active before cutoff
-    inactive_users = db.query(User).filter(
+    inactive_query = db.query(User).filter(
         (User.last_active_at == None) | (User.last_active_at < cutoff)
-    ).order_by(User.last_active_at.asc().nullsfirst()).all()
+    )
+    total = inactive_query.count()
+    inactive_users = inactive_query.order_by(User.last_active_at.asc().nullsfirst()).offset(skip).limit(limit).all()
     
     result = []
     for u in inactive_users:
@@ -200,7 +233,9 @@ def inactivity_dashboard(
     
     return {
         "inactive_users": result,
-        "total": len(result),
+        "total": total,
+        "skip": skip,
+        "limit": limit,
         "filter_days": days,
     }
 
@@ -293,9 +328,13 @@ def command_centre(
 def get_blacklist(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.require_black_admin),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
 ) -> Any:
     """View all blacklist records."""
-    records = db.query(Blacklist).order_by(Blacklist.blacklisted_at.desc()).all()
+    records_query = db.query(Blacklist)
+    total = records_query.count()
+    records = records_query.order_by(Blacklist.blacklisted_at.desc()).offset(skip).limit(limit).all()
     result = []
     for bl in records:
         result.append({
@@ -305,7 +344,7 @@ def get_blacklist(
             "blacklisted_at": bl.blacklisted_at.isoformat() if bl.blacklisted_at else None,
             "blacklisted_by": str(bl.blacklisted_by) if bl.blacklisted_by else None,
         })
-    return {"blacklist": result, "total": len(result)}
+    return {"blacklist": result, "total": total, "skip": skip, "limit": limit}
 
 
 @router.post("/blacklist-user")

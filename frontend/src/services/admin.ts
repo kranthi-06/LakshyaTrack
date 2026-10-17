@@ -16,7 +16,12 @@ export interface AdminUser {
 }
 
 // ── REQUIRE_ADMIN ROUTES ──────────────────────────────────
-export const getAdminUsers = async (skip = 0, limit = 100, search?: string) => {
+export const getAdminUsers = async (skip = 0, limit = 50, search?: string): Promise<{
+    users: AdminUser[];
+    total: number;
+    skip: number;
+    limit: number;
+}> => {
     const params = new URLSearchParams();
     params.append('skip', skip.toString());
     params.append('limit', limit.toString());

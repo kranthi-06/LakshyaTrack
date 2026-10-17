@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { getAdminUsers, blacklistUser, unblacklistUser, promoteUser, demoteUser, deleteUser, AdminUser } from '../services/admin';
 import { useAuth } from '../context/AuthContext';
-import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar, Loader2, BrainCircuit } from 'lucide-react';
+import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar, Loader2, BrainCircuit, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const AdminDashboard: React.FC = () => {
@@ -9,36 +9,58 @@ const AdminDashboard: React.FC = () => {
     const isBlackAdmin = user?.role === 'black_admin';
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [loading, setLoading] = useState(true);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(0);
+    const [refreshVersion, setRefreshVersion] = useState(0);
+    const [error, setError] = useState('');
     const [search, setSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const requestIdRef = useRef(0);
+    const pageSize = 50;
 
     // Debounce search input to avoid firing on every keystroke
     const handleSearchChange = useCallback((value: string) => {
         setSearch(value);
+        setPage(0);
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
             setDebouncedSearch(value);
         }, 400);
     }, []);
 
-    const fetchUsers = async (searchQuery: string) => {
+    const fetchUsers = useCallback(async (searchQuery: string, pageIndex: number) => {
+        const requestId = ++requestIdRef.current;
         setLoading(true);
+        setError('');
         try {
-            const data = await getAdminUsers(0, 50, searchQuery);
-            setUsers(data.users);
-        } catch (error) {
-            console.error('Failed to fetch users:', error);
+            const data = await getAdminUsers(pageIndex * pageSize, pageSize, searchQuery);
+            if (requestId !== requestIdRef.current) return;
+            setUsers(Array.isArray(data.users) ? data.users : []);
+            setTotal(Number.isFinite(data.total) ? data.total : 0);
+        } catch (fetchError: unknown) {
+            if (requestId !== requestIdRef.current) return;
+            const responseError = fetchError as {
+                response?: { status?: number; data?: { detail?: string } };
+            };
+            const status = responseError.response?.status;
+            const detail = responseError.response?.data?.detail;
+            const statusMessage = status === 401
+                ? 'Your session has expired. Please sign in again.'
+                : status === 403
+                    ? 'Admin access is required to view users.'
+                    : `Unable to load users${status ? ` (HTTP ${status})` : ''}.`;
+            setError(detail ? `${statusMessage} ${detail}` : statusMessage);
         } finally {
-            setLoading(false);
+            if (requestId === requestIdRef.current) setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        fetchUsers(debouncedSearch);
-    }, [debouncedSearch]);
+        void fetchUsers(debouncedSearch, page);
+    }, [debouncedSearch, page, refreshVersion, fetchUsers]);
 
     // Clean up debounce timer on unmount
     useEffect(() => {
@@ -152,16 +174,24 @@ const AdminDashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Search */}
-                <div className="mb-8 relative">
-                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                        type="text"
-                        placeholder="Search by email..."
-                        value={search}
-                        onChange={(e) => handleSearchChange(e.target.value)}
-                        className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all font-light tracking-wide backdrop-blur-sm"
-                    />
+                <div className="mb-8 flex flex-wrap items-center gap-3">
+                    <div className="relative min-w-[240px] flex-1">
+                        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                        <input
+                            type="text"
+                            placeholder="Search by email or full name..."
+                            value={search}
+                            onChange={(e) => handleSearchChange(e.target.value)}
+                            className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all font-light tracking-wide backdrop-blur-sm"
+                        />
+                    </div>
+                    <button type="button" onClick={() => setRefreshVersion(v => v + 1)} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                    </button>
+                </div>
+                <div className="mb-3 flex items-center justify-between text-sm text-slate-400">
+                    <span>{total} {total === 1 ? 'user' : 'users'} total</span>
+                    {error && <button type="button" onClick={() => setRefreshVersion(v => v + 1)} className="font-semibold text-rose-300 underline">Retry</button>}
                 </div>
 
                 <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
@@ -180,19 +210,23 @@ const AdminDashboard: React.FC = () => {
                             <tbody className="divide-y divide-slate-800/50">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={6} className="p-8 text-center text-slate-400">
+                                        <td colSpan={isBlackAdmin ? 6 : 5} className="p-8 text-center text-slate-400">
                                             <div className="flex items-center justify-center gap-3">
                                                 <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
                                                 Loading users...
                                             </div>
                                         </td>
                                     </tr>
+                                ) : error ? (
+                                    <tr><td colSpan={isBlackAdmin ? 6 : 5} role="alert" className="p-8 text-center text-rose-300">{error}</td></tr>
+                                ) : users.length === 0 ? (
+                                    <tr><td colSpan={isBlackAdmin ? 6 : 5} className="p-8 text-center text-slate-400">{debouncedSearch ? `No users match “${debouncedSearch}”.` : 'No users found.'}</td></tr>
                                 ) : users.map(u => (
                                     <tr key={u.id} className="hover:bg-slate-800/20 transition-colors cursor-pointer" onClick={() => setSelectedUser(u)}>
                                         <td className="p-5">
                                             <div className="flex flex-col">
-                                                <span className="font-medium text-slate-200">{u.full_name}</span>
-                                                <span className="text-sm text-slate-500">{u.email}</span>
+                                                <span className="font-medium text-slate-200">{u.full_name || 'Unknown user'}</span>
+                                                <span className="text-sm text-slate-500">{u.email || 'No email'}</span>
                                             </div>
                                         </td>
                                         <td className="p-5" onClick={(e) => e.stopPropagation()}>
@@ -201,7 +235,7 @@ const AdminDashboard: React.FC = () => {
                                                     'bg-slate-800 text-slate-300 border-slate-700'
                                                 }`}>
                                                 {u.role === 'black_admin' && <Crown className="w-3 h-3" />}
-                                                {u.role.replace('_', ' ').toUpperCase()}
+                                                {(u.role || 'user').replace('_', ' ').toUpperCase()}
                                             </span>
                                         </td>
                                         <td className="p-5" onClick={(e) => e.stopPropagation()}>
@@ -221,7 +255,7 @@ const AdminDashboard: React.FC = () => {
                                             </span>
                                         </td>
                                         <td className="p-5 text-sm text-slate-400">
-                                            {u.last_active_at ? new Date(u.last_active_at).toLocaleDateString() : 'Never'}
+                                            {u.last_active_at && !Number.isNaN(Date.parse(u.last_active_at)) ? new Date(u.last_active_at).toLocaleDateString() : 'Never'}
                                         </td>
                                         {isBlackAdmin && (
                                             <td className="p-5 text-right" onClick={(e) => e.stopPropagation()}>
@@ -264,6 +298,17 @@ const AdminDashboard: React.FC = () => {
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+                    <span>{total === 0 ? '0–0' : `${page * pageSize + 1}–${Math.min(total, page * pageSize + users.length)}`} of {total}</span>
+                    <div className="flex gap-2">
+                        <button type="button" disabled={page === 0 || loading} onClick={() => setPage(current => Math.max(0, current - 1))} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-2 disabled:opacity-40">
+                            <ChevronLeft className="h-4 w-4" /> Previous
+                        </button>
+                        <button type="button" disabled={loading || (page + 1) * pageSize >= total} onClick={() => setPage(current => current + 1)} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-2 disabled:opacity-40">
+                            Next <ChevronRight className="h-4 w-4" />
+                        </button>
                     </div>
                 </div>
             </main>
