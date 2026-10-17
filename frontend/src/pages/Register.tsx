@@ -14,7 +14,6 @@ import {
     EyeOff,
     CheckCircle2,
     ShieldCheck,
-    GraduationCap,
     ArrowRight,
     Sparkles,
     FileText,
@@ -100,12 +99,11 @@ export default function Register() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
-    const [username, setUsername] = useState('');
 
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-    const { register, signInWithGoogle, resendOtp } = useAuth();
+    const { register, signInWithGoogle } = useAuth();
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
@@ -130,7 +128,7 @@ export default function Register() {
         setIsLoading(true);
         try {
             const fullName = `${firstName} ${lastName}`.trim();
-            const finalUsername = username || email.split('@')[0];
+            const finalUsername = email.split('@')[0];
 
             const response = await register({
                 email,

@@ -1,4 +1,5 @@
-import axios, { AxiosAdapter, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError } from 'axios';
+import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios';
 
 // ══════════════════════════════════════════════════════════════
 // PRODUCTION-GRADE API CLIENT
@@ -33,12 +34,33 @@ type DedupedRequestConfig = InternalAxiosRequestConfig & {
     _dedupKey?: string;
 };
 
-function deduplicationKey(config: InternalAxiosRequestConfig): string | null {
+const IDEMPOTENT_RETRY_METHODS = new Set(['get', 'head', 'options', 'put', 'delete']);
+
+/**
+ * Mutations such as POST/PATCH must never be retried automatically: a timeout
+ * can occur after the server already processed the request.
+ */
+export function isIdempotentRequestMethod(method?: string): boolean {
+    return IDEMPOTENT_RETRY_METHODS.has((method || 'get').toLowerCase());
+}
+
+export function buildDeduplicationKey(
+    config: Pick<InternalAxiosRequestConfig, 'method' | 'baseURL' | 'url' | 'params'>,
+    token: string | null,
+): string | null {
     // Only deduplicate GET requests (safe to coalesce reads)
     if ((config.method || 'get').toLowerCase() !== 'get') return null;
     const url = `${config.baseURL || ''}${config.url || ''}`;
     const params = config.params ? JSON.stringify(config.params) : '';
-    return `GET:${url}:${params}`;
+    // Scope by token suffix so requests from different sessions never share
+    // an in-flight response.
+    const authScope = token ? token.slice(-32) : 'anonymous';
+    return `GET:${url}:${params}:${authScope}`;
+}
+
+function deduplicationKey(config: InternalAxiosRequestConfig): string | null {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    return buildDeduplicationKey(config, token);
 }
 
 // ── Circuit Breaker State ─────────────────────────────────────
@@ -208,8 +230,8 @@ api.interceptors.response.use(
         if (!error.response) {
             recordFailure();
 
-            // Retry transient network errors
-            if (config && !config._isRetry) {
+            // Retry transient network errors, but only for idempotent methods
+            if (config && isIdempotentRequestMethod(config.method) && !config._isRetry) {
                 const retryCount = config._retryCount || 0;
                 if (retryCount < MAX_RETRIES) {
                     config._retryCount = retryCount + 1;
@@ -224,8 +246,8 @@ api.interceptors.response.use(
             return Promise.reject(error);
         }
 
-        // ── 2. Server errors — retry with backoff ────────────────
-        if (isRetryable(error) && config) {
+        // ── 2. Server errors — retry with backoff (idempotent only) ──
+        if (isRetryable(error) && config && isIdempotentRequestMethod(config.method)) {
             // LIMIT_EXCEEDED is a 429 that means plan limit hit — NOT a rate limit.
             // Do NOT retry these — the user needs to upgrade their plan.
             const isLimitExceeded =

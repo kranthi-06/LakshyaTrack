@@ -334,20 +334,7 @@ async def analyze_speaking(request: SpeakingAnalysisRequest):
         raise
     except Exception as e:
         logger.exception("English speaking analysis failed: %s", str(e))
-        if request.type == "sentence":
-            fallback = {
-                "accuracy": 0, "missing_words": [], "incorrect_words": [],
-                "fluency": "Unable to analyze", "confidence": "Unable to analyze",
-                "issues": ["AI service temporarily unavailable"],
-                "tips": ["Please try again — the AI service is temporarily unavailable."],
-            }
-        else:
-            fallback = {
-                "fluency": "Unable to analyze", "vocabulary": "Unable to analyze",
-                "sentence_structure": "Unable to analyze", "grammar": "Unable to analyze",
-                "confidence": "Unable to analyze",
-                "issues": ["AI service temporarily unavailable"],
-                "tips": ["Please try again — the AI service is temporarily unavailable."],
-                "improved_answer": request.user_text,
-            }
-        return SpeakingAnalysisResponse(analysis=fallback)
+        raise HTTPException(
+            status_code=503,
+            detail="Speaking analysis is temporarily unavailable. Please try again shortly.",
+        ) from e

@@ -73,29 +73,28 @@ def record_events(
     db: Session = Depends(deps.get_db),
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
-    accepted = 0
-    duplicates = 0
     user_id = current_user.id
-    seen_client_event_ids: set[str] = set()
-    for event in data.events:
-        if event.client_event_id in seen_client_event_ids:
-            duplicates += 1
-            continue
-        seen_client_event_ids.add(event.client_event_id)
-        existing = (
-            db.query(ExamEvent)
-            .filter(
-                ExamEvent.user_id == user_id,
-                ExamEvent.client_event_id == event.client_event_id,
-            )
-            .first()
+    deduplicated = {event.client_event_id: event for event in data.events}
+    duplicates = len(data.events) - len(deduplicated)
+
+    existing_ids = {
+        row.client_event_id
+        for row in db.query(ExamEvent)
+        .filter(
+            ExamEvent.user_id == user_id,
+            ExamEvent.client_event_id.in_(deduplicated.keys()),
         )
-        if existing:
+        .all()
+    }
+
+    accepted = 0
+    for client_event_id, event in deduplicated.items():
+        if client_event_id in existing_ids:
             duplicates += 1
             continue
         db.add(ExamEvent(
             user_id=user_id,
-            client_event_id=event.client_event_id,
+            client_event_id=client_event_id,
             event_type=event.event_type,
             details=event.details,
             exam_topic=event.exam_topic,

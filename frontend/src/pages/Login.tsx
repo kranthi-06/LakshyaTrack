@@ -13,7 +13,6 @@ import {
     EyeOff,
     CheckCircle2,
     ShieldCheck,
-    GraduationCap,
     FileSearch,
     Mic,
     Route,

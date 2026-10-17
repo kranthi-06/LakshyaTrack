@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
-import { getUsageStatus, UsageStatus, UsageCounter } from '../services/usage';
+import { getUsageStatus } from '../services/usage';
+import type { UsageStatus, UsageCounter } from '../services/usage';
 
 type CounterName = 'resume_count' | 'interview_count_weekly' | 'plan_count' | 'resume_edit_monthly';
 

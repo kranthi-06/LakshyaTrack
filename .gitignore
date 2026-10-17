@@ -60,6 +60,7 @@ Thumbs.db
 
 # Project specific
 test_*.py
+!backend/tests/test_*.py
 debug_*.py
 scan_*.py
 check_*.py

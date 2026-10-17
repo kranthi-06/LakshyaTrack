@@ -2,40 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-    Search,
-    MapPin,
-    Briefcase,
-    ExternalLink,
-    Star,
-    Globe,
-    Clock,
-    ChevronDown,
-    Loader2,
-    Sparkles,
-    RefreshCw,
-    GraduationCap,
-    Award,
-    BookOpen,
-    Filter,
-    X,
-    ArrowRight,
-    TrendingUp,
-    Zap,
-    Calendar,
-    Tag,
-    ChevronLeft,
-    ChevronRight,
-    Radar,
-    Database,
-    Cpu,
-    ArrowLeft,
-} from 'lucide-react';
+import { Search, MapPin, Briefcase, ExternalLink, Star, Globe, ChevronDown, Loader2, Sparkles, RefreshCw, Award, BookOpen, X, TrendingUp, Zap, Calendar, Tag, ChevronLeft, ChevronRight, Radar, Database, Cpu, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     browseOpportunities,
     getFilterOptions,
-    getRecommendations,
     discoverOpportunities,
     fetchExternalSources,
     liveSearchOpportunities,
@@ -129,7 +100,6 @@ export default function Jobs() {
     const [isLoading, setIsLoading] = useState(false);
     const [isRecommending, setIsRecommending] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [showFilters, setShowFilters] = useState(false);
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
@@ -179,22 +149,6 @@ export default function Jobs() {
             console.error('Failed to load filter options:', err);
         }
     }, []);
-
-    // ── Load AI recommendations ──────────────────────────
-    const loadRecommendations = useCallback(async () => {
-        setIsRecommending(true);
-        try {
-            const skills = searchQuery
-                ? searchQuery.split(',').map(s => s.trim()).filter(Boolean)
-                : ['Python', 'JavaScript', 'React'];
-            const data = await getRecommendations(skills, 'Software Engineer', 6);
-            setRecommendations(data.opportunities || []);
-        } catch (err) {
-            console.error('Failed to load recommendations:', err);
-        } finally {
-            setIsRecommending(false);
-        }
-    }, [searchQuery]);
 
     // ── Initial load ─────────────────────────────────────
     useEffect(() => {

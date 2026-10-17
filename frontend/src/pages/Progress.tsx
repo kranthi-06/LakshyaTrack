@@ -2,33 +2,7 @@ import { useState, useEffect } from 'react';
 import AuthLoadingScreen from '../components/AuthLoadingScreen';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-    LineChart,
-    TrendingUp,
-    Award,
-    Target,
-    Rocket,
-    PieChart,
-    BrainCircuit,
-    History,
-    Flame,
-    Zap,
-    History as HistoryIcon,
-    Calendar,
-    ChevronRight,
-    Search,
-    Monitor,
-    BarChart3,
-    Users2,
-    ArrowUpRight,
-    Mic2,
-    Loader2,
-    Shield,
-    Sparkles,
-    RefreshCw,
-    Clock,
-    Activity
-} from 'lucide-react';
+import { TrendingUp, Target, Rocket, BrainCircuit, History, Flame, Zap, History as HistoryIcon, Calendar, Search, Monitor, BarChart3, ArrowUpRight, Mic2, Loader2, Sparkles, RefreshCw, Clock, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
     getCurrentProgress,

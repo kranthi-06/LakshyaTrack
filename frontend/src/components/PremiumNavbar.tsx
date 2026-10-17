@@ -14,7 +14,6 @@ import {
     Mic2,
     Briefcase,
     LineChart,
-    GraduationCap,
     Menu,
     X,
     User,

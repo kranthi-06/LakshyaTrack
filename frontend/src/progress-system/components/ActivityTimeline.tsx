@@ -3,7 +3,7 @@
 // New tab: real-time activity feed with filters & pagination
 // ══════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTimeline, type TimelineEvent, type TimelineResponse } from '../services/progressApi';
 

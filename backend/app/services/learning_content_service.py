@@ -32,7 +32,7 @@ def _build_search_query(skill_name: str, level: str) -> str:
     return f"{skill_name} {level_suffix}"
 
 
-async def _fetch_youtube_videos(query: str, max_results: int = 5) -> List[dict]:
+async def fetch_youtube_videos(query: str, max_results: int = 5) -> List[dict]:
     """
     Call YouTube Data API v3 search.list to fetch real videos.
     Returns a list of video objects with real data only.
@@ -109,7 +109,7 @@ async def get_learning_resources(
     # 2. Build search query and fetch from YouTube API
     logger.info(f"Cache miss for {skill_name}/{level}, fetching from YouTube API...")
     query = _build_search_query(skill_name, level)
-    videos = await _fetch_youtube_videos(query, max_results=5)
+    videos = await fetch_youtube_videos(query, max_results=5)
 
     # 3. Cache the result (only if we got real data)
     if videos:

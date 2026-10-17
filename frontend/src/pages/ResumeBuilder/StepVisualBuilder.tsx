@@ -7,7 +7,6 @@ import {
     ChevronDown, ChevronRight, Search, Filter, GripVertical, Save,
     Maximize2, X, AlertTriangle, FileStack, ArrowLeft, Layers, Lock
 } from 'lucide-react';
-import { SectionCard } from './components';
 import {
     ModernTemplate, ClassicTemplate, CreativeTemplate, DeveloperTemplate,
     MinimalATSTemplate, AcademicTemplate, ExecutiveTemplate, TwoColumnTemplate,
@@ -15,7 +14,7 @@ import {
     BoldHeaderTemplate, InfographicTemplate, CorporateTemplate, FreshTemplate,
     TEMPLATE_CATALOG, TEMPLATE_CATEGORIES, THEME_COLORS,
 } from './templates';
-import type { BaseTemplate, CatalogTemplate } from './templates';
+import type { BaseTemplate } from './templates';
 import type { ResumeData } from './types';
 import { exportToPDF, exportToDOCX } from './exportUtils';
 import { optimizeResumeContent } from '../../services/resumeBuilder';
@@ -143,7 +142,6 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
     const [rightPanelOpen, setRightPanelOpen] = useState(true);
     const [recentTemplates, setRecentTemplates] = useState<string[]>([]);
     const previewRef = useRef<HTMLDivElement>(null);
-    const fsScrollRef = useRef<HTMLDivElement>(null);
     const inlinePaperRef = useRef<HTMLDivElement>(null);
     const fsPaperRef = useRef<HTMLDivElement>(null);
 

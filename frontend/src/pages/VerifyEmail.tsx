@@ -6,18 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    ArrowRight,
-    CheckCircle2,
-    Clock3,
-    GraduationCap,
-    Mail,
-    ShieldCheck,
-    Sparkles,
-    BadgeCheck,
-    LockKeyhole,
-    RefreshCcw,
-} from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock3, Mail, ShieldCheck, Sparkles, BadgeCheck, LockKeyhole, RefreshCcw } from 'lucide-react';
 
 function FloatingParticles() {
     const particles = useMemo(

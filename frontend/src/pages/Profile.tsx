@@ -6,12 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '../context/AuthContext';
 import { updateProfile as updateProfileApi } from '../services/auth';
 import { uploadUserMedia } from '../services/media';
-import {
-    User, Mail, Phone, MapPin, Briefcase, Calendar,
-    Linkedin, Github, Globe, FileText, Award, Star,
-    Edit2, Camera, Save, X, Plus, Trash2, Eye, Download, Loader2, Lock
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { User, Mail, Phone, MapPin, Briefcase, Calendar, Linkedin, Github, Globe, FileText, Award, Edit2, Camera, Save, X, Plus, Trash2, Download, Loader2, Lock } from 'lucide-react';
 import { authorizeResumeDownload, getSavedResumes, deleteSavedResume } from '../services/resumeStorage';
 import { extractLimitExceededError } from '../services/api';
 import UpgradeModal from '../components/UpgradeModal';
@@ -347,7 +342,7 @@ export default function Profile() {
             if (limitInfo) {
                 setLimitModal({
                     isOpen: true,
-                    counter: limitInfo.counter,
+                    counter: limitInfo.counter === 'resume_count' ? 'resume_count' : 'resume_edit_monthly',
                     current: limitInfo.current,
                     limit: limitInfo.limit,
                     message: limitInfo.message,

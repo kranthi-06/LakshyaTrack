@@ -1,12 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Mic, Volume2, SkipForward, RotateCcw, Send,
-  Lightbulb, MessageSquare, Users, ChevronRight,
-  CheckCircle2, AlertCircle, Sparkles, BookOpen,
-  Square, RefreshCw, Loader2, FileText, Zap, Star,
-  ArrowRight, CircleAlert
-} from 'lucide-react';
+import { Mic, Volume2, SkipForward, RotateCcw, Send, Lightbulb, MessageSquare, Users, ChevronRight, CheckCircle2, AlertCircle, Sparkles, BookOpen, Square, RefreshCw, Loader2, FileText, Zap, Star, CircleAlert } from 'lucide-react';
 import { analyzeEnglishSpeaking, generateEnglishPassage, generateEnglishTopic } from '../services/englishSpeaking';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -54,7 +48,7 @@ function useSpeechRecognition() {
   const fullTranscriptRef = useRef('');
   const currentSessionFinalRef = useRef('');
   const shouldListenRef = useRef(false);
-  const startRef = useRef<() => void>();
+  const startRef = useRef<(() => void) | undefined>(undefined);
 
   const startListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;

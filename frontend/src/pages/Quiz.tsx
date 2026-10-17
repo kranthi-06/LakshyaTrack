@@ -224,7 +224,7 @@ export default function Quiz() {
     const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ── Exam mode hook ──────────
-    const handleExamTerminate = useCallback(async (reason: string) => {
+    const handleExamTerminate = useCallback(async () => {
         clearSavedExamAttempt(attemptIdRef.current);
         attemptIdRef.current = null;
         setSavedAttempt(null);

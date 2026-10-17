@@ -24,6 +24,9 @@ class _EventQuery:
     def first(self):
         return self.db.events[0] if self.db.events else None
 
+    def all(self):
+        return list(self.db.events)
+
 
 class _EventDb:
     def __init__(self):

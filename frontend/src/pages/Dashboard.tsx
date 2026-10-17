@@ -2,31 +2,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { motion } from 'framer-motion';
-import {
-    FileText,
-    Target,
-    Zap,
-    Trophy,
-    TrendingUp,
-    Calendar,
-    ChevronRight,
-    Play,
-    CheckCircle2,
-    Clock,
-    User as UserIcon,
-    Briefcase,
-    Mic2,
-    BookOpen,
-    BrainCircuit,
-    ArrowUpRight,
-    Plus,
-    Sparkles,
-    BarChart3,
-    Rocket,
-    Lock,
-    Crown,
-} from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { FileText, Target, Zap, Trophy, TrendingUp, Calendar, ChevronRight, Briefcase, Mic2, BookOpen, BrainCircuit, ArrowUpRight, Plus, Sparkles, BarChart3, Rocket, Lock, Crown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { getActiveRoadmap } from '../services/careerPlatform';
 import { useProgressDashboardStore, useProgressDashboardRuntime } from '../progress-system/store/useProgressDashboardStore';
 

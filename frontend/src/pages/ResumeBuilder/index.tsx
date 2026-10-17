@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, FileText, Sparkles, Edit2 } from 'lucide-react';
+import { ArrowRight, FileText, Sparkles, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Stepper } from './components';
 import { StepTargetRole } from './StepTargetRole';
@@ -56,7 +56,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
     });
 
     const [isDirty, setIsDirty] = useState(false);
-    const [isSaved, setIsSaved] = useState(true);
     const [leaveModalOpen, setLeaveModalOpen] = useState(false);
 
     // Keep latest data and counters available to event handlers without stale closures.
@@ -108,7 +107,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
         (partial: Partial<ResumeData>) => {
             editVersionRef.current += 1;
             setIsDirty(true);
-            setIsSaved(false);
             setData(prev => ({ ...prev, ...partial }));
         },
         [],
@@ -156,7 +154,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
             if (ok && editVersionRef.current === versionAtStart) {
                 lastSavedDataRef.current = current;
                 setIsDirty(false);
-                setIsSaved(true);
             }
 
             if (!authTokenPresentRef.current) return;
@@ -188,7 +185,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
         if (editVersionRef.current === versionAtStart) {
             lastSavedDataRef.current = current;
             setIsDirty(false);
-            setIsSaved(true);
         }
     }, [saveDraft]);
 
@@ -202,7 +198,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
             if (editVersionRef.current === versionAtStart) {
                 lastSavedDataRef.current = current;
                 setIsDirty(false);
-                setIsSaved(true);
             }
         },
         onSyncSaved: () => {
@@ -339,7 +334,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
 
         isDirtyRef.current = false;
         setIsDirty(false);
-        setIsSaved(true);
         setData(lastSavedDataRef.current);
 
         if (dest) {
@@ -355,7 +349,6 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
         // User chose to leave; prevent further modal re-entry even if backend sync fails.
         isDirtyRef.current = false;
         setIsDirty(false);
-        setIsSaved(true);
 
         if (dest) {
             navigate(dest);

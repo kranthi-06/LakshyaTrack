@@ -186,18 +186,11 @@ async def analyze_resume_with_ai(
 
     except Exception as e:
         logger.error("Resume analysis failed: %s", sanitize_for_logging(str(e)))
-        error = _error_response(str(e))
-        if cache_key:
-            # Cache error responses briefly so traffic spikes don't DDOS AI providers.
-            # Still behavior-preserving: repeated identical failures would have returned the same error anyway.
-            document_store_service.set_ai_cache(
-                cache_key=cache_key,
-                response=error,
-                provider="error",
-                input_payload={"resume": safe_resume, "job_description": safe_jd},
-                metadata={"type": "resume_analysis_v1", "error": True},
-            )
-        return error
+        # Never cache failures: a transient provider outage must not pin the
+        # user to an error result for the duration of the cache TTL.
+        return _error_response(
+            "AI resume analysis is temporarily unavailable. Please retry shortly."
+        )
 
 
 def _error_response(error_message: str) -> dict:

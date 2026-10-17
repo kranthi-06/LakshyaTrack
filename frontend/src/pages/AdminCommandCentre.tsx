@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getAdminCommandCentre, AdminUser } from '../services/admin';
+import { getAdminCommandCentre } from '../services/admin';
 import { Shield, Users, Activity, UserMinus, ShieldAlert, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 

@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, memo, lazy, Suspense } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AnimatePresence, motion } from 'framer-motion';
-import { GraduationCap } from 'lucide-react';
 import { usePerformanceMode } from '../hooks/usePerformanceMode';
 import {
     initProgressTracking,

@@ -1,34 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { Link, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useTheme } from '../context/ThemeContext';
 import { prefetchRoute } from '../utils/routePrefetch';
-import {
-    LayoutDashboard,
-    FileText,
-    BookOpen,
-    BrainCircuit,
-    Mic2,
-    Briefcase,
-    LineChart,
-    GraduationCap,
-    LogOut,
-    ChevronLeft,
-    User,
-    Shield,
-    Sun,
-    Moon,
-    Target,
-    Sparkles,
-    PanelLeftClose,
-    PanelLeft,
-    Crown,
-    Lock,
-    Languages,
-    Brain,
-} from 'lucide-react';
+import { LayoutDashboard, FileText, BookOpen, BrainCircuit, Mic2, Briefcase, LogOut, User, Shield, Sun, Moon, Target, Sparkles, PanelLeftClose, PanelLeft, Crown, Lock, Languages, Brain } from 'lucide-react';
 import SubscriptionBadge from './SubscriptionBadge';
 
 interface SidebarProps {

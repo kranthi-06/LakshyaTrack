@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, MouseEvent } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import type { MouseEvent } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform, useSpring, useMotionValue } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { PremiumBackground } from '../components/PremiumBackground';
@@ -9,14 +10,6 @@ import {
     Target,
     Mic,
     BookOpen,
-    Play,
-    ChevronRight,
-    Search,
-    Facebook,
-    Twitter,
-    Linkedin,
-    Mail,
-    GraduationCap,
     ArrowRight,
     MousePointer2
 } from 'lucide-react';
@@ -70,7 +63,6 @@ const TiltCard = ({ children, className }: { children: React.ReactNode, classNam
 export default function Landing() {
     const [activeFeature, setActiveFeature] = useState('resume');
     const [scrolled, setScrolled] = useState(false);
-    const [toast, setToast] = useState<{ message: string, type: 'success' | 'info' } | null>(null);
     const { liteMode, isMobile } = usePerformanceMode();
 
     const { scrollYProgress } = useScroll();
@@ -110,11 +102,6 @@ export default function Landing() {
         }));
     }, [isMobile, liteMode]);
 
-    const showToast = (message: string, type: 'success' | 'info' = 'info') => {
-        setToast({ message, type });
-        setTimeout(() => setToast(null), 3000);
-    };
-
     const features = {
         resume: {
             title: "AI-Powered Resume Analysis",
@@ -153,21 +140,6 @@ export default function Landing() {
                 className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-yellow-500 origin-left z-[100]"
                 style={{ scaleX }}
             />
-
-            {/* Toast */}
-            <AnimatePresence>
-                {toast && (
-                    <motion.div
-                        initial={{ x: 300, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        exit={{ x: 300, opacity: 0 }}
-                        className={`fixed top-24 right-4 px-6 py-4 rounded-xl shadow-2xl text-white z-[100] backdrop-blur-md border border-white/20 flex items-center gap-3 ${toast.type === 'success' ? 'bg-green-500/90' : 'bg-blue-500/90'}`}
-                    >
-                        {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-                        <span className="font-bold">{toast.message}</span>
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             {/* Navigation */}
             <nav className={`fixed w-full top-0 z-50 transition-all duration-500 py-4 ${scrolled ? 'bg-white/80 backdrop-blur-xl shadow-lg py-3 border-b border-gray-100' : 'bg-transparent'}`}>
@@ -563,8 +535,3 @@ export default function Landing() {
         </div>
     );
 }
-
-// Helper for stars
-const Star = (props: any) => (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-);

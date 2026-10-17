@@ -1,24 +1,6 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-    BookOpen,
-    Calendar,
-    CheckCircle2,
-    PlayCircle,
-    ArrowRight,
-    ChevronRight,
-    Star,
-    Video,
-    Book,
-    Code,
-    Sparkles,
-    Search,
-    Clock,
-    Library,
-    Users
-} from 'lucide-react';
+import { motion } from 'framer-motion';
+import { BookOpen, Calendar, PlayCircle, ArrowRight, Video, Sparkles, Clock, Library, Users } from 'lucide-react';
 const roadmapData = [
     {
         week: 'W1',

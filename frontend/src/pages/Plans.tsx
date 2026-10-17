@@ -10,8 +10,8 @@ import { useSubscription } from '../context/SubscriptionContext';
 import { useUsage } from '../context/UsageContext';
 import {
     getPlans, getMicroPlans, checkout, verifyPayment, applyCoupon,
-    SubscriptionPlan, MicroPlan,
 } from '../services/subscription';
+import type { SubscriptionPlan, MicroPlan } from '../services/subscription';
 import { getPlanLimits } from '../services/usage';
 import UpgradeModal from '../components/UpgradeModal';
 
@@ -82,6 +82,15 @@ interface LimitDefinition {
     resume_edit_monthly: number;
 }
 
+function normalizePlanLimits(limits: Record<string, number>): LimitDefinition {
+    return {
+        resume_count: Number(limits.resume_count ?? 0),
+        interview_count_weekly: Number(limits.interview_count_weekly ?? 0),
+        plan_count: Number(limits.plan_count ?? 0),
+        resume_edit_monthly: Number(limits.resume_edit_monthly ?? 0),
+    };
+}
+
 const LIMIT_LABELS: { key: keyof LimitDefinition; label: string; icon: any; unit: string }[] = [
     { key: 'resume_count', label: 'Resume Storage', icon: FileText, unit: 'stored' },
     { key: 'interview_count_weekly', label: 'Weekly Interviews', icon: Mic, unit: '/week' },
@@ -141,7 +150,13 @@ export default function Plans() {
                 ]);
                 setPlans(planData);
                 setMicroPlans(microData);
-                setPlanLimits(limitData.plans as Record<string, LimitDefinition>);
+                setPlanLimits(
+                    Object.fromEntries(
+                        Object.entries(limitData.plans ?? {}).map(
+                            ([plan, limits]) => [plan, normalizePlanLimits(limits)],
+                        ),
+                    ),
+                );
             } catch (err) {
                 console.error('Failed to load plans:', err);
             } finally {

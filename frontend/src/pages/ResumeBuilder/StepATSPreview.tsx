@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShieldCheck, CheckCircle2, AlertTriangle, Download, Trophy, ArrowRight, Lock } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, AlertTriangle, Download, Trophy, Lock } from 'lucide-react';
 import { SectionCard, AIButton } from './components';
 import { runATSCheck } from '../../services/resumeBuilder';
 import { authorizeResumeDownload } from '../../services/resumeStorage';

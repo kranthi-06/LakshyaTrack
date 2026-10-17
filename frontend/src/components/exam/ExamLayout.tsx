@@ -24,7 +24,6 @@ const ExamLayout: React.FC<ExamLayoutProps> = ({
   currentQuestion,
   totalQuestions,
   timeRemaining,
-  isExamActive,
   isFullscreen,
   onSubmitExam,
   answeredQuestions,

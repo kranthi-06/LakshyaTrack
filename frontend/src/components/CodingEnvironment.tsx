@@ -12,13 +12,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
-import {
-    Play, Send, ArrowRight, CheckCircle2, XCircle,
-    Clock, HardDrive, Code2, Terminal, ChevronDown,
-    ChevronRight, Lightbulb, Loader2, Maximize2, Minimize2,
-    RotateCcw, Eye, EyeOff, Zap, Trophy, AlertTriangle,
-    Copy, Check
-} from 'lucide-react';
+import { Play, Send, ArrowRight, CheckCircle2, XCircle, Clock, HardDrive, Code2, Terminal, ChevronDown, ChevronRight, Lightbulb, Loader2, Maximize2, Minimize2, RotateCcw, EyeOff, Zap, Trophy, AlertTriangle, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // ─── Types ──────────────────────────────────────────────
@@ -84,7 +78,7 @@ const DEFAULT_STARTER: Record<SupportedLanguage, string> = {
 };
 
 // ─── Main Component ─────────────────────────────────────
-export default function CodingEnvironment({ problem, onSubmitSolution, onFinish, isLoading }: CodingEnvironmentProps) {
+export default function CodingEnvironment({ problem, onSubmitSolution, onFinish }: CodingEnvironmentProps) {
     const [language, setLanguage] = useState<SupportedLanguage>('python');
     const [code, setCode] = useState(problem.starter_code?.python || DEFAULT_STARTER.python);
     const [activeTab, setActiveTab] = useState<'testcases' | 'output'>('testcases');
@@ -97,7 +91,7 @@ export default function CodingEnvironment({ problem, onSubmitSolution, onFinish,
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showHints, setShowHints] = useState(false);
     const [copied, setCopied] = useState(false);
-    const [panelSizes, setPanelSizes] = useState({ left: 40, right: 60 });
+    const panelSizes = { left: 40, right: 60 };
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 

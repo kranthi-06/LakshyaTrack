@@ -1,17 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    Crown, Tag, DollarSign, Users, X, Plus, Save,
-    Trash2, ToggleLeft, ToggleRight, Activity, Search,
-    ArrowLeft, ChevronDown, Loader2,
-} from 'lucide-react';
+import { Crown, Tag, DollarSign, X, Plus, Save, ToggleLeft, ToggleRight, Activity, ArrowLeft, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import {
-    getPlans, getMicroPlans, adminGetCoupons, adminCreateCoupon,
-    adminUpdateCoupon, adminDisableCoupon, adminUpdatePlan,
-    adminUpdateMicroPlan, adminGetTransactions, adminManageSubscription,
-    SubscriptionPlan, MicroPlan, Coupon, PaymentTransaction,
-} from '../services/subscription';
+import { getPlans, getMicroPlans, adminGetCoupons, adminCreateCoupon, adminUpdateCoupon, adminDisableCoupon, adminUpdatePlan, adminUpdateMicroPlan, adminGetTransactions } from '../services/subscription';
+import type { SubscriptionPlan, MicroPlan, Coupon, PaymentTransaction } from '../services/subscription';
 
 type Tab = 'pricing' | 'coupons' | 'transactions';
 

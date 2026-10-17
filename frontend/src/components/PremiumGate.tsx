@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Crown, X, Zap, ArrowRight, Sparkles, Clock, Shield } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
-import { checkout, verifyPayment, MicroPlan } from '../services/subscription';
+import { checkout, verifyPayment } from '../services/subscription';
+import type { MicroPlan } from '../services/subscription';
 
 interface PremiumGateProps {
     /** Whether the popup is visible */

@@ -1,9 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
-import {
-    getSubscriptionStatus,
-    SubscriptionStatus,
-} from '../services/subscription';
+import { getSubscriptionStatus } from '../services/subscription';
+import type { SubscriptionStatus } from '../services/subscription';
 
 // TYPES
 

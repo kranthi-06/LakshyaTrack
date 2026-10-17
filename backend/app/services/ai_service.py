@@ -1,10 +1,12 @@
 """
 AI Service — Production-grade with circuit breakers, retry with exponential
-backoff, timeout protection, and graceful fallback chain:
+backoff, timeout protection, and fail-closed provider fallback chain:
   1. Groq (Primary)
   2. Gemini (Secondary)
   3. OpenAI (Tertiary)
-  4. Mock Intelligence (Emergency fallback)
+
+If every provider is unavailable the request fails with an explicit error
+instead of returning fabricated content.
 """
 import asyncio
 import json
@@ -212,13 +214,11 @@ class AIService:
         system_prompt: Optional[str] = None,
     ) -> str:
         """
-        Get AI completion with full fault-tolerance chain:
-        Groq → Gemini → OpenAI → Mock Intelligence
+        Get AI completion with full fault-tolerance chain: Groq → Gemini → OpenAI.
 
-        Each provider has:
-        - Circuit breaker protection
-        - Timeout protection
-        - Automatic failover on any error
+        Each provider has circuit-breaker protection, timeout protection and
+        automatic failover. If all providers fail, raise instead of returning
+        fabricated fallback content.
         """
         logger.info("--- AI COMPLETION REQUEST ---")
 
@@ -362,28 +362,12 @@ class AIService:
             else:
                 logger.info("OpenAI circuit breaker OPEN — skipping")
 
-        # ── 4. Mock Intelligence (Emergency Fallback) ──────────
-        if "quiz" in (system_prompt or "").lower():
-            raise RuntimeError("AI question generation is temporarily unavailable, please retry")
-        logger.warning("ALL AI providers failed. Using Mock Intelligence fallback.")
-        health_metrics.record_request("ai_mock", 0, success=True)
-        mock_response = await self._generate_mock_response(messages, system_prompt)
-        self._record_ai_output(
-            provider="mock",
-            messages=messages,
-            system_prompt=system_prompt,
-            response=mock_response,
-            metadata={"fallback": True},
+        # ── 4. Fail closed — never return fabricated content ───
+        health_metrics.record_request("ai_unavailable", 0, success=False)
+        logger.warning("ALL AI providers failed. Failing closed.")
+        raise RuntimeError(
+            "AI service is temporarily unavailable. Please try again shortly."
         )
-        if cache_key:
-            document_store_service.set_ai_cache(
-                cache_key=cache_key,
-                response=mock_response,
-                provider="mock",
-                input_payload={"system_prompt": system_prompt, "messages": messages},
-                metadata={"fallback": True, "last_error": self.last_error},
-            )
-        return mock_response
 
     async def generate_quiz_questions(
         self, topic: str, difficulty: str, count: int
@@ -414,98 +398,6 @@ class AIService:
         return await self.chat_completion(
             [{"role": "user", "content": prompt}], system_prompt
         )
-
-    async def _generate_mock_response(
-        self,
-        messages: List[Dict[str, str]],
-        system_prompt: Optional[str],
-    ) -> str:
-        """Generate contextual mock responses to keep the platform operational."""
-        last_msg = ""
-        if messages:
-            last_msg = (messages[-1].get("content") or "").lower()
-
-        sp_lower = (system_prompt or "").lower()
-
-        # Mock Logic for Interview Questions
-        if "interview" in sp_lower:
-            import random
-
-            if "technical" in sp_lower:
-                questions = [
-                    "How do you optimize a React application that is experiencing performance bottlenecks in a high-traffic environment?",
-                    "Can you explain the differences between Microservices architecture and Monolithic architecture in terms of scalability?",
-                    "Describe your approach to implementing secure authentication using JWT and OAuth2 in a distributed system.",
-                    "How would you handle a situation where two concurrent database transactions are trying to update the same record?",
-                ]
-            elif "managerial" in sp_lower or "hr" in sp_lower or "behavioral" in sp_lower:
-                questions = [
-                    "Tell me about a time you had to lead a team through a significant technological shift. What challenges did you face?",
-                    "How do you handle a high-performing team member who is currently struggling with burnout or motivation?",
-                    "Describe your process for prioritizing features when dealing with conflicting requests from multiple stakeholders.",
-                ]
-            else:
-                questions = [
-                    "Why are you interested in this specific role, and how does it align with your long-term career goals?",
-                    "Tell me about a time you had to deliver difficult feedback to a colleague and the outcome of that conversation.",
-                    "How do you maintain a healthy work-life balance while working in a high-pressure, fast-paced tech environment?",
-                ]
-            return random.choice(questions)
-
-        # Mock Logic for JSON Evaluations
-        if "json" in last_msg or "format" in last_msg or "analyze" in last_msg:
-            is_interview = (
-                "performance" in last_msg
-                or "responses" in last_msg
-                or "interview" in sp_lower
-            )
-            is_resume = (
-                "resume" in last_msg or "career" in sp_lower or not is_interview
-            )
-
-            if is_interview and not is_resume:
-                return json.dumps({
-                    "technical_score": "85%",
-                    "soft_skills_score": "90%",
-                    "verdict": "Strong Fit",
-                    "strengths": [
-                        "Deep understanding of architectural patterns",
-                        "Clear communication of complex technical concepts",
-                        "Strong problem-solving methodology",
-                    ],
-                    "weaknesses": [
-                        "Could provide more specific metrics in past project examples",
-                        "Minor hesitation on distributed system edge cases",
-                    ],
-                    "feedback": "Overall excellent performance. Focus on quantifiable achievements in future rounds.",
-                })
-
-            return json.dumps({
-                "ats_score": 0,
-                "keyword_analysis": {
-                    "matched": ["SYSTEM IN FALLBACK MODE"],
-                    "missing": ["AI service temporarily unavailable"],
-                    "extra": [],
-                },
-                "industry_fit": {
-                    "score": 0,
-                    "verdict": f"AI FALLBACK: {self.last_error or 'All providers unavailable'}. System is operational — please retry shortly.",
-                    "top_industries": ["System Status"],
-                },
-                "strengths": ["Error reporting active", "System degradation handled"],
-                "weaknesses": ["AI analysis temporarily unavailable"],
-                "improvement_plan": ["Retry in a few moments", "Check system status"],
-            })
-
-        # Mock Logic for Quiz Generation
-        if "quiz" in sp_lower:
-            mock_questions = [
-                {"id": i, "question": f"Mock Question {i}", "options": ["A", "B", "C", "D"], "correct": i % 4}
-                for i in range(1, 6)
-            ]
-            return json.dumps(mock_questions)
-
-        return "The AI system is temporarily in fallback mode. Please retry your request shortly."
 
     def get_provider_status(self) -> dict:
         """Return the status of all AI providers for monitoring."""

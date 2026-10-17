@@ -1,12 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  BookOpen, Brain, Building2, Lightbulb, CheckCircle2, XCircle,
-  ChevronRight, Timer, ArrowLeft, Trophy, BarChart3, Sparkles,
-  Loader2, RefreshCw, Play, Clock, Target, Zap, Eye, EyeOff,
-  ChevronDown, Award, AlertCircle, ArrowRight, FileText,
-  Star, MessageSquareText
-} from 'lucide-react';
+import { BookOpen, Brain, Building2, Lightbulb, CheckCircle2, XCircle, ChevronRight, Timer, ArrowLeft, Trophy, Sparkles, Loader2, RefreshCw, Play, Target, Zap, Eye, EyeOff, ArrowRight, FileText, Star, MessageSquareText } from 'lucide-react';
 import {
   generateReasoningQuestions,
   getCompanyQuestions,
@@ -368,7 +362,6 @@ function TestMode({ questions, onFinish }: { questions: Question[]; onFinish: (s
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<(string | null)[]>(new Array(questions.length).fill(null));
   const [timeLeft, setTimeLeft] = useState(questions.length * 60); // 1 min per question
-  const [finished, setFinished] = useState(false);
   const intervalRef = useRef<any>(null);
 
   useEffect(() => {
@@ -387,7 +380,6 @@ function TestMode({ questions, onFinish }: { questions: Question[]; onFinish: (s
 
   const submitTest = () => {
     clearInterval(intervalRef.current);
-    setFinished(true);
     let score = 0;
     const detailed = questions.map((q, i) => {
       const correct = answers[i] === q.correct_answer;
@@ -479,8 +471,8 @@ function TestMode({ questions, onFinish }: { questions: Question[]; onFinish: (s
    TEST RESULTS
    ═══════════════════════════════════════════════════════════════ */
 
-function TestResults({ score, total, questions, answers, onRetry }: {
-  score: number; total: number; questions: Question[]; answers: any[]; onRetry: () => void;
+function TestResults({ score, total, questions, onRetry }: {
+  score: number; total: number; questions: Question[]; onRetry: () => void;
 }) {
   const [showSolutions, setShowSolutions] = useState(false);
   const accuracy = total > 0 ? Math.round((score / total) * 100) : 0;
@@ -685,7 +677,7 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
 
           {tab === 'test' && testResults && (
             <TestResults score={testResults.score} total={testResults.total} questions={testQuestions}
-              answers={testResults.answers} onRetry={startTest} />
+              onRetry={startTest} />
           )}
 
           {/* Empty state */}
@@ -831,7 +823,7 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
 
           {(tab === 'simulator' || tab === 'ai-test') && testResults && (
             <TestResults score={testResults.score} total={testResults.total} questions={testQuestions}
-              answers={testResults.answers} onRetry={tab === 'ai-test' ? generateAITest : startSimulator} />
+              onRetry={tab === 'ai-test' ? generateAITest : startSimulator} />
           )}
         </>
       )}

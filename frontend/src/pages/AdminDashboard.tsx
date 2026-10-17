@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { getAdminUsers, blacklistUser, unblacklistUser, promoteUser, demoteUser, deleteUser, AdminUser } from '../services/admin';
+import { getAdminUsers, blacklistUser, unblacklistUser, promoteUser, demoteUser, deleteUser } from '../services/admin';
+import type { AdminUser } from '../services/admin';
 import { useAuth } from '../context/AuthContext';
 import { Shield, AlertTriangle, UserX, Crown, Search, Settings, Trash2, X, BarChart, Calendar, Loader2, BrainCircuit, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';

@@ -1,11 +1,7 @@
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-    Target, Search, BarChart3, FileSearch, Sparkles, ChevronRight, Zap,
-    TrendingUp, ShieldCheck, Upload, FileText, CheckCircle2, AlertCircle,
-    BrainCircuit, ArrowRight, Loader2, MinusCircle, FileCheck
-} from 'lucide-react';
+import { Target, Search, BarChart3, FileSearch, Sparkles, ChevronRight, Zap, Upload, CheckCircle2, AlertCircle, BrainCircuit, Loader2, MinusCircle, FileCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeResume } from '../services/resume';
 

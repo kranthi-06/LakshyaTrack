@@ -1,9 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    User, GraduationCap, Briefcase, Laptop, Wrench, Sparkles,
-    Loader2, Plus, Trash2, ChevronRight, CheckCircle2, AlertCircle
-} from 'lucide-react';
+import { User, GraduationCap, Briefcase, Laptop, Wrench, Sparkles, Loader2, Plus, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
 import type { ResumeData, PersonalInfo, EducationItem, ExperienceItem, ProjectItem } from './types';
 import { enhancePersonalInfo, enhanceEducation, enhanceExperience, enhanceProjects, enhanceSkills } from '../../services/resumeBuilder';
 import type { BaseTemplate } from './templates';
@@ -50,7 +47,7 @@ function SkillTextarea({ value, onChange, placeholder }: { value: string[], onCh
     );
 }
 
-export function SidePanelEditor({ data, onChange, selectedTemplate }: SidePanelEditorProps) {
+export function SidePanelEditor({ data, onChange }: SidePanelEditorProps) {
     const [activeTab, setActiveTab] = useState<PanelTab>('personal');
     const [aiLoading, setAiLoading] = useState<string | null>(null);
     const [aiMessage, setAiMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);

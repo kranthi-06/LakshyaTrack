@@ -14,13 +14,7 @@ import {
 } from '../services/careerPlatform';
 import { getSavedResumes } from '../services/resumeStorage';
 import CodingEnvironment from '../components/CodingEnvironment';
-import {
-    Mic2, MessageSquare, Monitor, BarChart3, Users, Send, StopCircle,
-    CheckCircle2, Target, Zap, ArrowRight, BrainCircuit, Award,
-    Loader2, Sparkles, Shield, FileText, Code2, UserCircle2, Play,
-    ChevronRight, Lock, Unlock, Trophy, Star, Heart, Lightbulb, Terminal,
-    Volume2, VolumeX, Pause, RotateCcw, Gauge
-} from 'lucide-react';
+import { Mic2, MessageSquare, Monitor, Send, StopCircle, CheckCircle2, Target, Zap, ArrowRight, BrainCircuit, Award, Loader2, FileText, Code2, UserCircle2, Play, ChevronRight, Lock, Trophy, Star, Heart, Lightbulb, Volume2, VolumeX, Pause, RotateCcw, Gauge } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import PremiumGate from '../components/PremiumGate';
@@ -80,7 +74,6 @@ export default function Interview() {
     const [codingProblem, setCodingProblem] = useState<any>(null);
     const [codingCode, setCodingCode] = useState('');
     const [codingLang, setCodingLang] = useState('python');
-    const [codingOutput, setCodingOutput] = useState('');
     const [codingAttempts, setCodingAttempts] = useState(0);
     const [codingTestsPassed, setCodingTestsPassed] = useState(0);
     // Resume data
@@ -106,7 +99,6 @@ export default function Interview() {
     const solvedProblemTrackedRef = useRef(false);
 
     const currentStage = STAGES[currentStageIdx];
-    const completedStages = Object.keys(stageEvals);
 
     // Use a ref for speed so the speakText callback always sees the latest value
     const speechSpeedRef = useRef(speechSpeed);
@@ -266,7 +258,6 @@ export default function Interview() {
             setCodingLang('python');
             setCodingAttempts(0);
             setCodingTestsPassed(0);
-            setCodingOutput('');
             solvedProblemTrackedRef.current = false;
         } catch (e) {
             console.error('Coding problem error:', e);
@@ -338,7 +329,6 @@ export default function Interview() {
                 language,
             );
         }
-        setCodingOutput(`✓ ${passed}/${total} test cases passed`);
     };
 
     const handleFinishCoding = async () => {

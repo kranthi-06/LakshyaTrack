@@ -1,9 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Upload, FileText, Brain, Loader2, CheckCircle2, AlertCircle,
-  Sparkles, Database, RefreshCw, Trash2, ChevronDown, ArrowLeft
-} from 'lucide-react';
+import { Upload, Brain, Loader2, CheckCircle2, AlertCircle, Sparkles, Database, RefreshCw, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   getReasoningPopulateStatus,

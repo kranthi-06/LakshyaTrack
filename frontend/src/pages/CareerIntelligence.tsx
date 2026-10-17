@@ -160,7 +160,6 @@ export default function CareerIntelligence() {
     const { refreshUsage, getCounter, isLimitExceeded, resolved } = useUsage();
 
     const [step, setStep] = useState<Step>('domains');
-    const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -588,10 +587,7 @@ export default function CareerIntelligence() {
                                 {domains.map((domain) => (
                                     <Card
                                         key={domain.id}
-                                        onClick={() => {
-                                            setSelectedDomain(domain.id);
-                                            setStep('roles');
-                                        }}
+                                        onClick={() => setStep('roles')}
                                         className="group p-8 border-none shadow-sm hover:shadow-xl hover:shadow-indigo-100 transition-all cursor-pointer rounded-[2.5rem] bg-white space-y-6"
                                     >
                                         <div className="flex items-center gap-4">
@@ -928,7 +924,7 @@ export default function CareerIntelligence() {
                                                     </div>
                                                     {/* Skill Grid */}
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                                                        {level.skills?.map((skill: any, skillIdx: number) => (
+                                                        {level.skills?.map((skill: any) => (
                                                             <Card
                                                                 key={skill.id}
                                                                 className={`p-6 rounded-[2rem] border-2 transition-all cv-auto ${getStatusStyle(skill.status)}`}

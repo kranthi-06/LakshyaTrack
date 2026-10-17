@@ -1,35 +1,10 @@
 import { useState, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
-import {
-    FileText,
-    Upload,
-    Sparkles,
-    TrendingUp,
-    CheckCircle2,
-    AlertCircle,
-    ArrowRight,
-    ArrowLeft,
-    Download,
-    User,
-    GraduationCap,
-    Briefcase,
-    Laptop,
-    Wrench,
-    XCircle,
-    ShieldCheck,
-    Target,
-    Cpu,
-    Layers,
-    Award,
-    Lightbulb,
-    PlusCircle
-} from 'lucide-react';
+import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, ArrowRight, Laptop, XCircle, ShieldCheck, Target, Cpu, Layers, Award, Lightbulb, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 
 import { analyzeResume } from '@/services/resume';
 const AIBuilder = lazy(() => import('./ResumeBuilder/index'));
@@ -48,7 +23,7 @@ export default function ResumeBuilder() {
     const [selectedTemplate, setSelectedTemplate] = useState('modern');
     const [selectedTheme, setSelectedTheme] = useState('indigo');
     const [showPreview, setShowPreview] = useState<string | null>(null);
-    const [formData, setFormData] = useState({
+    const [formData] = useState({
         personal: { first: '', last: '', email: '', phone: '', location: '', summary: '' },
         education: [{ degree: '', institution: '', year: '', gpa: '' }],
         experience: [{ role: '', company: '', period: '', desc: '' }],
