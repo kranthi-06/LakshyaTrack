@@ -6,6 +6,33 @@
 import api from './api';
 import { cachedRequest, invalidateCache } from './cache';
 
+export interface CodeExecutionTestCase {
+    input: string;
+    expected_output: string;
+    is_hidden?: boolean;
+}
+
+export interface CodeExecutionTestResult {
+    index?: number;
+    passed?: boolean;
+    input?: string;
+    expected?: string;
+    actual?: string;
+    is_hidden?: boolean;
+}
+
+export interface CodeExecutionResponse {
+    status?: string;
+    test_results?: CodeExecutionTestResult[];
+    passed?: number;
+    total?: number;
+    runtime_ms?: number;
+    memory_mb?: number;
+    error?: string;
+    compilation_output?: string;
+    stdout?: string;
+}
+
 const CACHE_KEYS = {
     activeRoadmap: 'roadmap:active',
     allRoadmaps: 'roadmap:all',
@@ -96,7 +123,33 @@ export const updateSkillStatus = async (roadmapId: string, skillId: string, stat
 // 2. QUIZ GATING SYSTEM
 // ════════════════════════════════════════════
 
-export const generateSkillQuiz = async (skillName: string, level: string, count: number = 10) => {
+export interface SkillQuizQuestion {
+    id: number;
+    question: string;
+    options: string[];
+    correct: number;
+}
+
+export interface SkillQuizResponse {
+    questions: SkillQuizQuestion[];
+    threshold?: number;
+}
+
+export interface SkillQuizAnswer {
+    question_id: number;
+    selected: number;
+    correct: number;
+    question_text: string;
+}
+
+export interface SkillQuizResult {
+    score?: number;
+    total?: number;
+    passed: boolean;
+    skill_unlocked?: boolean;
+}
+
+export const generateSkillQuiz = async (skillName: string, level: string, count: number = 10): Promise<SkillQuizResponse> => {
     const res = await api.post('/quiz-gating/generate-skill-quiz', {
         skill_name: skillName,
         level,
@@ -110,8 +163,8 @@ export const submitSkillQuiz = async (
     skillId: string,
     skillName: string,
     level: string,
-    answers: any[]
-) => {
+    answers: SkillQuizAnswer[]
+): Promise<SkillQuizResult> => {
     const res = await api.post('/quiz-gating/submit', {
         roadmap_id: roadmapId,
         skill_id: skillId,
@@ -177,7 +230,7 @@ export const checkInterviewUnlock = async (roadmapId: string, levelName: string)
 export const getAdvancedInterviewQuestion = async (
     position: string,
     roundType: string,
-    history: any[] = [],
+    history: unknown[] = [],
     resumeSummary?: string,
     targetSkills?: string[]
 ) => {
@@ -194,7 +247,7 @@ export const getAdvancedInterviewQuestion = async (
 export const finishAdvancedInterview = async (
     position: string,
     roundType: string,
-    responses: any[],
+    responses: unknown[],
     roadmapId?: string,
     level?: string,
     resumeSummary?: string
@@ -472,7 +525,7 @@ export const getScreeningQuestion = async (
     resumeSummary: string = '',
     skills: string[] = [],
     projects: string[] = [],
-    history: any[] = []
+    history: unknown[] = []
 ) => {
     const res = await api.post('/interview-multistage/screening-question', {
         session_id: sessionId,
@@ -487,7 +540,7 @@ export const getScreeningQuestion = async (
 export const getTechnicalQuestion = async (
     sessionId: string,
     skills: string[] = [],
-    history: any[] = []
+    history: unknown[] = []
 ) => {
     const res = await api.post('/interview-multistage/technical-question', {
         session_id: sessionId,
@@ -512,7 +565,7 @@ export const getCodingProblem = async (
 
 export const getHRQuestion = async (
     sessionId: string,
-    history: any[] = []
+    history: unknown[] = []
 ) => {
     const res = await api.post('/interview-multistage/hr-question', {
         session_id: sessionId,
@@ -525,12 +578,12 @@ export const evaluateInterviewStage = async (
     sessionId: string,
     stage: string,
     data: {
-        responses?: any[];
+        responses?: unknown[];
         resume_summary?: string;
         skills?: string[];
         code?: string;
         language?: string;
-        problem?: any;
+        problem?: unknown;
         passed_tests?: number;
         total_tests?: number;
         attempts?: number;
@@ -547,10 +600,10 @@ export const evaluateInterviewStage = async (
 
 export const getMultistageFinalAnalysis = async (
     sessionId: string,
-    screeningEval: any,
-    technicalEval: any,
-    codingEval: any,
-    hrEval: any
+    screeningEval: unknown,
+    technicalEval: unknown,
+    codingEval: unknown,
+    hrEval: unknown
 ) => {
     const res = await api.post('/interview-multistage/final-analysis', {
         session_id: sessionId,
@@ -582,8 +635,8 @@ export const getMultistageHistory = async () => {
 export const runCode = async (
     code: string,
     language: string,
-    testCases: any[]
-) => {
+    testCases: CodeExecutionTestCase[],
+): Promise<CodeExecutionResponse> => {
     const res = await api.post('/code-execution/run-code', {
         code,
         language,
@@ -595,10 +648,10 @@ export const runCode = async (
 export const submitCode = async (
     code: string,
     language: string,
-    testCases: any[],
+    testCases: CodeExecutionTestCase[],
     sessionId?: string,
     problemTitle?: string
-) => {
+): Promise<CodeExecutionResponse> => {
     const res = await api.post('/code-execution/submit-code', {
         code,
         language,

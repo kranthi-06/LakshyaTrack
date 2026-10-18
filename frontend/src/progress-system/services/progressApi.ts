@@ -17,8 +17,6 @@ import type {
   IntelligenceData,
   ProgressDashboardData,
   Badge,
-  BadgeRarity,
-  TopicBubble,
 } from '../types';
 
 // ── API Base Path ────────────────────────────────────────────
@@ -32,7 +30,7 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
-const _cache = new Map<string, CacheEntry<any>>();
+const _cache = new Map<string, CacheEntry<unknown>>();
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
 const DASHBOARD_TTL = 10 * 1000;
 const DASHBOARD_PERSIST_TTL = 24 * 60 * 60 * 1000; // 24 hours — cache for instant load, revalidate in background
@@ -284,243 +282,246 @@ function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
 }
 
+type ApiRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): ApiRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as ApiRecord
+    : {};
+}
+
+function asRecordArray(value: unknown): ApiRecord[] {
+  return Array.isArray(value) ? value.map(asRecord) : [];
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asChoice<T extends string>(value: unknown, choices: readonly T[], fallback: T): T {
+  return typeof value === 'string' && choices.includes(value as T) ? value as T : fallback;
+}
+
 function normalizeContributionData(raw: Partial<ContributionData> | Record<string, unknown> | undefined): ContributionData {
-  const year = asNumber((raw as any)?.year, new Date().getFullYear());
-  const contributions = Array.isArray((raw as any)?.contributions)
-    ? (raw as any).contributions.map((entry: any) => ({
+  const source = asRecord(raw);
+  const year = asNumber(source.year, new Date().getFullYear());
+  const contributions = asRecordArray(source.contributions)
+    .map((entry) => ({
       date: asString(entry?.date),
       count: asNumber(entry?.count),
       level: Math.max(0, Math.min(4, asNumber(entry?.level))) as DailyContribution['level'],
-    }))
-    : [];
+    }));
 
   return {
     contributions,
-    totalContributions: asNumber((raw as any)?.totalContributions),
-    longestStreak: asNumber((raw as any)?.longestStreak),
-    currentStreak: asNumber((raw as any)?.currentStreak),
+    totalContributions: asNumber(source.totalContributions),
+    longestStreak: asNumber(source.longestStreak),
+    currentStreak: asNumber(source.currentStreak),
     year,
   };
 }
 
 function normalizeProblemStats(raw: Partial<ProblemSolvingStats> | Record<string, unknown> | undefined): ProblemSolvingStats {
-  const difficulty = (raw as any)?.difficulty ?? {};
+  const source = asRecord(raw);
+  const difficulty = asRecord(source.difficulty);
   const makeBucket = (key: 'easy' | 'medium' | 'hard') => ({
-    solved: asNumber(difficulty?.[key]?.solved),
-    total: asNumber(difficulty?.[key]?.total),
+    solved: asNumber(asRecord(difficulty[key]).solved),
+    total: asNumber(asRecord(difficulty[key]).total),
   });
 
   return {
-    totalSolved: asNumber((raw as any)?.totalSolved),
-    totalAvailable: asNumber((raw as any)?.totalAvailable),
-    acceptanceRate: asNumber((raw as any)?.acceptanceRate),
-    totalSubmissions: asNumber((raw as any)?.totalSubmissions),
+    totalSolved: asNumber(source.totalSolved),
+    totalAvailable: asNumber(source.totalAvailable),
+    acceptanceRate: asNumber(source.acceptanceRate),
+    totalSubmissions: asNumber(source.totalSubmissions),
     difficulty: {
       easy: makeBucket('easy'),
       medium: makeBucket('medium'),
       hard: makeBucket('hard'),
     },
-    recentSubmissions: Array.isArray((raw as any)?.recentSubmissions)
-      ? (raw as any).recentSubmissions.map((entry: any) => ({
+    recentSubmissions: asRecordArray(source.recentSubmissions)
+      .map((entry) => ({
         id: asString(entry?.id),
         title: asString(entry?.title, 'Untitled Submission'),
-        difficulty: (['easy', 'medium', 'hard'].includes(entry?.difficulty) ? entry.difficulty : 'medium') as 'easy' | 'medium' | 'hard',
-        status: (['accepted', 'wrong_answer', 'time_limit', 'runtime_error'].includes(entry?.status) ? entry.status : 'accepted') as 'accepted' | 'wrong_answer' | 'time_limit' | 'runtime_error',
+        difficulty: asChoice(entry.difficulty, ['easy', 'medium', 'hard'], 'medium'),
+        status: asChoice(entry.status, ['accepted', 'wrong_answer', 'time_limit', 'runtime_error'], 'accepted'),
         timestamp: asString(entry?.timestamp, new Date(0).toISOString()),
         language: asString(entry?.language, 'N/A'),
-      }))
-      : [],
+      })),
   };
 }
 
 function normalizeActivitySummary(raw: Partial<ActivitySummary> | Record<string, unknown> | undefined): ActivitySummary {
+  const source = asRecord(raw);
   return {
-    totalSessions: asNumber((raw as any)?.totalSessions),
-    avgSessionDuration: asNumber((raw as any)?.avgSessionDuration),
-    totalActiveTime: asNumber((raw as any)?.totalActiveTime),
-    totalIdleTime: asNumber((raw as any)?.totalIdleTime),
-    mostVisitedPages: Array.isArray((raw as any)?.mostVisitedPages)
-      ? (raw as any).mostVisitedPages.map((entry: any) => ({
+    totalSessions: asNumber(source.totalSessions),
+    avgSessionDuration: asNumber(source.avgSessionDuration),
+    totalActiveTime: asNumber(source.totalActiveTime),
+    totalIdleTime: asNumber(source.totalIdleTime),
+    mostVisitedPages: asRecordArray(source.mostVisitedPages)
+      .map((entry) => ({
         page: asString(entry?.page, 'Unknown'),
         count: asNumber(entry?.count),
-      }))
-      : [],
-    mostUsedFeatures: Array.isArray((raw as any)?.mostUsedFeatures)
-      ? (raw as any).mostUsedFeatures.map((entry: any) => ({
+      })),
+    mostUsedFeatures: asRecordArray(source.mostUsedFeatures)
+      .map((entry) => ({
         feature: asString(entry?.feature, 'Unknown'),
         count: asNumber(entry?.count),
-      }))
-      : [],
-    activeDays: asNumber((raw as any)?.activeDays),
+      })),
+    activeDays: asNumber(source.activeDays),
   };
 }
 
 function normalizeTimeAnalytics(raw: Partial<TimeAnalyticsData> | Record<string, unknown> | undefined): TimeAnalyticsData {
+  const source = asRecord(raw);
   return {
-    dailyUsage: Array.isArray((raw as any)?.dailyUsage)
-      ? (raw as any).dailyUsage.map((entry: any) => ({
+    dailyUsage: asRecordArray(source.dailyUsage)
+      .map((entry) => ({
         date: asString(entry?.date),
         totalMinutes: asNumber(entry?.totalMinutes),
         activeMinutes: asNumber(entry?.activeMinutes),
-      }))
-      : [],
-    weeklyTrends: Array.isArray((raw as any)?.weeklyTrends)
-      ? (raw as any).weeklyTrends.map((entry: any) => ({
+      })),
+    weeklyTrends: asRecordArray(source.weeklyTrends)
+      .map((entry) => ({
         week: asString(entry?.week),
         weekStart: asString(entry?.weekStart),
         totalHours: asNumber(entry?.totalHours),
         avgDailyMinutes: asNumber(entry?.avgDailyMinutes),
-      }))
-      : [],
-    featureTimeSpent: Array.isArray((raw as any)?.featureTimeSpent)
-      ? (raw as any).featureTimeSpent.map((entry: any) => ({
+      })),
+    featureTimeSpent: asRecordArray(source.featureTimeSpent)
+      .map((entry) => ({
         feature: asString(entry?.feature),
         minutes: asNumber(entry?.minutes),
         percentage: asNumber(entry?.percentage),
         color: asString(entry?.color, '#94a3b8'),
-      }))
-      : [],
-    totalHoursThisWeek: asNumber((raw as any)?.totalHoursThisWeek),
-    totalHoursThisMonth: asNumber((raw as any)?.totalHoursThisMonth),
-    avgDailyMinutes: asNumber((raw as any)?.avgDailyMinutes),
-    peakHour: asNumber((raw as any)?.peakHour),
-    peakDay: asString((raw as any)?.peakDay, 'No activity yet'),
+      })),
+    totalHoursThisWeek: asNumber(source.totalHoursThisWeek),
+    totalHoursThisMonth: asNumber(source.totalHoursThisMonth),
+    avgDailyMinutes: asNumber(source.avgDailyMinutes),
+    peakHour: asNumber(source.peakHour),
+    peakDay: asString(source.peakDay, 'No activity yet'),
   };
 }
 
 function normalizeTopicMap(raw: Partial<TopicMapData> | Record<string, unknown> | undefined): TopicMapData {
-  const topics = Array.isArray((raw as any)?.topics)
-    ? (raw as any).topics.map((entry: any, index: number) => ({
+  const source = asRecord(raw);
+  const topics = asRecordArray(source.topics)
+    .map((entry, index) => ({
       id: asString(entry?.id, `topic-${index}`),
       name: asString(entry?.name, 'Untitled Topic'),
       category: asString(entry?.category, 'General'),
       problemsSolved: asNumber(entry?.problemsSolved ?? entry?.problems_solved),
       timeSpentMinutes: asNumber(entry?.timeSpentMinutes ?? entry?.time_spent_minutes),
-      proficiencyLevel: (['beginner', 'intermediate', 'advanced', 'expert'].includes(entry?.proficiencyLevel ?? entry?.proficiency_level)
-        ? (entry?.proficiencyLevel ?? entry?.proficiency_level)
-        : 'beginner') as TopicBubble['proficiencyLevel'],
+      proficiencyLevel: asChoice(entry.proficiencyLevel ?? entry.proficiency_level, ['beginner', 'intermediate', 'advanced', 'expert'], 'beginner'),
       proficiencyScore: asNumber(entry?.proficiencyScore ?? entry?.proficiency_score),
       color: asString(entry?.color, '#6366f1'),
       size: asNumber(entry?.size, 30),
-    }))
-    : [];
+    }));
 
   return {
     topics,
-    totalTopics: asNumber((raw as any)?.totalTopics, topics.length),
-    strongestTopic: asString((raw as any)?.strongestTopic),
-    weakestTopic: asString((raw as any)?.weakestTopic),
+    totalTopics: asNumber(source.totalTopics, topics.length),
+    strongestTopic: asString(source.strongestTopic),
+    weakestTopic: asString(source.weakestTopic),
   };
 }
 
 function normalizeStreak(raw: Partial<StreakData> | Record<string, unknown> | undefined): StreakData {
-  const weeklyActivity = Array.isArray((raw as any)?.weeklyActivity)
-    ? (raw as any).weeklyActivity.map((entry: any) => asNumber(entry))
-    : [];
-  const streakHistory = Array.isArray((raw as any)?.streakHistory)
-    ? (raw as any).streakHistory.map((entry: any) => ({
+  const source = asRecord(raw);
+  const weeklyActivity = asArray(source.weeklyActivity).map((entry) => asNumber(entry));
+  const streakHistory = asRecordArray(source.streakHistory)
+    .map((entry) => ({
       date: asString(entry?.date),
       active: Boolean(entry?.active),
-    }))
-    : [];
+    }));
 
   return {
-    currentStreak: asNumber((raw as any)?.currentStreak ?? (raw as any)?.current_streak),
-    longestStreak: asNumber((raw as any)?.longestStreak ?? (raw as any)?.longest_streak),
-    lastActiveDate: asString((raw as any)?.lastActiveDate ?? (raw as any)?.last_active_date) || null,
+    currentStreak: asNumber(source.currentStreak ?? source.current_streak),
+    longestStreak: asNumber(source.longestStreak ?? source.longest_streak),
+    lastActiveDate: asString(source.lastActiveDate ?? source.last_active_date) || null,
     streakHistory: streakHistory.length > 0 ? streakHistory : Array.from({ length: 30 }, () => ({ date: '', active: false })),
-    isAtRisk: Boolean((raw as any)?.isAtRisk ?? (raw as any)?.is_at_risk),
-    hoursUntilReset: asNumber((raw as any)?.hoursUntilReset ?? (raw as any)?.hours_until_reset, 24),
-    totalActiveDays: asNumber((raw as any)?.totalActiveDays ?? (raw as any)?.total_active_days),
+    isAtRisk: Boolean(source.isAtRisk ?? source.is_at_risk),
+    hoursUntilReset: asNumber(source.hoursUntilReset ?? source.hours_until_reset, 24),
+    totalActiveDays: asNumber(source.totalActiveDays ?? source.total_active_days),
     weeklyActivity: weeklyActivity.length > 0 ? [...weeklyActivity, ...DEFAULT_WEEKLY_ACTIVITY].slice(0, 7) : DEFAULT_WEEKLY_ACTIVITY,
   };
 }
 
 function normalizeBadge(raw: Record<string, unknown>, fallbackIndex: number): Badge {
-  const id = asString((raw as any)?.id ?? (raw as any)?.badge_id, `badge-${fallbackIndex}`);
+  const id = asString(raw.id ?? raw.badge_id, `badge-${fallbackIndex}`);
   return {
     id,
-    name: asString((raw as any)?.name, 'Badge'),
-    description: asString((raw as any)?.description, 'Achievement in progress'),
-    icon: asString((raw as any)?.icon, '🏆'),
-    category: (['streak', 'problems', 'quizzes', 'interviews', 'career', 'consistency', 'mastery', 'special'].includes((raw as any)?.category)
-      ? (raw as any)?.category
-      : 'special') as Badge['category'],
-    rarity: (['common', 'rare', 'epic', 'legendary'].includes((raw as any)?.rarity)
-      ? (raw as any)?.rarity
-      : 'common') as BadgeRarity,
-    isUnlocked: Boolean((raw as any)?.isUnlocked ?? (raw as any)?.is_unlocked),
-    unlockedAt: asString((raw as any)?.unlockedAt ?? (raw as any)?.unlocked_at) || null,
-    progress: asNumber((raw as any)?.progress),
-    requirement: asString((raw as any)?.requirement, BADGE_REQUIREMENT_LABELS[id] ?? asString((raw as any)?.description, 'Keep going')),
-    requirementValue: asNumber((raw as any)?.requirementValue ?? (raw as any)?.requirement_value, 1),
-    currentValue: asNumber((raw as any)?.currentValue ?? (raw as any)?.current_value),
+    name: asString(raw.name, 'Badge'),
+    description: asString(raw.description, 'Achievement in progress'),
+    icon: asString(raw.icon, '🏆'),
+    category: asChoice(raw.category, ['streak', 'problems', 'quizzes', 'interviews', 'career', 'consistency', 'mastery', 'special'], 'special'),
+    rarity: asChoice(raw.rarity, ['common', 'rare', 'epic', 'legendary'], 'common'),
+    isUnlocked: Boolean(raw.isUnlocked ?? raw.is_unlocked),
+    unlockedAt: asString(raw.unlockedAt ?? raw.unlocked_at) || null,
+    progress: asNumber(raw.progress),
+    requirement: asString(raw.requirement, BADGE_REQUIREMENT_LABELS[id] ?? asString(raw.description, 'Keep going')),
+    requirementValue: asNumber(raw.requirementValue ?? raw.requirement_value, 1),
+    currentValue: asNumber(raw.currentValue ?? raw.current_value),
   };
 }
 
 function normalizeBadges(raw: Partial<BadgeSystemData> | Record<string, unknown> | undefined): BadgeSystemData {
-  const badges = Array.isArray((raw as any)?.badges)
-    ? (raw as any).badges.map((entry: any, index: number) => normalizeBadge(entry, index))
-    : [];
-  const recentlyUnlockedRaw = Array.isArray((raw as any)?.recentlyUnlocked ?? (raw as any)?.recently_unlocked)
-    ? ((raw as any)?.recentlyUnlocked ?? (raw as any)?.recently_unlocked)
-    : [];
-  const nextToUnlockRaw = (raw as any)?.nextToUnlock ?? (raw as any)?.next_to_unlock;
+  const source = asRecord(raw);
+  const badges = asRecordArray(source.badges)
+    .map((entry, index) => normalizeBadge(entry, index));
+  const recentlyUnlockedRaw = asRecordArray(source.recentlyUnlocked ?? source.recently_unlocked);
+  const nextToUnlockRaw = asRecord(source.nextToUnlock ?? source.next_to_unlock);
 
   return {
     badges,
-    totalUnlocked: asNumber((raw as any)?.totalUnlocked ?? (raw as any)?.total_unlocked, badges.filter((badge: Badge) => badge.isUnlocked).length),
-    totalBadges: asNumber((raw as any)?.totalBadges ?? (raw as any)?.total_badges, badges.length),
-    recentlyUnlocked: recentlyUnlockedRaw.map((entry: any, index: number) => normalizeBadge(entry, index)),
-    nextToUnlock: nextToUnlockRaw ? normalizeBadge(nextToUnlockRaw, 0) : null,
+    totalUnlocked: asNumber(source.totalUnlocked ?? source.total_unlocked, badges.filter((badge) => badge.isUnlocked).length),
+    totalBadges: asNumber(source.totalBadges ?? source.total_badges, badges.length),
+    recentlyUnlocked: recentlyUnlockedRaw.map((entry, index) => normalizeBadge(entry, index)),
+    nextToUnlock: Object.keys(nextToUnlockRaw).length > 0 ? normalizeBadge(nextToUnlockRaw, 0) : null,
   };
 }
 
 function normalizeIntelligence(raw: Partial<IntelligenceData> | Record<string, unknown> | undefined): IntelligenceData {
-  const activeHours = Array.isArray((raw as any)?.activeHours)
-    ? (raw as any).activeHours.map((entry: any, hour: number) => ({
+  const source = asRecord(raw);
+  const activeHours = asRecordArray(source.activeHours)
+    .map((entry, hour) => ({
       hour: asNumber(entry?.hour, hour),
       activity: asNumber(entry?.activity),
-    }))
-    : [];
+    }));
 
   return {
-    insights: Array.isArray((raw as any)?.insights)
-      ? (raw as any).insights.map((entry: any, index: number) => ({
+    insights: asRecordArray(source.insights)
+      .map((entry, index) => ({
         id: asString(entry?.id, `insight-${index}`),
-        type: (['pattern', 'suggestion', 'warning', 'achievement', 'prediction'].includes(entry?.type)
-          ? entry.type
-          : 'pattern') as IntelligenceData['insights'][number]['type'],
+        type: asChoice(entry.type, ['pattern', 'suggestion', 'warning', 'achievement', 'prediction'], 'pattern'),
         title: asString(entry?.title, 'Insight'),
         description: asString(entry?.description),
         icon: asString(entry?.icon, '🧠'),
-        priority: (['low', 'medium', 'high'].includes(entry?.priority) ? entry.priority : 'medium') as IntelligenceData['insights'][number]['priority'],
+        priority: asChoice(entry.priority, ['low', 'medium', 'high'], 'medium'),
         actionable: Boolean(entry?.actionable),
         action: asString(entry?.action) || undefined,
-        metadata: entry?.metadata,
-      }))
-      : [],
+        metadata: Object.keys(asRecord(entry.metadata)).length > 0 ? asRecord(entry.metadata) : undefined,
+      })),
     activeHours: activeHours.length > 0 ? activeHours : DEFAULT_ACTIVE_HOURS,
-    consistencyScore: asNumber((raw as any)?.consistencyScore),
-    growthRate: asNumber((raw as any)?.growthRate),
-    predictedStreakBreak: Boolean((raw as any)?.predictedStreakBreak),
-    suggestedFocusAreas: Array.isArray((raw as any)?.suggestedFocusAreas)
-      ? (raw as any).suggestedFocusAreas.map((entry: any) => asString(entry)).filter(Boolean)
-      : [],
+    consistencyScore: asNumber(source.consistencyScore),
+    growthRate: asNumber(source.growthRate),
+    predictedStreakBreak: Boolean(source.predictedStreakBreak),
+    suggestedFocusAreas: asArray(source.suggestedFocusAreas).map((entry) => asString(entry)).filter(Boolean),
   };
 }
 
 export function normalizeDashboardData(raw: Partial<ProgressDashboardData> | Record<string, unknown> | undefined): ProgressDashboardData {
+  const source = asRecord(raw);
   return {
-    contributions: normalizeContributionData((raw as any)?.contributions),
-    problemSolving: normalizeProblemStats((raw as any)?.problemSolving),
-    activity: normalizeActivitySummary((raw as any)?.activity),
-    timeAnalytics: normalizeTimeAnalytics((raw as any)?.timeAnalytics),
-    topicMap: normalizeTopicMap((raw as any)?.topicMap),
-    streak: normalizeStreak((raw as any)?.streak),
-    badges: normalizeBadges((raw as any)?.badges),
-    intelligence: normalizeIntelligence((raw as any)?.intelligence),
-    lastUpdated: asString((raw as any)?.lastUpdated, new Date().toISOString()),
+    contributions: normalizeContributionData(asRecord(source.contributions)),
+    problemSolving: normalizeProblemStats(asRecord(source.problemSolving)),
+    activity: normalizeActivitySummary(asRecord(source.activity)),
+    timeAnalytics: normalizeTimeAnalytics(asRecord(source.timeAnalytics)),
+    topicMap: normalizeTopicMap(asRecord(source.topicMap)),
+    streak: normalizeStreak(asRecord(source.streak)),
+    badges: normalizeBadges(asRecord(source.badges)),
+    intelligence: normalizeIntelligence(asRecord(source.intelligence)),
+    lastUpdated: asString(source.lastUpdated, new Date().toISOString()),
   };
 }
 
@@ -1002,9 +1003,20 @@ export function prefetchDashboard(): void {
 
 // ── Optimistic Update Support ─────────────────────────────────
 
-export interface OptimisticPatch {
-  section: keyof Omit<ProgressDashboardData, 'lastUpdated'>;
-  updater: (current: any) => any;
+type ProgressDashboardSection = keyof Omit<ProgressDashboardData, 'lastUpdated'>;
+
+export type OptimisticPatch<K extends ProgressDashboardSection = ProgressDashboardSection> = {
+  [Section in K]: {
+    section: Section;
+    updater: (current: ProgressDashboardData[Section]) => ProgressDashboardData[Section];
+  };
+}[K];
+
+function applyOptimisticPatch<K extends ProgressDashboardSection>(
+  current: ProgressDashboardData,
+  patch: OptimisticPatch<K>,
+): void {
+  current[patch.section] = patch.updater(current[patch.section]);
 }
 
 export function applyOptimisticPatches(
@@ -1013,7 +1025,7 @@ export function applyOptimisticPatches(
 ): ProgressDashboardData {
   const next = { ...current };
   for (const patch of patches) {
-    next[patch.section] = patch.updater(next[patch.section]);
+    applyOptimisticPatch(next, patch);
   }
   next.lastUpdated = new Date().toISOString();
   return next;

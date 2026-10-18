@@ -5,7 +5,7 @@ const SAVED_RESUMES_CACHE_KEY = 'resumes:saved';
 
 export const saveResumeToProfile = async (payload: {
     resume_name: string;
-    resume_data: any;
+    resume_data: unknown;
     template_id: string;
     theme: string;
     target_role?: string;
@@ -19,7 +19,7 @@ export const saveResumeToProfile = async (payload: {
 
 export const updateSavedResume = async (resumeId: string, payload: {
     resume_name?: string;
-    resume_data?: any;
+    resume_data?: unknown;
     template_id?: string;
     theme?: string;
     target_role?: string;

@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 
-type PageModule = { default: ComponentType<any> };
+type PageModule = { default: ComponentType<Record<string, never>> };
 type Importer = () => Promise<PageModule>;
 
 const pageImporters: Record<string, Importer> = {

@@ -13,7 +13,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
  * This protection applies to ALL users permanently.
  */
 export function useResumeProtection() {
-    const [isCapturing, setIsCapturing] = useState(false);
+    const [isCapturing, setIsCapturing] = useState(
+        () => !document.hasFocus() || document.hidden,
+    );
     const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -30,11 +32,6 @@ export function useResumeProtection() {
     }, []);
 
     useEffect(() => {
-        // Initial check - if page loads in background, blur it
-        if (!document.hasFocus() || document.hidden) {
-            setIsCapturing(true);
-        }
-
         const handleFocus = () => {
             // When regaining focus, unblur after a short delay (1-2s)
             if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
@@ -166,12 +163,13 @@ export function useResumeProtection() {
         }
     }, []);
 
-    const paperProtectionStyle: React.CSSProperties = {
+    const paperProtectionStyle: React.CSSProperties & {
+        MozUserSelect?: 'none';
+        msUserSelect?: 'none';
+    } = {
         userSelect: 'none',
         WebkitUserSelect: 'none',
-        // @ts-ignore
         MozUserSelect: 'none',
-        // @ts-ignore
         msUserSelect: 'none',
         WebkitTouchCallout: 'none',
         filter: isCapturing ? 'blur(30px) brightness(0.3)' : 'none',

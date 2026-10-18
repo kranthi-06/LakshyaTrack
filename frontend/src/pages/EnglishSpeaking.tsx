@@ -36,6 +36,11 @@ const INTERVIEW_QUESTIONS = [
   "How do you handle pressure and deadlines?",
 ];
 
+const WAVEFORM_BARS = Array.from({ length: 20 }, (_, index) => ({
+  height: 12 + ((index * 11) % 25),
+  duration: 0.55 + ((index % 5) * 0.1),
+}));
+
 /* ═══════════════════════════════════════════════════════════════
    SPEECH HOOK
    ═══════════════════════════════════════════════════════════════ */
@@ -128,7 +133,11 @@ function useSpeechRecognition() {
       if (shouldListenRef.current && startRef.current) {
         setTimeout(() => {
           if (shouldListenRef.current && startRef.current) {
-            try { startRef.current(); } catch(e) {}
+            try {
+              startRef.current();
+            } catch (error) {
+              console.warn('Unable to restart speech recognition:', error);
+            }
           }
         }, 100);
       } else {
@@ -137,7 +146,11 @@ function useSpeechRecognition() {
     };
 
     recognitionRef.current = recognition;
-    try { recognition.start(); } catch(e) {}
+    try {
+      recognition.start();
+    } catch (error) {
+      console.warn('Unable to start speech recognition:', error);
+    }
   }, []);
 
   useEffect(() => {
@@ -220,10 +233,10 @@ function SpeechController({ onSubmit, disabled, key: resetKey }: {
         {isListening && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
             className="flex items-center justify-center gap-1 py-2">
-            {[...Array(20)].map((_, i) => (
+            {WAVEFORM_BARS.map((bar, i) => (
               <motion.div key={i} className="w-1 rounded-full bg-gradient-to-t from-[#6C63FF] to-violet-400"
-                animate={{ height: [6, Math.random() * 30 + 6, 6] }}
-                transition={{ duration: 0.5 + Math.random() * 0.5, repeat: Infinity, delay: i * 0.04 }} />
+                animate={{ height: [6, bar.height, 6] }}
+                transition={{ duration: bar.duration, repeat: Infinity, delay: i * 0.04 }} />
             ))}
           </motion.div>
         )}

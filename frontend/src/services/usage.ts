@@ -62,7 +62,7 @@ export const getPlanLimits = async (): Promise<PlanLimits> => {
 export const requestUpgrade = async (
     targetPlan: string,
     couponCode?: string,
-): Promise<any> => {
+): Promise<Record<string, unknown>> => {
     const response = await api.post('/usage/upgrade-plan', {
         target_plan: targetPlan,
         coupon_code: couponCode || null,

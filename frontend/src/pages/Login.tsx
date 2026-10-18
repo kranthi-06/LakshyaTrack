@@ -23,6 +23,17 @@ import {
 
 const OAUTH_ERROR_STORAGE_KEY = 'auth:last_oauth_error';
 
+function getErrorMessage(error: unknown, fallback: string): string {
+    if (!error || typeof error !== 'object') return fallback;
+
+    const candidate = error as { message?: unknown; response?: { data?: { detail?: unknown } } };
+    const detail = candidate.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    return typeof candidate.message === 'string' && candidate.message.trim()
+        ? candidate.message
+        : fallback;
+}
+
 /* ─────────────── Google Icon SVG ─────────────── */
 const GoogleIcon = () => (
     <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -140,7 +151,7 @@ export default function Login() {
             setError(message);
             setOauthNotice({ message, suggestRegister });
             showToast(message, 'error');
-        } catch (e) {
+        } catch {
             const fallback = 'Google sign-in could not be completed. Please try again.';
             setError(fallback);
             setOauthNotice({ message: fallback, suggestRegister: false });
@@ -156,16 +167,9 @@ export default function Login() {
         try {
             await login({ email, password });
             showToast('Login successful! Redirecting...', 'success');
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Login error:', err);
-            let msg = 'Invalid credentials';
-            if (err.response?.data?.detail) {
-                msg = typeof err.response.data.detail === 'string'
-                    ? err.response.data.detail
-                    : 'Login failed. Please try again.';
-            } else if (err.message) {
-                msg = err.message;
-            }
+            const msg = getErrorMessage(err, 'Invalid credentials');
             setError(msg);
             showToast(msg, 'error');
         } finally {
@@ -180,9 +184,9 @@ export default function Login() {
         setOauthNotice(null);
         try {
             await signInWithGoogle();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Google Login Error:', err);
-            showToast(err.message || 'Google sign-in failed', 'error');
+            showToast(getErrorMessage(err, 'Google sign-in failed'), 'error');
             setGoogleLoading(false);
         }
     };
@@ -465,6 +469,8 @@ export default function Login() {
                                     type="button"
                                     onClick={() => setShowPassword(!showPassword)}
                                     className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors"
+                                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                    aria-pressed={showPassword}
                                 >
                                     {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
                                 </button>

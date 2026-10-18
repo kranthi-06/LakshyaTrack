@@ -56,10 +56,13 @@ const CATEGORIES = [
     { key: 'job', label: 'Jobs', icon: Briefcase, color: '#8b5cf6' },
 ];
 
-const getCategoryIcon = (cat: string) => {
-    const found = CATEGORIES.find(c => c.key === cat);
-    return found?.icon || Globe;
-};
+function CategoryGlyph({ category, className }: { category: string; className?: string }) {
+    if (category === 'course') return <BookOpen className={className} />;
+    if (category === 'internship') return <TrendingUp className={className} />;
+    if (category === 'certification') return <Award className={className} />;
+    if (category === 'job') return <Briefcase className={className} />;
+    return <Globe className={className} />;
+}
 
 const getCategoryColor = (cat: string) => {
     const found = CATEGORIES.find(c => c.key === cat);
@@ -743,7 +746,6 @@ function OpportunityCard({
     sourceType?: string;
 }) {
     const category = opp.category || opp.opportunity_type || 'job';
-    const CatIcon = getCategoryIcon(category);
     const catColor = getCategoryColor(category);
 
     const formatDeadline = (d: string | null) => {
@@ -777,7 +779,7 @@ function OpportunityCard({
             {/* Category badge + Recommendation star */}
             <div className="flex items-center justify-between px-5 pt-5 pb-2">
                 <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${getCategoryBg(category)}`}>
-                    <CatIcon className="w-3 h-3" />
+                    <CategoryGlyph category={category} className="w-3 h-3" />
                     {category}
                 </div>
                 {isRecommendation && (

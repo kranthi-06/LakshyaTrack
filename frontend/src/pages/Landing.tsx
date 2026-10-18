@@ -150,18 +150,18 @@ export default function Landing() {
 
             {/* Navigation */}
             <nav className={`fixed w-full top-0 z-50 transition-all duration-500 py-4 ${scrolled ? 'bg-white/80 backdrop-blur-xl shadow-lg py-3 border-b border-gray-100' : 'bg-transparent'}`}>
-                <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-8 gap-4 sm:gap-6">
-                    <div className="flex items-center space-x-2 sm:space-x-3 group cursor-pointer shrink-0" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+                <div className="max-w-7xl mx-auto flex items-center justify-between px-3 sm:px-8 gap-2 sm:gap-6">
+                    <a href="#home" className="flex items-center space-x-1.5 sm:space-x-3 group shrink-0" aria-label="LakshyaTrack home">
                         <motion.div
                             whileHover={{ rotate: 5, scale: 1.05 }}
-                            className="w-12 h-12 flex items-center justify-center relative overflow-hidden"
+                            className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center relative overflow-hidden"
                         >
                             <img src={logoUrl} alt="Logo" className="w-full h-full object-contain relative z-10 drop-shadow-lg" />
                         </motion.div>
-                        <span className={`text-xl sm:text-2xl font-black tracking-tighter ${scrolled ? "text-gray-900" : "text-white"}`}>
+                        <span className={`text-lg sm:text-2xl font-black tracking-tighter ${scrolled ? "text-gray-900" : "text-white"}`}>
                             Lakshya<span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500">Track</span>
                         </span>
-                    </div>
+                    </a>
 
                     <div className="hidden sm:flex items-center space-x-6 sm:space-x-10">
                         {['Home', 'Features', 'Demo'].map((item) => (
@@ -176,15 +176,15 @@ export default function Landing() {
                         ))}
                     </div>
 
-                    <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">
+                    <div className="flex items-center space-x-1.5 sm:space-x-4 shrink-0">
                         <ThemeToggle variant="landing" />
                         <Link to="/login">
-                            <Button variant="ghost" className={`font-bold text-xs sm:text-sm hover:bg-white/10 h-9 sm:h-10 ${scrolled ? 'text-gray-600 hover:text-purple-600 hover:bg-purple-50' : 'text-white'}`}>
+                            <Button variant="ghost" className={`px-2 sm:px-4 font-bold text-xs sm:text-sm hover:bg-white/10 h-9 sm:h-10 ${scrolled ? 'text-gray-600 hover:text-purple-600 hover:bg-purple-50' : 'text-white'}`}>
                                 Sign In
                             </Button>
                         </Link>
                         <Link to="/register">
-                            <Button className={`font-black rounded-lg sm:rounded-xl transition-all h-9 sm:h-11 px-4 sm:px-8 text-xs sm:text-sm shadow-xl hover:shadow-2xl hover:-translate-y-1 ${scrolled ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white' : 'bg-white text-slate-800 hover:bg-yellow-300'
+                            <Button className={`font-black rounded-lg sm:rounded-xl transition-all h-9 sm:h-11 px-3 sm:px-8 text-xs sm:text-sm shadow-xl hover:shadow-2xl hover:-translate-y-1 ${scrolled ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white' : 'bg-white text-slate-800 hover:bg-yellow-300'
                                 }`}>
                                 Get Started
                             </Button>
@@ -503,7 +503,7 @@ export default function Landing() {
                         Ready to <br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500">Ascend?</span>
                     </motion.h2>
 
-                    <p className="text-lg sm:text-xl md:text-2xl text-gray-400 font-medium leading-relaxed">
+                    <p className="text-lg sm:text-xl md:text-2xl text-white/90 font-medium leading-relaxed">
                         Join the platform that is redefining career growth for the AI age.
                     </p>
 

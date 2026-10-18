@@ -22,6 +22,24 @@ import {
     BarChart3,
 } from 'lucide-react';
 
+function getErrorMessage(error: unknown, fallback: string): string {
+    if (!error || typeof error !== 'object') return fallback;
+
+    const candidate = error as { message?: unknown; response?: { data?: { detail?: unknown } } };
+    const detail = candidate.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+        const messages = detail
+            .filter((item): item is { msg?: unknown } => Boolean(item) && typeof item === 'object')
+            .map((item) => typeof item.msg === 'string' ? item.msg : '')
+            .filter(Boolean);
+        if (messages.length) return messages.join(', ');
+    }
+
+    if (typeof candidate.message === 'string' && candidate.message.trim()) return candidate.message;
+    return fallback;
+}
+
 /* ─────────────── Google Icon SVG ─────────────── */
 const GoogleIcon = () => (
     <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -147,24 +165,9 @@ export default function Register() {
             }
 
             setTimeout(() => navigate('/verify-email', { state: { email } }), 1500);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Registration Error:', err);
-            let errorMsg = 'Registration failed. Please try again.';
-
-            if (err.response?.data?.detail) {
-                const detail = err.response.data.detail;
-                if (typeof detail === 'string') {
-                    errorMsg = detail;
-                } else if (Array.isArray(detail)) {
-                    errorMsg = detail.map((e: any) => e.msg).join(', ');
-                } else {
-                    errorMsg = JSON.stringify(detail);
-                }
-            } else if (err.response?.data) {
-                errorMsg = `Server Error: ${JSON.stringify(err.response.data)}`;
-            } else if (err.message) {
-                errorMsg = err.message;
-            }
+            const errorMsg = getErrorMessage(err, 'Registration failed. Please try again.');
 
             setError(errorMsg);
             showToast(errorMsg, 'error');
@@ -468,6 +471,8 @@ export default function Register() {
                                     type="button"
                                     onClick={() => setShowPassword(!showPassword)}
                                     className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors"
+                                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                    aria-pressed={showPassword}
                                 >
                                     {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
                                 </button>
@@ -494,6 +499,8 @@ export default function Register() {
                                     type="button"
                                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                                     className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors"
+                                    aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'}
+                                    aria-pressed={showConfirmPassword}
                                 >
                                     {showConfirmPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
                                 </button>

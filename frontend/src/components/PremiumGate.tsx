@@ -6,6 +6,16 @@ import { useSubscription } from '../context/SubscriptionContext';
 import { checkout, verifyPayment } from '../services/subscription';
 import type { MicroPlan } from '../services/subscription';
 
+function getPurchaseErrorMessage(error: unknown): string {
+    if (!error || typeof error !== 'object') return 'Purchase failed. Please try again.';
+    const candidate = error as { response?: { data?: { detail?: unknown } }; message?: unknown };
+    const detail = candidate.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    return typeof candidate.message === 'string' && candidate.message.trim()
+        ? candidate.message
+        : 'Purchase failed. Please try again.';
+}
+
 interface PremiumGateProps {
     /** Whether the popup is visible */
     isOpen: boolean;
@@ -75,8 +85,8 @@ export default function PremiumGate({
             } else {
                 setPurchaseError(result.message || 'Payment failed');
             }
-        } catch (err: any) {
-            setPurchaseError(err?.response?.data?.detail || 'Purchase failed. Please try again.');
+        } catch (error: unknown) {
+            setPurchaseError(getPurchaseErrorMessage(error));
         } finally {
             setPurchasing(false);
         }
@@ -109,7 +119,7 @@ export default function PremiumGate({
                         transition={{ type: 'spring', duration: 0.5, bounce: 0.15 }}
                         className="fixed inset-0 z-[101] flex items-center justify-center p-4"
                     >
-                        <div className="bg-white dark:bg-[#0f0f1e] rounded-3xl shadow-2xl shadow-black/20 w-full max-w-md overflow-hidden border border-slate-200/50 dark:border-slate-800/50">
+                        <div className="bg-white dark:bg-[#0f0f1e] rounded-3xl shadow-2xl shadow-black/20 w-full max-w-md overflow-hidden border border-slate-200/50 dark:border-slate-800/50" role="dialog" aria-modal="true" aria-labelledby="premium-gate-title">
                             {/* Header with gradient */}
                             <div className="relative bg-gradient-to-br from-[#6C63FF] to-[#4F46E5] p-6 pb-8 text-white overflow-hidden">
                                 {/* Background decoration */}
@@ -119,6 +129,7 @@ export default function PremiumGate({
                                 <button
                                     onClick={onClose}
                                     className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
+                                    aria-label="Close upgrade options"
                                 >
                                     <X className="w-4 h-4" />
                                 </button>
@@ -127,7 +138,7 @@ export default function PremiumGate({
                                     <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
                                         <Crown className="w-6 h-6" />
                                     </div>
-                                    <h3 className="text-xl font-bold mb-1">
+                                    <h3 id="premium-gate-title" className="text-xl font-bold mb-1">
                                         Unlock {featureName}
                                     </h3>
                                     <p className="text-white/80 text-sm font-medium">

@@ -266,7 +266,7 @@ export const adminManageSubscription = async (
     action: string,
     stage?: number,
     days?: number,
-): Promise<any> => {
+): Promise<Record<string, unknown>> => {
     const response = await api.post('/subscription/admin/manage-subscription', {
         user_id: userId,
         action,

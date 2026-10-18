@@ -48,7 +48,9 @@ export const extractTextFromFile = async (
             onProgress?.(`Checking page ${i} of ${pdf.numPages}...`);
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
-            const pageText = textContent.items.map((item: any) => item.str).join(' ');
+            const pageText = textContent.items
+                .map((item) => ('str' in item && typeof item.str === 'string' ? item.str : ''))
+                .join(' ');
             if (pageText.trim().length > 10) {
                 hasSelectableText = true;
             }

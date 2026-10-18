@@ -74,63 +74,35 @@ class ErrorBoundary extends React.Component<Props, State> {
 
             return (
                 <div
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minHeight: '200px',
-                        padding: '2rem',
-                        textAlign: 'center',
-                        background: 'rgba(239, 68, 68, 0.05)',
-                        borderRadius: '12px',
-                        border: '1px solid rgba(239, 68, 68, 0.2)',
-                        margin: '1rem',
-                    }}
+                    className="m-4 flex min-h-52 flex-col items-center justify-center rounded-2xl border border-rose-200/80 bg-rose-50/70 p-8 text-center shadow-sm dark:border-rose-500/20 dark:bg-rose-500/10"
+                    role="alert"
+                    aria-live="assertive"
                 >
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⚠️</div>
-                    <h3 style={{ margin: '0 0 0.5rem', color: '#ef4444', fontWeight: 600 }}>
+                    <div className="mb-2 text-3xl" aria-hidden="true">⚠️</div>
+                    <h3 className="mb-2 text-lg font-semibold text-rose-700 dark:text-rose-300">
                         {moduleName ? `${moduleName} encountered an error` : 'Something went wrong'}
                     </h3>
-                    <p style={{ margin: '0 0 1rem', color: '#6b7280', fontSize: '0.9rem', maxWidth: '400px' }}>
+                    <p className="mb-4 max-w-md text-sm text-slate-600 dark:text-slate-300">
                         {showReload
                             ? 'This error keeps occurring. Try reloading the entire page.'
                             : 'Don\'t worry — the rest of the app is still working. Click retry to try again.'}
                     </p>
                     {error && (
-                        <p style={{ margin: '0 0 1rem', color: '#9ca3af', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                        <p className="mb-4 max-w-md break-words font-mono text-xs text-slate-500 dark:text-slate-400">
                             {error.message?.slice(0, 200)}
                         </p>
                     )}
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div className="flex flex-wrap justify-center gap-2">
                         <button
                             onClick={this.handleRetry}
-                            style={{
-                                padding: '0.5rem 1.5rem',
-                                borderRadius: '8px',
-                                border: 'none',
-                                background: '#3b82f6',
-                                color: 'white',
-                                cursor: 'pointer',
-                                fontWeight: 500,
-                                fontSize: '0.9rem',
-                            }}
+                            className="min-h-11 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
                         >
                             Retry
                         </button>
                         {showReload && (
                             <button
                                 onClick={this.handleReload}
-                                style={{
-                                    padding: '0.5rem 1.5rem',
-                                    borderRadius: '8px',
-                                    border: '1px solid #d1d5db',
-                                    background: 'transparent',
-                                    color: '#374151',
-                                    cursor: 'pointer',
-                                    fontWeight: 500,
-                                    fontSize: '0.9rem',
-                                }}
+                                className="min-h-11 rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
                                 Reload Page
                             </button>

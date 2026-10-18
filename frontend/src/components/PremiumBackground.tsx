@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { Container, Engine, ISourceOptions } from 'tsparticles-engine';
+import type { Engine, ISourceOptions } from 'tsparticles-engine';
 import { usePerformanceMode } from '../hooks/usePerformanceMode';
 
 const Particles = lazy(async () => {
@@ -40,7 +40,7 @@ export const PremiumBackground = () => {
         await loadSlim(engine);
     }, []);
 
-    const particlesLoaded = useCallback(async (_container: Container | undefined) => {
+    const particlesLoaded = useCallback(async () => {
         // no-op
     }, []);
 

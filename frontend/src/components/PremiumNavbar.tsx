@@ -34,8 +34,8 @@ export const PremiumNavbar = () => {
     }
 
     const profileImage =
-        (user as any)?.profile?.profile_image_url ||
-        (user as any)?.profile?.profile_photo_url ||
+        user?.profile?.profile_image_url ||
+        user?.profile?.profile_photo_url ||
         localProfileImage;
 
     const navItems = [

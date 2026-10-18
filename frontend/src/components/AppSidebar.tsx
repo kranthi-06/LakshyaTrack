@@ -11,6 +11,7 @@ import SubscriptionBadge from './SubscriptionBadge';
 interface SidebarProps {
     collapsed: boolean;
     onToggle: () => void;
+    onNavigate?: () => void;
 }
 
 // Feature keys mapped to each nav item (null = always free)
@@ -29,7 +30,7 @@ const navItems = [
 
 import logoUrl from '../assets/logo.png';
 
-export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
+export function AppSidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     const { user, logout } = useAuth();
     const { hasFeature, stage, loading: subLoading, resolved: subResolved } = useSubscription();
     const location = useLocation();
@@ -37,7 +38,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
 
     const isAdmin = user?.role === 'admin' || user?.role === 'black_admin';
     const displayName = user?.profile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'User';
-    const profilePhoto = (user as any)?.profile?.profile_image_url || (user as any)?.profile?.profile_photo_url || null;
+    const profilePhoto = user?.profile?.profile_image_url || user?.profile?.profile_photo_url || null;
     const prefetchPath = useCallback((path: string) => {
         prefetchRoute(path);
     }, []);
@@ -62,7 +63,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
         >
             {/* ── Logo Area ── */}
             <div className={`flex items-center h-16 px-4 border-b border-slate-200/80 dark:border-slate-800/60 ${collapsed ? 'justify-center' : 'justify-between'}`}>
-                <Link to="/dashboard" className="flex items-center gap-3 group min-w-0">
+                <Link to="/dashboard" onClick={onNavigate} className="flex items-center gap-3 group min-w-0">
                     <div className="w-12 h-12 flex items-center justify-center flex-shrink-0">
                         <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-lg" />
                     </div>
@@ -81,6 +82,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                         onClick={onToggle}
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                         title="Collapse sidebar (Ctrl+B)"
+                        aria-label="Collapse sidebar"
                     >
                         <PanelLeftClose className="w-[18px] h-[18px]" />
                     </button>
@@ -94,6 +96,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                         onClick={onToggle}
                         className="w-full flex justify-center py-2 mb-2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
                         title="Expand sidebar"
+                        aria-label="Expand sidebar"
                     >
                         <PanelLeft className="w-[18px] h-[18px]" />
                     </button>
@@ -107,6 +110,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                         <Link
                             key={item.label}
                             to={item.path}
+                            onClick={onNavigate}
                             onMouseEnter={() => prefetchPath(item.path)}
                             onFocus={() => prefetchPath(item.path)}
                             onTouchStart={() => prefetchPath(item.path)}
@@ -149,6 +153,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                         <div className={`my-3 border-t border-slate-200/80 dark:border-slate-800/60 ${collapsed ? 'mx-2' : 'mx-1'}`} />
                         <Link
                             to="/admin/users"
+                            onClick={onNavigate}
                             onMouseEnter={() => prefetchPath('/admin/users')}
                             onFocus={() => prefetchPath('/admin/users')}
                             onTouchStart={() => prefetchPath('/admin/users')}
@@ -174,6 +179,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                 {subResolved && !subLoading && !isAdmin && stage < 3 && (
                     <Link
                         to="/plans"
+                        onClick={onNavigate}
                         className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/15 hover:to-orange-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 transition-all
                             ${collapsed ? 'justify-center px-0' : ''}`}
                         title={collapsed ? 'Upgrade Plan' : undefined}
@@ -197,6 +203,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                 {/* Profile link */}
                 <Link
                     to="/profile"
+                    onClick={onNavigate}
                     onMouseEnter={() => prefetchPath('/profile')}
                     onFocus={() => prefetchPath('/profile')}
                     onTouchStart={() => prefetchPath('/profile')}

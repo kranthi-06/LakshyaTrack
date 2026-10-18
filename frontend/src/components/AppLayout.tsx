@@ -45,17 +45,14 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
         const stored = localStorage.getItem(SIDEBAR_KEY);
         return stored === 'true';
     });
-    const [isMobile, setIsMobile] = useState(false);
-    const [isSmallScreen, setIsSmallScreen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [enableInteractiveBg, setEnableInteractiveBg] = useState(false);
     const location = useLocation();
-    const { liteMode } = usePerformanceMode();
-
-    // Close mobile sidebar on route change
-    useEffect(() => {
-        setMobileOpen(false);
-    }, [location.pathname]);
+    const {
+        isMobile: isSmallScreen,
+        isTabletOrBelow: isMobile,
+        liteMode,
+    } = usePerformanceMode();
 
     useEffect(() => {
         initProgressTracking();
@@ -68,39 +65,9 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
         trackPageVisit(getPageLabel(location.pathname));
     }, [location.pathname]);
 
-    // Detect mobile and small screen (debounced)
-    useEffect(() => {
-        let timeout: ReturnType<typeof setTimeout>;
-        const check = () => {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                const mobile = window.innerWidth < 1024;
-                const small = window.innerWidth < 768;
-                setIsMobile(mobile);
-                setIsSmallScreen(small);
-                if (mobile) setCollapsed(true);
-            }, 100);
-        };
-        // Initial check (no debounce)
-        const mobile = window.innerWidth < 1024;
-        const small = window.innerWidth < 768;
-        setIsMobile(mobile);
-        setIsSmallScreen(small);
-        if (mobile) setCollapsed(true);
-
-        window.addEventListener('resize', check, { passive: true });
-        return () => {
-            window.removeEventListener('resize', check);
-            clearTimeout(timeout);
-        };
-    }, []);
-
     // Defer interactive background until idle to avoid blocking route transitions.
     useEffect(() => {
-        if (isSmallScreen || liteMode) {
-            setEnableInteractiveBg(false);
-            return;
-        }
+        if (isSmallScreen || liteMode) return;
 
         if ('requestIdleCallback' in window) {
             const idleId = requestIdleCallback(() => setEnableInteractiveBg(true), { timeout: 1500 });
@@ -139,6 +106,10 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
         }
     }, [isMobile]);
 
+    const closeMobileNavigation = useCallback(() => {
+        setMobileOpen(false);
+    }, []);
+
     const sidebarWidth = collapsed ? 72 : 264;
 
     return (
@@ -168,12 +139,12 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
                             className="fixed z-50 h-screen"
                             style={{ width: 264 }}
                         >
-                            <AppSidebar collapsed={false} onToggle={handleToggle} />
+                            <AppSidebar collapsed={false} onToggle={handleToggle} onNavigate={closeMobileNavigation} />
                         </motion.div>
                     )}
                 </AnimatePresence>
             ) : (
-                <AppSidebar collapsed={collapsed} onToggle={handleToggle} />
+                <AppSidebar collapsed={collapsed} onToggle={handleToggle} onNavigate={closeMobileNavigation} />
             )}
 
             {/* Main content area */}
@@ -213,7 +184,7 @@ export const AppLayout = memo(function AppLayout({ children }: AppLayoutProps) {
                         </button>
                         <div className="ml-2 flex items-center gap-2">
                             <div className="w-8 h-8 flex items-center justify-center">
-                                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-sm" />
+                                <img src={logoUrl} alt="LakshyaTrack" className="w-full h-full object-contain drop-shadow-sm" />
                             </div>
                             <span className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">
                                 Lakshya<span className="text-[#6C63FF]">Track</span>

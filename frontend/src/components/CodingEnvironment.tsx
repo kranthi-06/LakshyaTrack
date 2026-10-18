@@ -9,7 +9,7 @@
  * - Runtime + memory display
  * - Dark theme editor with VS Code keybindings
  */
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import Editor from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { Play, Send, ArrowRight, CheckCircle2, XCircle, Clock, HardDrive, Code2, Terminal, ChevronDown, ChevronRight, Lightbulb, Loader2, Maximize2, Minimize2, RotateCcw, EyeOff, Zap, Trophy, AlertTriangle, Copy, Check } from 'lucide-react';
@@ -62,6 +62,20 @@ interface CodingEnvironmentProps {
     isLoading?: boolean;
 }
 
+function getExecutionErrorMessage(error: unknown, fallback: string): string {
+    if (!error || typeof error !== 'object') return fallback;
+
+    const candidate = error as {
+        message?: unknown;
+        response?: { data?: { error?: unknown; detail?: unknown } };
+    };
+    const apiMessage = candidate.response?.data?.error ?? candidate.response?.data?.detail;
+    if (typeof apiMessage === 'string' && apiMessage.trim()) return apiMessage;
+    return typeof candidate.message === 'string' && candidate.message.trim()
+        ? candidate.message
+        : fallback;
+}
+
 // ─── Language Configuration ─────────────────────────────
 const LANGUAGES: { id: SupportedLanguage; label: string; monacoId: string; icon: string }[] = [
     { id: 'python', label: 'Python', monacoId: 'python', icon: '🐍' },
@@ -94,13 +108,14 @@ export default function CodingEnvironment({ problem, onSubmitSolution, onFinish 
     const panelSizes = { left: 40, right: 60 };
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const runCodeRef = useRef<() => void>(() => undefined);
 
     const visibleTests = (problem.test_cases || []).filter(tc => !tc.is_hidden);
     const hiddenTests = (problem.test_cases || []).filter(tc => tc.is_hidden);
-    const allTests = problem.test_cases || [];
+    const allTests = useMemo(() => problem.test_cases || [], [problem.test_cases]);
 
     // Safely normalize fields that AI may return as string instead of array
-    const safeArray = (val: any): string[] => {
+    const safeArray = (val: unknown): string[] => {
         if (!val) return [];
         if (Array.isArray(val)) return val.map(String);
         if (typeof val === 'string') return val.split('\n').map(s => s.trim()).filter(Boolean);
@@ -125,7 +140,7 @@ export default function CodingEnvironment({ problem, onSubmitSolution, onFinish 
         editor.addCommand(
             // Ctrl+Enter to run
             2048 + 3, // KeyMod.CtrlCmd + KeyCode.Enter
-            () => handleRunCode()
+            () => runCodeRef.current(),
         );
     }, []);
 
@@ -146,9 +161,9 @@ export default function CodingEnvironment({ problem, onSubmitSolution, onFinish 
                         result.status === 'compilation_error' ? 'error' :
                         result.status === 'timeout' ? 'timeout' :
                         result.status === 'runtime_error' ? 'runtime_error' : 'error',
-                test_results: (result.test_results || []).map((tr: any, i: number) => ({
+                test_results: (result.test_results || []).map((tr, i) => ({
                     index: tr.index ?? i,
-                    passed: tr.passed,
+                    passed: Boolean(tr.passed),
                     input: tr.input || '',
                     expected: tr.expected || '',
                     actual: tr.actual || '',
@@ -162,18 +177,22 @@ export default function CodingEnvironment({ problem, onSubmitSolution, onFinish 
                 stdout: result.stdout,
             };
             setRunResult(mappedResult);
-        } catch (e: any) {
+        } catch (error: unknown) {
             setRunResult({
                 status: 'error',
                 test_results: [],
                 passed: 0,
                 total: visibleTests.length,
-                error: e?.response?.data?.error || e?.message || 'Execution failed. Please try again.',
+                error: getExecutionErrorMessage(error, 'Execution failed. Please try again.'),
             });
         }
 
         setIsRunning(false);
     }, [code, language, allTests, visibleTests.length, isRunning, isSubmitting]);
+
+    useEffect(() => {
+        runCodeRef.current = () => { void handleRunCode(); };
+    }, [handleRunCode]);
 
     // ─── Submit Solution (all tests including hidden) ────
     const handleSubmit = useCallback(async () => {
@@ -191,9 +210,9 @@ export default function CodingEnvironment({ problem, onSubmitSolution, onFinish 
                         result.status === 'compilation_error' ? 'error' :
                         result.status === 'timeout' ? 'timeout' :
                         result.status === 'runtime_error' ? 'runtime_error' : 'error',
-                test_results: (result.test_results || []).map((tr: any, i: number) => ({
+                test_results: (result.test_results || []).map((tr, i) => ({
                     index: tr.index ?? i,
-                    passed: tr.passed,
+                    passed: Boolean(tr.passed),
                     input: tr.input || '',
                     expected: tr.expected || '',
                     actual: tr.actual || '',
@@ -213,13 +232,13 @@ export default function CodingEnvironment({ problem, onSubmitSolution, onFinish 
             }
 
             onSubmitSolution(code, language, mappedResult.passed, mappedResult.total, attempts + 1);
-        } catch (e: any) {
+        } catch (error: unknown) {
             setRunResult({
                 status: 'error',
                 test_results: [],
                 passed: 0,
                 total: allTests.length,
-                error: e?.response?.data?.error || e?.message || 'Submission failed. Please try again.',
+                error: getExecutionErrorMessage(error, 'Submission failed. Please try again.'),
             });
         }
 

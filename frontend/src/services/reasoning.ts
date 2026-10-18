@@ -36,7 +36,7 @@ export const submitReasoningTest = async (payload: {
     category: string;
     score: number;
     total: number;
-    answers: any[];
+    answers: unknown[];
 }) => {
     const res = await api.post('/reasoning/submit-test', payload);
     return res.data;

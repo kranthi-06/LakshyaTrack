@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getAdminInactivity } from '../services/admin';
+import type { InactiveAdminUser } from '../services/admin';
 import { Clock, Filter, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const AdminInactivity: React.FC = () => {
-    const [users, setUsers] = useState<any[]>([]);
+    const [users, setUsers] = useState<InactiveAdminUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [days, setDays] = useState(7);
 
-    const fetchInactivity = async () => {
+    const fetchInactivity = useCallback(async () => {
         setLoading(true);
         try {
             const data = await getAdminInactivity(days);
@@ -18,11 +19,11 @@ const AdminInactivity: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [days]);
 
     useEffect(() => {
         fetchInactivity();
-    }, [days]);
+    }, [fetchInactivity]);
 
     return (
         <div className="min-h-screen bg-black text-white selection:bg-yellow-500/30">

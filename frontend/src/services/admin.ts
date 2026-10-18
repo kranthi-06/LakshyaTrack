@@ -15,6 +15,16 @@ export interface AdminUser {
     interviews_done?: number;
 }
 
+export interface InactiveAdminUser {
+    id: string;
+    full_name: string;
+    email: string;
+    role: 'user' | 'admin' | 'black_admin';
+    is_blacklisted: boolean;
+    last_active_at: string | 'Never';
+    created_at: string | null;
+}
+
 // ── REQUIRE_ADMIN ROUTES ──────────────────────────────────
 export const getAdminUsers = async (skip = 0, limit = 50, search?: string): Promise<{
     users: AdminUser[];
@@ -36,7 +46,7 @@ export const getAdminProgress = async () => {
     return response.data;
 };
 
-export const getAdminInactivity = async (days = 7) => {
+export const getAdminInactivity = async (days = 7): Promise<{ inactive_users: InactiveAdminUser[] }> => {
     const response = await api.get(`/admin/inactivity?days=${days}`);
     return response.data;
 };

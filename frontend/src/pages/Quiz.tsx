@@ -11,7 +11,9 @@ import {
     checkExamEligibility,
     checkExamCooldown,
 } from '../services/careerPlatform';
+import type { SkillQuizResult } from '../services/careerPlatform';
 import { generateQuizQuestions } from '../services/quiz';
+import type { QuizQuestion } from '../services/quiz';
 import { trackQuizCompleted } from '../progress-system/services/eventTracker';
 import {
     BrainCircuit,
@@ -50,7 +52,7 @@ type QuizStep = 'setup' | 'active' | 'results';
 type SavedExamAttempt = {
     attemptId: string;
     updatedAt: number;
-    questions: any[];
+    questions: QuizQuestion[];
     answers: Record<number, number>;
     marked: number[];
     currentQuestion: number;
@@ -69,6 +71,16 @@ type SavedExamAttempt = {
 
 const ACTIVE_EXAM_ATTEMPT_KEY = 'lakshyatrack:active-exam-attempt';
 const EXAM_ATTEMPT_PREFIX = 'lakshyatrack:exam-attempt:';
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+    if (typeof error !== 'object' || error === null) return fallback;
+    const response = Reflect.get(error, 'response');
+    if (typeof response !== 'object' || response === null) return fallback;
+    const data = Reflect.get(response, 'data');
+    if (typeof data !== 'object' || data === null) return fallback;
+    const detail = Reflect.get(data, 'detail');
+    return typeof detail === 'string' && detail.trim() ? detail : fallback;
+}
 
 function readSavedExamAttempt(): SavedExamAttempt | null {
     try {
@@ -106,7 +118,7 @@ function clearSavedExamAttempt(attemptId?: string | null) {
     sessionStorage.removeItem(ACTIVE_EXAM_ATTEMPT_KEY);
 }
 
-const questionsByTopic: Record<string, any[]> = {
+const questionsByTopic: Record<string, QuizQuestion[]> = {
     'JavaScript': [
         { id: 1, question: "What is undefined in JavaScript?", options: ["Syntax error", "Variable declared but not assigned", "Keyword", "Type of null"], correct: 1 },
         { id: 2, question: "What is the result of '2' + 2?", options: ["4", "'22'", "NaN", "undefined"], correct: 1 },
@@ -188,7 +200,7 @@ export default function Quiz() {
     const [topic, setTopic] = useState(savedAttempt?.topic ?? 'JavaScript');
     const [difficulty, setDifficulty] = useState(savedAttempt?.difficulty ?? 'Medium');
     const [numQuestions, setNumQuestions] = useState(savedAttempt?.numQuestions ?? '5');
-    const [quizQuestions, setQuizQuestions] = useState<any[]>(savedAttempt?.questions ?? questionsByTopic['JavaScript']);
+    const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>(savedAttempt?.questions ?? questionsByTopic['JavaScript']);
     const [isLoading, setIsLoading] = useState(false);
 
     // ── Roadmap-linked quiz state ──────────
@@ -198,7 +210,7 @@ export default function Quiz() {
     const [roadmapLevel, setRoadmapLevel] = useState<string | null>(savedAttempt?.roadmapLevel ?? null);
     const [roadmapId, setRoadmapId] = useState<string | null>(savedAttempt?.roadmapId ?? null);
     const [passThreshold, setPassThreshold] = useState<number>(savedAttempt?.passThreshold ?? 70);
-    const [quizResult, setQuizResult] = useState<any>(null);
+    const [quizResult, setQuizResult] = useState<SkillQuizResult | null>(null);
 
     // ── Exam state additions ──────────
     const [markedForReview, setMarkedForReview] = useState<Set<number>>(new Set(savedAttempt?.marked ?? []));
@@ -268,47 +280,7 @@ export default function Quiz() {
         }
     }, []);
 
-    // ── Check eligibility + cooldown on mount ──
-    useEffect(() => {
-        checkEligibility();
-    }, []);
-
-    const checkEligibility = async () => {
-        setCheckingEligibility(true);
-        try {
-            const eligibility = await checkExamEligibility();
-            if (!eligibility.eligible) {
-                setIsLocked(true);
-                setLockMessage(eligibility.reason || 'Quizzes are currently locked.');
-                setLockRemainingSeconds(eligibility.remaining_seconds || 0);
-                startLockCountdown(eligibility.remaining_seconds || 0);
-            } else {
-                setIsLocked(false);
-            }
-        } catch (e) {
-            // If not logged in or error, allow quiz (fallback)
-            setIsLocked(false);
-        }
-        setCheckingEligibility(false);
-    };
-
-    const checkCooldown = async () => {
-        const skillId = roadmapSkillId || `standalone_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-        try {
-            const cooldown = await checkExamCooldown(skillId);
-            if (cooldown.in_cooldown) {
-                setIsInCooldown(true);
-                setCooldownMessage(`You need more preparation before retrying this exam. Cooldown: ${cooldown.cooldown_minutes} minutes.`);
-                setCooldownRemainingSeconds(cooldown.remaining_seconds || 0);
-                startCooldownCountdown(cooldown.remaining_seconds || 0);
-                return true;
-            }
-        } catch (e) { /* ignore */ }
-        setIsInCooldown(false);
-        return false;
-    };
-
-    const startLockCountdown = (seconds: number) => {
+    const startLockCountdown = useCallback((seconds: number) => {
         if (lockTimerRef.current) clearInterval(lockTimerRef.current);
         setLockRemainingSeconds(seconds);
         lockTimerRef.current = setInterval(() => {
@@ -322,6 +294,49 @@ export default function Quiz() {
                 return prev - 1;
             });
         }, 1000);
+    }, []);
+
+    const checkEligibility = useCallback(async () => {
+        setCheckingEligibility(true);
+        try {
+            const eligibility = await checkExamEligibility();
+            if (!eligibility.eligible) {
+                setIsLocked(true);
+                setLockMessage(eligibility.reason || 'Quizzes are currently locked.');
+                setLockRemainingSeconds(eligibility.remaining_seconds || 0);
+                startLockCountdown(eligibility.remaining_seconds || 0);
+            } else {
+                setIsLocked(false);
+            }
+        } catch (error) {
+            // If not logged in or error, allow quiz (fallback)
+            console.warn('Unable to check quiz eligibility:', error);
+            setIsLocked(false);
+        }
+        setCheckingEligibility(false);
+    }, [startLockCountdown]);
+
+    // ── Check eligibility + cooldown on mount ──
+    useEffect(() => {
+        void checkEligibility();
+    }, [checkEligibility]);
+
+    const checkCooldown = async () => {
+        const skillId = roadmapSkillId || `standalone_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        try {
+            const cooldown = await checkExamCooldown(skillId);
+            if (cooldown.in_cooldown) {
+                setIsInCooldown(true);
+                setCooldownMessage(`You need more preparation before retrying this exam. Cooldown: ${cooldown.cooldown_minutes} minutes.`);
+                setCooldownRemainingSeconds(cooldown.remaining_seconds || 0);
+                startCooldownCountdown(cooldown.remaining_seconds || 0);
+                return true;
+            }
+        } catch (error) {
+            console.warn('Unable to check quiz cooldown:', error);
+        }
+        setIsInCooldown(false);
+        return false;
     };
 
     const startCooldownCountdown = (seconds: number) => {
@@ -352,7 +367,7 @@ export default function Quiz() {
     // Timer countdown effect — uses ref to avoid stale closure
     const handleAutoSubmitRef = useRef<() => void>(() => {});
     useEffect(() => {
-        if (step !== 'active' || examTimeRemaining <= 0) return;
+        if (step !== 'active') return;
         examTimerRef.current = setInterval(() => {
             setExamTimeRemaining(prev => {
                 if (prev <= 1) {
@@ -436,7 +451,7 @@ export default function Quiz() {
     const handleStartQuiz = async () => {
         setIsLoading(true);
         try {
-            let questionsToUse = [];
+            let questionsToUse: QuizQuestion[] = [];
             if (isRoadmapQuiz && roadmapSkillName && roadmapLevel) {
                 const count = parseInt(numQuestions);
                 const res = await generateSkillQuiz(
@@ -483,12 +498,11 @@ export default function Quiz() {
             setShowResumePrompt(false);
             setSubmitError('');
             setQuestionGenerationError('');
-        } catch (error) {
+        } catch (error: unknown) {
             await examMode.deactivateExamMode();
             setStep('setup');
             setQuestionGenerationError(
-                (error as any)?.response?.data?.detail ||
-                'AI question generation is temporarily unavailable, please retry.',
+                getApiErrorMessage(error, 'AI question generation is temporarily unavailable, please retry.'),
             );
         } finally {
             setIsLoading(false);
@@ -531,9 +545,9 @@ export default function Quiz() {
         }));
     };
 
-    const trackCompletedQuiz = (quizName: string, result: any, answers: ReturnType<typeof buildQuizAnswers>) => {
-        const totalQuestions = typeof result?.total === 'number' ? result.total : answers.length;
-        const score = typeof result?.score === 'number'
+    const trackCompletedQuiz = (quizName: string, result: SkillQuizResult, answers: ReturnType<typeof buildQuizAnswers>) => {
+        const totalQuestions = typeof result.total === 'number' ? result.total : answers.length;
+        const score = typeof result.score === 'number'
             ? result.score
             : totalQuestions > 0
                 ? Math.round((answers.filter(answer => answer.selected === answer.correct).length / totalQuestions) * 100)
@@ -566,7 +580,11 @@ export default function Quiz() {
                 );
             setQuizResult(result);
             trackCompletedQuiz(isRoadmapQuiz && roadmapSkillName ? roadmapSkillName : topic, result, answers);
-            try { await saveProgressSnapshot(0); } catch (_) { }
+            try {
+                await saveProgressSnapshot(0);
+            } catch (error) {
+                console.warn('Unable to save progress snapshot:', error);
+            }
             clearSavedExamAttempt(attemptIdRef.current);
             attemptIdRef.current = null;
             setSavedAttempt(null);

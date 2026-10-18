@@ -4,8 +4,9 @@ import { motion } from 'framer-motion';
 import {
     Crown, Check, Zap, Star, ArrowRight, Sparkles,
     Clock, Shield, Rocket, X, Tag, Lock,
-    FileText, Mic, Map, Edit3, Infinity,
+    FileText, Mic, Map, Edit3, Infinity as InfinityIcon,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 import { useUsage } from '../context/UsageContext';
 import {
@@ -68,7 +69,7 @@ const STAGE_DESCRIPTIONS: Record<number, string> = {
     3: 'Unlimited access to everything',
 };
 
-const STAGE_ICONS: Record<number, any> = {
+const STAGE_ICONS: Record<number, LucideIcon> = {
     0: Star,
     1: Zap,
     2: Shield,
@@ -91,7 +92,7 @@ function normalizePlanLimits(limits: Record<string, number>): LimitDefinition {
     };
 }
 
-const LIMIT_LABELS: { key: keyof LimitDefinition; label: string; icon: any; unit: string }[] = [
+const LIMIT_LABELS: { key: keyof LimitDefinition; label: string; icon: LucideIcon; unit: string }[] = [
     { key: 'resume_count', label: 'Resume Storage', icon: FileText, unit: 'stored' },
     { key: 'interview_count_weekly', label: 'Weekly Interviews', icon: Mic, unit: '/week' },
     { key: 'plan_count', label: 'Roadmaps', icon: Map, unit: 'roadmaps' },
@@ -108,6 +109,16 @@ const FREE_FEATURES = [
     '1 resume download/month',
     'Jobs, English & Reasoning — unlimited',
 ];
+
+function getErrorMessage(error: unknown, fallback: string) {
+    if (typeof error !== 'object' || error === null) return fallback;
+    const response = Reflect.get(error, 'response');
+    if (typeof response !== 'object' || response === null) return fallback;
+    const data = Reflect.get(response, 'data');
+    if (typeof data !== 'object' || data === null) return fallback;
+    const detail = Reflect.get(data, 'detail');
+    return typeof detail === 'string' && detail.trim() ? detail : fallback;
+}
 
 // ══════════════════════════════════════════════════════════════
 // COMPONENT
@@ -218,12 +229,12 @@ export default function Plans() {
                 selectedPlan.price,
             );
             setCouponResult(result);
-        } catch (err: any) {
+        } catch (err: unknown) {
             setCouponResult({
                 valid: false,
                 discount: 0,
                 final_amount: selectedPlan.price,
-                message: err?.response?.data?.detail || 'Failed to apply coupon',
+                message: getErrorMessage(err, 'Failed to apply coupon'),
             });
         }
     };
@@ -251,8 +262,8 @@ export default function Plans() {
             } else {
                 setCheckoutError(result.message || 'Payment verification is unavailable. Please try again later.');
             }
-        } catch (err: any) {
-            setCheckoutError(err?.response?.data?.detail || 'Payment verification is unavailable. Please try again later.');
+        } catch (err: unknown) {
+            setCheckoutError(getErrorMessage(err, 'Payment verification is unavailable. Please try again later.'));
         } finally {
             setProcessing(false);
         }
@@ -600,7 +611,7 @@ export default function Plans() {
                                                     <div key={key} className="flex items-center gap-2.5 text-xs font-medium">
                                                         <div className={`w-5 h-5 rounded-full ${colors.light} flex items-center justify-center flex-shrink-0`}>
                                                             {isUnlimited ? (
-                                                                <Infinity className="w-2.5 h-2.5" style={{ color: colors.accent }} />
+                                                                <InfinityIcon className="w-2.5 h-2.5" style={{ color: colors.accent }} />
                                                             ) : (
                                                                 <Icon className="w-2.5 h-2.5" style={{ color: colors.accent }} />
                                                             )}
@@ -712,7 +723,7 @@ export default function Plans() {
                                                             <td key={plan} className="text-center py-3.5 px-4">
                                                                 {isUnlimited ? (
                                                                     <span className="inline-flex items-center gap-1 text-sm font-bold text-amber-500">
-                                                                        <Infinity className="w-3.5 h-3.5" />
+                                                                        <InfinityIcon className="w-3.5 h-3.5" />
                                                                         ∞
                                                                     </span>
                                                                 ) : (

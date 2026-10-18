@@ -6,6 +6,18 @@
 
 @layer base {
   :root {
+    /* LakshyaTrack product tokens: one vocabulary for surfaces, focus and motion. */
+    --brand: 244 76% 62%;
+    --brand-strong: 244 70% 54%;
+    --success: 158 64% 40%;
+    --warning: 38 92% 50%;
+    --danger: 0 72% 51%;
+    --surface-subtle: 220 33% 98%;
+    --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px rgb(15 23 42 / 0.06);
+    --content-max-width: 80rem;
+    --focus-ring: 0 0 0 3px hsl(var(--brand) / 0.3);
+    --motion-fast: 150ms;
+    --motion-standard: 220ms;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -38,6 +50,8 @@
   }
 
   .dark {
+    --surface-subtle: 222 35% 9%;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.22), 0 12px 30px rgb(0 0 0 / 0.2);
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
 
@@ -83,6 +97,11 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--brand));
+    outline-offset: 3px;
   }
 }
 

@@ -33,6 +33,22 @@ interface CompanyInfo {
   key: string; label: string; icon: string; question_count: number;
 }
 
+interface TestAnswer {
+  question_id?: string;
+  selected: string | null;
+  correct: string;
+  is_correct: boolean;
+}
+
+interface TestResult {
+  score: number;
+  total: number;
+  answers: TestAnswer[];
+}
+
+type TopicTab = 'learn' | 'practice' | 'test';
+type CompanyTab = 'questions' | 'simulator' | 'ai-test';
+
 type ViewState =
   | { view: 'topics' }
   | { view: 'topic-detail'; topic: string; topicLabel: string }
@@ -358,35 +374,37 @@ function LearnCard({ question, index }: { question: Question; index: number }) {
    TEST MODE
    ═══════════════════════════════════════════════════════════════ */
 
-function TestMode({ questions, onFinish }: { questions: Question[]; onFinish: (score: number, answers: any[]) => void }) {
+function TestMode({ questions, onFinish }: { questions: Question[]; onFinish: (score: number, answers: TestAnswer[]) => void }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<(string | null)[]>(new Array(questions.length).fill(null));
   const [timeLeft, setTimeLeft] = useState(questions.length * 60); // 1 min per question
-  const intervalRef = useRef<any>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { clearInterval(intervalRef.current); submitTest(); return 0; }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(intervalRef.current);
-  }, []);
-
-  const handleSelect = (label: string) => {
-    setAnswers(prev => { const n = [...prev]; n[currentIdx] = label; return n; });
-  };
-
-  const submitTest = () => {
-    clearInterval(intervalRef.current);
+  const submitTest = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
     let score = 0;
-    const detailed = questions.map((q, i) => {
+    const detailed: TestAnswer[] = questions.map((q, i) => {
       const correct = answers[i] === q.correct_answer;
       if (correct) score++;
       return { question_id: q.id, selected: answers[i], correct: q.correct_answer, is_correct: correct };
     });
     onFinish(score, detailed);
+  }, [answers, onFinish, questions]);
+
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      setTimeLeft(t => {
+        if (t <= 1) { submitTest(); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [submitTest]);
+
+  const handleSelect = (label: string) => {
+    setAnswers(prev => { const n = [...prev]; n[currentIdx] = label; return n; });
   };
 
   const q = questions[currentIdx];
@@ -537,10 +555,10 @@ function TestResults({ score, total, questions, onRetry }: {
    ═══════════════════════════════════════════════════════════════ */
 
 function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLabel: string; onBack: () => void }) {
-  const [tab, setTab] = useState<'learn' | 'practice' | 'test'>('learn');
+  const [tab, setTab] = useState<TopicTab>('learn');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
-  const [testResults, setTestResults] = useState<{ score: number; total: number; answers: any[] } | null>(null);
+  const [testResults, setTestResults] = useState<TestResult | null>(null);
   const [testQuestions, setTestQuestions] = useState<Question[]>([]);
   const [testStarted, setTestStarted] = useState(false);
 
@@ -556,14 +574,16 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
     }
   }, [topic]);
 
-  useEffect(() => { fetchQuestions('learn').then(setQuestions); }, [topic]);
+  useEffect(() => { fetchQuestions('learn').then(setQuestions); }, [fetchQuestions]);
 
   const generateNew = async () => {
     setLoading(true);
     try {
       const data = await generateReasoningQuestions({ topic, difficulty: 'medium', count: 10 });
       setQuestions(data.questions || []);
-    } catch { /* keep existing */ }
+    } catch (error) {
+      console.error('Unable to generate reasoning questions:', error);
+    }
     setLoading(false);
   };
 
@@ -574,20 +594,26 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
       setTestQuestions(data.questions || []);
       setTestStarted(true);
       setTestResults(null);
-    } catch { /* use existing questions */ setTestQuestions(questions.slice(0, 10)); setTestStarted(true); }
+    } catch (error) {
+      console.error('Unable to generate a reasoning test:', error);
+      setTestQuestions(questions.slice(0, 10));
+      setTestStarted(true);
+    }
     setLoading(false);
   };
 
-  const handleTestFinish = (score: number, answers: any[]) => {
+  const handleTestFinish = (score: number, answers: TestAnswer[]) => {
     setTestResults({ score, total: testQuestions.length, answers });
     setTestStarted(false);
     // Save result
     submitReasoningTest({
       user_id: 'anonymous', test_type: 'topic_test', category: topic, score, total: testQuestions.length, answers,
-    }).catch(() => {});
+    }).catch((error: unknown) => {
+      console.error('Unable to save reasoning test result:', error);
+    });
   };
 
-  const tabs = [
+  const tabs: { key: TopicTab; label: string; icon: typeof BookOpen; gradient: string }[] = [
     { key: 'learn', label: 'Learn', icon: BookOpen, gradient: 'from-[#6C63FF] to-violet-500' },
     { key: 'practice', label: 'Practice', icon: Target, gradient: 'from-sky-500 to-indigo-500' },
     { key: 'test', label: 'Test', icon: Timer, gradient: 'from-rose-500 to-pink-500' },
@@ -609,7 +635,7 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
       {/* Tabs */}
       <div className="flex gap-3">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => { setTab(t.key as any); setTestStarted(false); setTestResults(null); }}
+          <button key={t.key} onClick={() => { setTab(t.key); setTestStarted(false); setTestResults(null); }}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all
               ${tab === t.key ? `bg-gradient-to-r ${t.gradient} text-white shadow-lg` : 'bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:text-slate-200'}`}>
             <t.icon className="w-4 h-4" /> {t.label}
@@ -702,10 +728,10 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
    ═══════════════════════════════════════════════════════════════ */
 
 function CompanyDetailPage({ company, companyLabel, onBack }: { company: string; companyLabel: string; onBack: () => void }) {
-  const [tab, setTab] = useState<'questions' | 'simulator' | 'ai-test'>('questions');
+  const [tab, setTab] = useState<CompanyTab>('questions');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
-  const [testResults, setTestResults] = useState<any>(null);
+  const [testResults, setTestResults] = useState<TestResult | null>(null);
   const [testQuestions, setTestQuestions] = useState<Question[]>([]);
   const [testStarted, setTestStarted] = useState(false);
 
@@ -719,7 +745,9 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
         try {
             const data = await getCompanyQuestions(company, 30);
             if (!cancelled) setQuestions(data.questions || []);
-        } catch {}
+        } catch (error) {
+            console.error('Unable to load company reasoning questions:', error);
+        }
         if (!cancelled) setLoading(false);
     };
     load();
@@ -733,7 +761,9 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
       setTestQuestions(data.questions || []);
       setTestStarted(true);
       setTestResults(null);
-    } catch {}
+    } catch (error) {
+      console.error('Unable to generate a company reasoning test:', error);
+    }
     setLoading(false);
   };
 
@@ -745,15 +775,17 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
     setTestResults(null);
   };
 
-  const handleFinish = (score: number, answers: any[]) => {
+  const handleFinish = (score: number, answers: TestAnswer[]) => {
     setTestResults({ score, total: testQuestions.length, answers });
     setTestStarted(false);
     submitReasoningTest({
       user_id: 'anonymous', test_type: 'company_test', category: company, score, total: testQuestions.length, answers,
-    }).catch(() => {});
+    }).catch((error: unknown) => {
+      console.error('Unable to save company reasoning test result:', error);
+    });
   };
 
-  const tabs = [
+  const tabs: { key: CompanyTab; label: string; icon: typeof FileText; gradient: string }[] = [
     { key: 'questions', label: 'Questions', icon: FileText, gradient: 'from-[#6C63FF] to-violet-500' },
     { key: 'simulator', label: 'Simulator', icon: Timer, gradient: 'from-sky-500 to-indigo-500' },
     { key: 'ai-test', label: 'AI Test', icon: Sparkles, gradient: 'from-rose-500 to-pink-500' },
@@ -773,7 +805,7 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
 
       <div className="flex gap-3">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => { setTab(t.key as any); setTestStarted(false); setTestResults(null); }}
+          <button key={t.key} onClick={() => { setTab(t.key); setTestStarted(false); setTestResults(null); }}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all
               ${tab === t.key ? `bg-gradient-to-r ${t.gradient} text-white shadow-lg` : 'bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:text-slate-200'}`}>
             <t.icon className="w-4 h-4" /> {t.label}

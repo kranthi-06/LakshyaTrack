@@ -10,7 +10,7 @@ import { useAuthStore } from '../store/authStore';
 import { resetProgressDashboardStoreState, useProgressDashboardStore, prefetchDashboard } from '../progress-system/store/useProgressDashboardStore';
 import type { SubscriptionStatus } from '../services/subscription';
 
-interface User {
+export interface User {
     id?: string;
     email: string;
     full_name?: string;
@@ -23,7 +23,7 @@ interface User {
         project_image_url?: string;
         phone_number?: string;
         bio?: string;
-        links?: Record<string, any>;
+        links?: Record<string, unknown>;
         resume_step?: number;
         resume_completion?: number;
         skills?: string[];
