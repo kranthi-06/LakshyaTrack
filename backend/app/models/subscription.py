@@ -5,12 +5,17 @@ Supports stage-based subscriptions, micro-plan purchases, coupons, and payment t
 import uuid
 from sqlalchemy import (
     Boolean, Column, String, DateTime, Float, Integer,
-    ForeignKey, Text, Enum as SQLEnum
+    ForeignKey, Text, JSON, Enum as SQLEnum
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base_class import Base
+
+
+# Preserve JSONB in PostgreSQL while allowing isolated SQLite test databases.
+# This changes neither the PostgreSQL column type nor any deployed schema.
+JSON_DOCUMENT = JSON().with_variant(JSONB, "postgresql")
 
 
 class SubscriptionPlan(Base):
@@ -23,7 +28,7 @@ class SubscriptionPlan(Base):
     billing_cycle = Column(String, nullable=False)             # "monthly" | "yearly"
     price = Column(Float, nullable=False)                      # in INR
     currency = Column(String, default="INR")
-    features = Column(JSONB, default=list)                       # list of feature descriptions
+    features = Column(JSON_DOCUMENT, default=list)               # list of feature descriptions
     resume_limit = Column(Integer, default=1)                  # max resumes allowed
     roadmap_limit = Column(Integer, default=1)                 # max roadmaps allowed
     is_recommended = Column(Boolean, default=False)
@@ -140,6 +145,6 @@ class PaymentTransaction(Base):
     gateway_order_id = Column(String, nullable=True)
     gateway_payment_id = Column(String, nullable=True)
     status = Column(String, default="pending")                 # "pending" | "success" | "failed" | "refunded"
-    payment_metadata = Column(JSONB, default=dict)
+    payment_metadata = Column(JSON_DOCUMENT, default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

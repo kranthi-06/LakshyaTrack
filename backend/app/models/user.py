@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Column, String, DateTime, ForeignKey, Text, JSON, Integer
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base_class import Base
@@ -22,7 +23,6 @@ if _is_sqlite():
     # SQLite uses INTEGER auto-increment for IDs
     ID_TYPE = Integer
 else:
-    from sqlalchemy.dialects.postgresql import UUID
     ID_TYPE = UUID(as_uuid=True)
 
 class User(Base):

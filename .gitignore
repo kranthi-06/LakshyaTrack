@@ -58,6 +58,14 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local deployment links and browser/test artifacts
+.vercel/
+frontend/.playwright-cli/
+frontend/output/
+output/
+tmp/
+backend/*.db.backup
+
 # Project specific
 test_*.py
 !backend/tests/test_*.py

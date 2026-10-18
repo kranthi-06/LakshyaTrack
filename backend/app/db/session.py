@@ -16,6 +16,16 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
+
+# Vercel installs psycopg2-binary (as declared in requirements.txt), while a
+# database URL copied from some Supabase tooling may explicitly select psycopg
+# v3.  Keep the deployed driver and credentials untouched, but select the
+# installed DBAPI so application startup does not fail before any request can
+# reach the auth router.
+if SQLALCHEMY_DATABASE_URL.startswith(("postgresql://", "postgres://", "postgresql+")):
+    _database_target = SQLALCHEMY_DATABASE_URL.split("://", 1)
+    if len(_database_target) == 2:
+        SQLALCHEMY_DATABASE_URL = f"postgresql+psycopg2://{_database_target[1]}"
 _is_sqlite = "sqlite" in SQLALCHEMY_DATABASE_URL
 
 # ── Production-grade engine configuration ──────────────────────

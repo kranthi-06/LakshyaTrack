@@ -1,9 +1,14 @@
-from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base_class import Base
 import uuid
+
+
+# Use PostgreSQL JSONB in production and portable JSON for isolated SQLite
+# verification databases.
+JSON_DOCUMENT = JSON().with_variant(JSONB, "postgresql")
 
 class SavedResume(Base):
     __tablename__ = "saved_resumes"
@@ -12,7 +17,7 @@ class SavedResume(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     resume_name = Column(String, default="Untitled Resume")
     resume_url = Column(String, nullable=True)
-    resume_data = Column(JSONB, nullable=False)
+    resume_data = Column(JSON_DOCUMENT, nullable=False)
     template_id = Column(String, default="modern")
     theme = Column(String, default="default")
     target_role = Column(String, nullable=True)

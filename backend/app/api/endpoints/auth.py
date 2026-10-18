@@ -384,10 +384,11 @@ def login_alias(
 
 @router.get("/auth/me")
 def me_alias(
+    db: Session = Depends(deps.get_db),
     current_user: models.user.User = Depends(deps.get_current_active_user),
 ) -> Any:
-    """Alias for the SaaS auth contract."""
-    return current_user
+    """Alias for the SaaS auth contract with a JSON-safe user payload."""
+    return _build_user_response_payload(db, current_user)
 
 
 @router.post("/auth/refresh", response_model=AuthSessionResponse)
@@ -403,11 +404,10 @@ def refresh_session(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    try:
-        import uuid
-        user = crud.get_user(db, user_id=uuid.UUID(str(user_id)))
-    except Exception:
-        user = None
+    # ``crud.get_user`` resolves both PostgreSQL UUIDs and SQLite integer IDs.
+    # Pre-coercing every subject to UUID made refresh tokens issued in the
+    # isolated SQLite environment unusable.
+    user = crud.get_user(db, user_id=user_id)
 
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid refresh token")

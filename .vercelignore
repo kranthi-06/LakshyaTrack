@@ -10,6 +10,25 @@ backend/.venv/
 *.db
 backend_error.log
 *.log
+*.backup
+
+# Local diagnostics, generated reports, and load-test output are not runtime
+# dependencies and must not be uploaded with deployments.
+output/
+tmp/
+.pytest_cache/
+backend/.pytest_cache/
+*_REPORT.md
+*_result*.txt
+backend/results_*.txt
+backend/optimized_results.txt
+backend/load_*.txt
+verify_all_connections.py
+backend/create_*.py
+backend/fix_*.py
+backend/get_otp.py
+backend/migrate_sqlite*.py
+backend/seed_admin.py
 
 # Ignore local IDE settings
 .vscode/

@@ -12,6 +12,11 @@ import uuid
 from app.db.base_class import Base
 
 
+# The PostgreSQL schema remains JSONB; SQLite receives its supported JSON
+# representation when tests create an isolated local database.
+JSON_DOCUMENT = JSON().with_variant(JSONB, "postgresql")
+
+
 class Roadmap(Base):
     """
     A personalized skill roadmap generated for a user based on their
@@ -23,9 +28,9 @@ class Roadmap(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     target_role = Column(String, nullable=False)
     topic_name = Column(String, nullable=True)        # User-entered topic/skill (for custom roadmaps)
-    current_skills = Column(JSONB, default=list)       # ["Python", "React", ...]
-    skill_gaps = Column(JSONB, default=list)            # ["Docker", "K8s", ...]
-    roadmap_data = Column(JSONB, nullable=False)      # Full roadmap structure (see below)
+    current_skills = Column(JSON_DOCUMENT, default=list)  # ["Python", "React", ...]
+    skill_gaps = Column(JSON_DOCUMENT, default=list)       # ["Docker", "K8s", ...]
+    roadmap_data = Column(JSON_DOCUMENT, nullable=False)   # Full roadmap structure (see below)
     # roadmap_data schema:
     # {
     #   "levels": [
@@ -71,7 +76,7 @@ class QuizAttempt(Base):
     passed = Column(Boolean, nullable=False)
     total_questions = Column(Integer, nullable=False)
     correct_answers = Column(Integer, nullable=False)
-    questions_data = Column(JSONB, default=list)          # Full Q&A for review
+    questions_data = Column(JSON_DOCUMENT, default=list)   # Full Q&A for review
     violation_flag = Column(Boolean, default=False)      # True if exam was terminated due to violations
     terminated = Column(Boolean, default=False)          # True if exam was force-terminated
     attempted_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -105,7 +110,7 @@ class ExamEvent(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     client_event_id = Column(String(120), nullable=False)
     event_type = Column(String(50), nullable=False)
-    details = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    details = Column(JSON_DOCUMENT, nullable=False, default=dict)
     exam_topic = Column(String(200), nullable=True)
     exam_difficulty = Column(String(50), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -124,8 +129,8 @@ class InterviewSession(Base):
     level = Column(String, nullable=True)              # Which level triggered this interview
     position = Column(String, nullable=False)
     round_type = Column(String, nullable=False)
-    responses = Column(JSONB, default=list)               # [{question, answer}, ...]
-    analysis = Column(JSONB, default=dict)                # AI feedback result
+    responses = Column(JSON_DOCUMENT, default=list)        # [{question, answer}, ...]
+    analysis = Column(JSON_DOCUMENT, default=dict)         # AI feedback result
     technical_score = Column(Float, nullable=True)
     communication_score = Column(Float, nullable=True)
     confidence_score = Column(Float, nullable=True)
@@ -154,14 +159,14 @@ class MultiStageInterview(Base):
     overall_score = Column(Float, nullable=True)
 
     # Stage data (questions, answers, feedback per stage)
-    screening_data = Column(JSONB, default=dict)
-    technical_data = Column(JSONB, default=dict)
-    coding_data = Column(JSONB, default=dict)
-    hr_data = Column(JSONB, default=dict)
+    screening_data = Column(JSON_DOCUMENT, default=dict)
+    technical_data = Column(JSON_DOCUMENT, default=dict)
+    coding_data = Column(JSON_DOCUMENT, default=dict)
+    hr_data = Column(JSON_DOCUMENT, default=dict)
 
     # AI summary feedback
-    strengths = Column(JSONB, default=list)
-    weaknesses = Column(JSONB, default=list)
+    strengths = Column(JSON_DOCUMENT, default=list)
+    weaknesses = Column(JSON_DOCUMENT, default=list)
     overall_feedback = Column(Text, nullable=True)
     verdict = Column(String, nullable=True)
 
@@ -189,7 +194,7 @@ class Opportunity(Base):
     description = Column(Text, nullable=True)
     url = Column(String, nullable=False)
     source = Column(String, nullable=True)               # "coursera", "udemy", "github_jobs", etc.
-    skill_tags = Column(JSONB, default=list)               # ["Python", "React", ...]
+    skill_tags = Column(JSON_DOCUMENT, default=list)         # ["Python", "React", ...]
     level = Column(String, nullable=True)                # "Beginner", "Intermediate", "Advanced"
     deadline = Column(DateTime(timezone=True), nullable=True)
     is_expired = Column(Boolean, default=False)
@@ -217,7 +222,7 @@ class ProgressSnapshot(Base):
     total_skills_completed = Column(Integer, default=0)
     total_quizzes_passed = Column(Integer, default=0)
     total_interviews_done = Column(Integer, default=0)
-    breakdown = Column(JSONB, default=dict)                # Detailed per-skill breakdown
+    breakdown = Column(JSON_DOCUMENT, default=dict)          # Detailed per-skill breakdown
     snapshot_date = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -230,7 +235,7 @@ class LearningCache(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     skill_name = Column(String, nullable=False, index=True)
     level = Column(String, nullable=True)
-    resources = Column(JSONB, default=list)               # [{title, url, type, order}, ...]
+    resources = Column(JSON_DOCUMENT, default=list)          # [{title, url, type, order}, ...]
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

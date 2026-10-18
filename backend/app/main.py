@@ -103,8 +103,11 @@ async def lifespan(app: FastAPI):
 
     # 2. Initialize MongoDB
     try:
-        init_mongodb()
-        logger.info("MongoDB: OK")
+        mongo_db = init_mongodb()
+        if mongo_db is not None:
+            logger.info("MongoDB: OK")
+        else:
+            logger.warning("MongoDB: unavailable; Mongo-backed features are disabled.")
     except Exception:
         logger.exception("MongoDB startup failed (non-fatal).")
 
@@ -739,7 +742,7 @@ async def health_check():
         mongo_status = "connected" if get_mongodb() is not None else "disconnected"
 
         overall = "healthy"
-        if db_status.get("status") != "healthy":
+        if db_status.get("status") != "healthy" or mongo_status != "connected":
             overall = "degraded"
         if db_status.get("status") == "unhealthy" and mongo_status == "disconnected":
             overall = "critical"
@@ -771,6 +774,19 @@ async def health_live():
     Does not touch DB/network dependencies and is safe under very high QPS.
     """
     return {"status": "alive"}
+
+
+# Vercel forwards /api/* requests to the Python function without stripping the
+# prefix.  Keep the original root endpoints for direct ASGI deployments while
+# exposing equivalent liveness/readiness probes through the public API prefix.
+@app.get(f"{settings.API_V1_STR}/health")
+async def api_health_check():
+    return await health_check()
+
+
+@app.get(f"{settings.API_V1_STR}/health/live")
+async def api_health_live():
+    return await health_live()
 
 
 @app.get("/health/ready")
@@ -814,6 +830,11 @@ async def health_ready():
         return JSONResponse(status_code=503, content={"status": "not_ready"})
     finally:
         _READY_REFRESHING = False
+
+
+@app.get(f"{settings.API_V1_STR}/health/ready")
+async def api_health_ready():
+    return await health_ready()
 
 
 @app.get("/health/detailed")
