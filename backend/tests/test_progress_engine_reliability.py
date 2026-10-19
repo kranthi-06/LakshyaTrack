@@ -1,4 +1,9 @@
 from app.progress_engine import events, realtime, redis_client
+from app.api.deps import get_current_user
+from app.main import app
+from app.progress_engine import router
+from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 
 def test_ingest_batch_persists_events_and_publishes_update(monkeypatch):
@@ -79,3 +84,17 @@ def test_realtime_publish_user_update_reaches_local_subscriber(monkeypatch):
 
     assert "progress_updated" in message
     assert "user-stream" in message
+
+
+def test_stream_explicitly_declines_on_vercel_instead_of_timing_out(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id="user-stream")
+    try:
+        response = TestClient(app).get("/api/v1/progress-engine/stream")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 501
+    assert response.json() == {
+        "detail": "Live progress streaming is unavailable in this serverless runtime"
+    }

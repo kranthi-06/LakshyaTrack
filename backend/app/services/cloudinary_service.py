@@ -37,6 +37,29 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
 PDF_EXTENSIONS = {".pdf"}
 
 
+def _looks_like_image(content: bytes, extension: str) -> bool:
+    """Validate magic bytes so a renamed executable is not accepted as an image."""
+    if extension in (".jpg", ".jpeg"):
+        return content.startswith(b"\xff\xd8\xff")
+    if extension == ".png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension == ".gif":
+        return content.startswith((b"GIF87a", b"GIF89a"))
+    if extension == ".webp":
+        return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    if extension == ".bmp":
+        return content.startswith(b"BM")
+    if extension == ".avif":
+        return len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in {
+            b"avif", b"avis", b"mif1", b"msf1",
+        }
+    return False
+
+
+def _looks_like_pdf(content: bytes) -> bool:
+    return content.startswith(b"%PDF-")
+
+
 MEDIA_RULES = {
     MediaType.RESUME: {
         "base_folder": "resumes",
@@ -153,6 +176,12 @@ def _validate_upload(
         if not allowed:
             raise ValueError(f"Unsupported content type for {media_type.value}.")
 
+    if extension in PDF_EXTENSIONS:
+        if not _looks_like_pdf(content):
+            raise ValueError("The uploaded file is not a valid PDF.")
+    elif extension in IMAGE_EXTENSIONS and not _looks_like_image(content, extension):
+        raise ValueError("The uploaded file content does not match its image type.")
+
     if len(content) > rule["max_bytes"]:
         size_limit_mb = rule["max_bytes"] // (1024 * 1024)
         raise ValueError(f"{media_type.value.replace('_', ' ').title()} uploads must be {size_limit_mb}MB or smaller.")
@@ -220,7 +249,7 @@ def _sync_upload(
             "Cloudinary upload failed for %s (type=%s, user=%s): %s",
             filename, media_type.value, user_id, str(e),
         )
-        raise ValueError(f"File upload failed: {str(e)}")
+        raise ValueError("File upload failed. Please retry.")
 
     secure_url = upload_result["secure_url"]
     if upload_result.get("resource_type") == "image":

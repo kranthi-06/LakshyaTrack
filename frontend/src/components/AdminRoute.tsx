@@ -12,16 +12,18 @@ interface AdminRouteProps {
 }
 
 export const AdminRoute = ({ children, requireBlackAdmin = false }: AdminRouteProps) => {
-    const { user, loading, authReady } = useAuth();
+    const { user, loading, authReady, authUnavailable } = useAuth();
     const waitExpired = useRouteGuardWait({
         loading,
         authReady,
+        authUnavailable,
         hasUser: Boolean(user),
         hasToken: false,
     });
     const state = resolveRouteGuardState({
         loading,
         authReady,
+        authUnavailable,
         hasUser: Boolean(user),
         hasToken: false,
         waitExpired,

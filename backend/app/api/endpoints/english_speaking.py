@@ -6,11 +6,12 @@ AI-powered personalized feedback.
 import json
 import logging
 import random
-from typing import Optional, List
+from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api import deps
 from app.services.ai_service import ai_hub
 
 logger = logging.getLogger(__name__)
@@ -22,9 +23,15 @@ router = APIRouter()
 # ═══════════════════════════════════════════════════════════════
 
 class SpeakingAnalysisRequest(BaseModel):
-    type: str = Field(..., description="'sentence' for passage comparison, 'topic' for free speaking, 'interview' for interview sim")
-    original_text: Optional[str] = Field(None, description="Original passage / question text")
-    user_text: str = Field(..., description="User's spoken text")
+    type: Literal["sentence", "topic", "interview"] = Field(
+        ..., description="'sentence' for passage comparison, 'topic' for free speaking, 'interview' for interview sim"
+    )
+    original_text: Optional[str] = Field(
+        None, max_length=5000, description="Original passage / question text"
+    )
+    user_text: str = Field(
+        ..., min_length=1, max_length=10000, description="User's spoken text"
+    )
 
 
 class SpeakingAnalysisResponse(BaseModel):
@@ -32,8 +39,11 @@ class SpeakingAnalysisResponse(BaseModel):
 
 
 class GeneratePassageRequest(BaseModel):
-    difficulty: str = Field("easy", description="easy | medium | hard")
-    category: str = Field("general", description="interview | college | daily_life | technology | general")
+    difficulty: Literal["easy", "medium", "hard"] = Field("easy")
+    category: str = Field(
+        "general", min_length=1, max_length=40,
+        description="interview | college | daily_life | technology | general",
+    )
 
 
 class GeneratePassageResponse(BaseModel):
@@ -252,10 +262,13 @@ def _safe_parse_json(text: str) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 @router.post("/generate-passage", response_model=GeneratePassageResponse)
-async def generate_passage(request: GeneratePassageRequest):
+async def generate_passage(
+    request: GeneratePassageRequest,
+    current_user=Depends(deps.get_current_active_user),
+):
     """Generate an AI passage for the Read & Speak module."""
     category = request.category if request.category in FALLBACK_PASSAGES else "general"
-    difficulty = request.difficulty if request.difficulty in ("easy", "medium", "hard") else "easy"
+    difficulty = request.difficulty
 
     try:
         prompt = _build_generate_passage_prompt(category, difficulty)
@@ -279,7 +292,9 @@ async def generate_passage(request: GeneratePassageRequest):
 
 
 @router.post("/generate-topic", response_model=GenerateTopicResponse)
-async def generate_topic():
+async def generate_topic(
+    current_user=Depends(deps.get_current_active_user),
+):
     """Generate an AI practice topic with a sample passage."""
     try:
         prompt = _build_generate_topic_prompt()
@@ -299,7 +314,10 @@ async def generate_topic():
 
 
 @router.post("/analyze-speaking", response_model=SpeakingAnalysisResponse)
-async def analyze_speaking(request: SpeakingAnalysisRequest):
+async def analyze_speaking(
+    request: SpeakingAnalysisRequest,
+    current_user=Depends(deps.get_current_active_user),
+):
     """
     Analyze user's spoken English using AI.
     
@@ -315,10 +333,8 @@ async def analyze_speaking(request: SpeakingAnalysisRequest):
             prompt = _build_passage_prompt(request.original_text, request.user_text)
         elif request.type == "topic":
             prompt = _build_topic_prompt(request.user_text, request.original_text or "")
-        elif request.type == "interview":
-            prompt = _build_interview_prompt(request.user_text, request.original_text)
         else:
-            raise HTTPException(status_code=400, detail=f"Invalid type: {request.type}. Must be 'sentence', 'topic', or 'interview'")
+            prompt = _build_interview_prompt(request.user_text, request.original_text)
 
         system_prompt = "You are an expert English communication coach. Always respond with valid JSON only, no markdown formatting."
         

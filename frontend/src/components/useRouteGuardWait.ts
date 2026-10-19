@@ -7,6 +7,7 @@ import {
 interface RouteGuardWaitInput {
     loading: boolean;
     authReady: boolean;
+    authUnavailable?: boolean;
     hasUser: boolean;
     hasToken: boolean;
 }
@@ -14,6 +15,7 @@ interface RouteGuardWaitInput {
 export function useRouteGuardWait(input: RouteGuardWaitInput): boolean {
     const stateBeforeExpiry = resolveRouteGuardState({
         ...input,
+        authUnavailable: input.authUnavailable ?? false,
         waitExpired: false,
     });
     const waitCycle = useMemo(

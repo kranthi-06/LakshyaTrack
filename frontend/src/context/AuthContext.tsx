@@ -40,6 +40,8 @@ interface AuthContextType {
     user: User | null;
     loading: boolean;
     authReady: boolean;  // true once the full init pipeline has completed
+    /** Backend could not confirm the current authenticated user. */
+    authUnavailable: boolean;
     login: (data: any) => Promise<void>;
     register: (data: any) => Promise<any>;
     verifyOtp: (email: string, otp: string) => Promise<void>;
@@ -60,7 +62,6 @@ const TOKEN_KEY = 'token';
 const USER_CACHE_KEY = 'auth:user-cache';
 const SUB_CACHE_KEY = 'sub:status-cache';
 const USAGE_CACHE_KEY = 'usage:status-cache';
-const RETRY_INTERVAL_MS = 15000; // Retry fetching user every 15s when offline
 
 function getGoogleOAuthRedirectUrl(): string {
     const envOrigin =
@@ -78,37 +79,6 @@ function hasValidToken(): boolean {
     return !!token && token !== 'undefined' && token !== 'null';
 }
 
-function getCachedUserSnapshot(): User | null {
-    try {
-        const raw = localStorage.getItem(USER_CACHE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw) as User;
-        return parsed?.email ? parsed : null;
-    } catch {
-        localStorage.removeItem(USER_CACHE_KEY);
-        return null;
-    }
-}
-
-function buildSessionFallbackUser(sessionOrUser: any): User | null {
-    const rawUser = sessionOrUser?.user || sessionOrUser;
-    const email = rawUser?.email;
-    if (!email) return null;
-
-    const fullName =
-        rawUser?.user_metadata?.full_name ||
-        rawUser?.user_metadata?.name ||
-        rawUser?.identities?.[0]?.identity_data?.full_name ||
-        undefined;
-
-    return {
-        email,
-        full_name: fullName,
-        profile: fullName ? { full_name: fullName } : undefined,
-        is_active: true,
-    };
-}
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const user = useAuthStore((s) => s.user) as User | null;
     const loading = useAuthStore((s) => s.loading);
@@ -116,6 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const setStoreLoading = useAuthStore((s) => s.setLoading);
     const storeLogout = useAuthStore((s) => s.logout);
     const [authReady, setAuthReady] = useState(false); // Only true after full init
+    const [authUnavailable, setAuthUnavailable] = useState(false);
     const navigate = useNavigate();
 
     // Track state inside closures to avoid stale reads
@@ -175,14 +146,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     /**
-     * Safely attempt to fetch the current user from backend.
-     * On network / timeout errors, returns the EXISTING user (if any)
-     * so we never accidentally wipe a valid session due to a connectivity blip.
-     * During initial load, enforces a timeout so the app doesn't hang forever.
+     * Safely attempt to fetch the current user from the backend.  A non-401
+     * failure keeps the token only for an explicit recovery attempt; it never
+     * treats a cached browser profile as verified account data.
      */
     const fetchCurrentUser = useCallback(async (withTimeout = false, bypassCache = false): Promise<User | null> => {
         const token = localStorage.getItem(TOKEN_KEY);
         if (!token || token === 'undefined' || token === 'null') {
+            setAuthUnavailable(false);
             return null;
         }
         try {
@@ -199,6 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                 userData = await getMe(bypassCache);
             }
+            setAuthUnavailable(false);
             return userData;
         } catch (err: any) {
             // Only clear token on GENUINE 401 (token is truly invalid/expired).
@@ -210,36 +182,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     console.warn('AuthContext: Token invalid (401) — clearing.');
                     clearSessionCaches();
                 }
+                setAuthUnavailable(false);
                 return null;
             }
-            // For any other error (network, timeout, 500), keep the token
-            // AND preserve the existing user so we don't trigger a redirect.
-            console.warn('AuthContext: Failed to fetch user (non-auth error, keeping token & user)', err?.message || err);
-            return userRef.current || getCachedUserSnapshot();
+            // A token or cached browser snapshot is not authoritative account
+            // data.  Do not render either as a confirmed user after /users/me
+            // fails; retain the token so the recovery screen can safely retry.
+            console.warn('AuthContext: Current-user lookup failed', err?.message || err);
+            setAuthUnavailable(true);
+            return null;
         }
     }, [clearSessionCaches]);
 
-    // ── Background retry: re-fetch user when token exists but user is null ──
-    useEffect(() => {
-        const interval = setInterval(async () => {
-            // Only retry if we have a token but no user (network temporarily failed)
-            if (!hasValidToken() || userRef.current) return;
-            console.log('AuthContext: Background retry — attempting to fetch user...');
-            try {
-                const userData = await getMe();
-                if (userData && mountedRef.current) {
-                    updateUser(userData);
-                    console.log('AuthContext: Background retry succeeded, user restored.');
-                }
-            } catch {
-                // Silently ignore — will retry next interval
-            }
-        }, RETRY_INTERVAL_MS);
-
-        return () => clearInterval(interval);
-    }, [updateUser]);
-
-    // ── Re-fetch user when the browser comes back online ──────
+    // ── Make one bounded recovery attempt when the browser comes online ───
     useEffect(() => {
         const handleOnline = async () => {
             if (!hasValidToken() || userRef.current) return;
@@ -248,9 +203,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const userData = await getMe();
                 if (userData && mountedRef.current) {
                     updateUser(userData);
+                    setAuthUnavailable(false);
                 }
             } catch {
-                // Will be retried by background interval
+                // The recovery screen keeps the next retry user-initiated.
             }
         };
 
@@ -288,16 +244,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (supabaseSession) {
                     // Supabase has a valid session — store the token and fetch user
                     localStorage.setItem(TOKEN_KEY, supabaseSession.access_token);
-                    const sessionUser = buildSessionFallbackUser(supabaseSession);
-                    if (sessionUser && mountedRef.current) {
-                        updateUser(sessionUser);
-                        if (window.location.pathname === '/auth/callback') {
-                            markAuthReady();
-                        }
-                    }
                     const backendUser = await fetchCurrentUser(true);
-                    const resolvedUser = backendUser || sessionUser;
-                    if (mountedRef.current) updateUser(resolvedUser);
+                    if (mountedRef.current) updateUser(backendUser);
                 } else {
                     // No Supabase session — try local token (custom email/password login)
                     const userData = await fetchCurrentUser(true);
@@ -310,27 +258,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 initCompleteRef.current = true;
                 setAuthInitialized(); // Tell api.ts interceptor that init is done
 
-                if (!mountedRef.current) return;
+                if (mountedRef.current) {
+                    // If this is an OAuth callback page, give Supabase a moment to fire
+                    // the SIGNED_IN event before we clear the loading state.
+                    const isOAuthCallback =
+                        window.location.hash.includes('access_token') ||
+                        window.location.hash.includes('type=recovery') ||
+                        window.location.search.includes('code') ||
+                        window.location.pathname === '/auth/callback';
 
-                // If this is an OAuth callback page, give Supabase a moment to fire
-                // the SIGNED_IN event before we clear the loading state.
-                const isOAuthCallback =
-                    window.location.hash.includes('access_token') ||
-                    window.location.hash.includes('type=recovery') ||
-                    window.location.search.includes('code') ||
-                    window.location.pathname === '/auth/callback';
-
-                if (isOAuthCallback) {
-                    if (userRef.current && hasValidToken()) {
-                        markAuthReady();
+                    if (isOAuthCallback) {
+                        if (userRef.current && hasValidToken()) {
+                            markAuthReady();
+                        } else {
+                            callbackSafetyTimerRef.current = setTimeout(
+                                markAuthReady,
+                                AUTH_CALLBACK_SAFETY_TIMEOUT_MS,
+                            );
+                        }
                     } else {
-                        callbackSafetyTimerRef.current = setTimeout(
-                            markAuthReady,
-                            AUTH_CALLBACK_SAFETY_TIMEOUT_MS,
-                        );
+                        markAuthReady();
                     }
-                } else {
-                    markAuthReady();
                 }
             }
         };
@@ -348,9 +296,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 try {
                     const backendUser = await fetchCurrentUser();
-                    const resolvedUser = backendUser || buildSessionFallbackUser(session);
                     if (!mountedRef.current) return;
-                    updateUser(resolvedUser);
+                    updateUser(backendUser);
                     if (backendUser) {
                         touchDailyStreak().catch(() => { });
                     }
@@ -386,8 +333,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else if (event === 'TOKEN_REFRESHED' && session) {
                 // Silent refresh — just update the token, don't navigate anywhere
                 localStorage.setItem(TOKEN_KEY, session.access_token);
-                const sessionUser = buildSessionFallbackUser(session);
-                if (!userRef.current && sessionUser) updateUser(sessionUser);
                 markAuthReady();
             } else if (event === 'SIGNED_OUT') {
                 // ── CRITICAL FIX ──────────────────────────────────────────
@@ -506,7 +451,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updateUser(userData);
             // Touch streak on first successful refresh each day (safe to call often).
             touchDailyStreak().catch(() => { });
+            return;
         }
+        throw new Error('Current-user lookup failed');
     }, [fetchCurrentUser, updateUser]);
 
     // ── Google Sign‑In via Supabase ─────────────────────────────
@@ -539,6 +486,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         loading,
         authReady,
+        authUnavailable,
         login,
         register,
         verifyOtp,
@@ -546,7 +494,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithGoogle,
         logout,
         refreshUser,
-    }), [user, loading, authReady, login, register, verifyOtp, resendOtp, signInWithGoogle, logout, refreshUser]);
+    }), [user, loading, authReady, authUnavailable, login, register, verifyOtp, resendOtp, signInWithGoogle, logout, refreshUser]);
 
     return (
         <AuthContext.Provider value={contextValue}>

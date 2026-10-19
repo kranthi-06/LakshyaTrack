@@ -14,7 +14,7 @@ function hasToken(): boolean {
 }
 
 export const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
-    const { user, loading, authReady } = useAuth();
+    const { user, loading, authReady, authUnavailable } = useAuth();
     const tokenPresent = hasToken();
     const waitExpired = useRouteGuardWait({
         loading,
@@ -25,6 +25,7 @@ export const ProtectedRoute = ({ children }: { children: React.ReactElement }) =
     const state = resolveRouteGuardState({
         loading,
         authReady,
+        authUnavailable,
         hasUser: Boolean(user),
         hasToken: tokenPresent,
         waitExpired,

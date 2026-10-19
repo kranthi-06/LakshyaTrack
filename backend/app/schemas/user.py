@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any, Union
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from uuid import UUID
 
@@ -30,7 +30,10 @@ class ProfileUpdate(ProfileBase):
     pass
 
 class Profile(ProfileBase):
-    id: Union[str, int]  # Support both UUID (PostgreSQL) and Integer (SQLite)
+    # PostgreSQL returns UUID instances while SQLite development uses integers.
+    # UUID must be accepted explicitly: Pydantic v2 does not coerce UUID to str
+    # inside a ``Union[str, int]``.
+    id: Union[UUID, str, int]
     role: Optional[str] = 'user'
     is_blacklisted: Optional[bool] = False
     last_active_at: Optional[datetime] = None
@@ -47,14 +50,21 @@ class UserBase(BaseModel):
     is_superuser: bool = False
 
 class UserCreate(UserBase):
-    password: str
-    full_name: Optional[str] = None
+    password: str = Field(min_length=8, max_length=128)
+    full_name: Optional[str] = Field(default=None, max_length=120)
+
+    @field_validator("password")
+    @classmethod
+    def _password_must_not_be_whitespace(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Password cannot be blank")
+        return value
 
 class UserUpdate(UserBase):
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=8, max_length=128)
 
 class UserInDBBase(UserBase):
-    id: Union[str, int, None] = None  # Support both UUID (PostgreSQL) and Integer (SQLite)
+    id: Optional[Union[UUID, str, int]] = None
     role: Optional[str] = 'user'
     is_blacklisted: Optional[bool] = False
     last_active_at: Optional[datetime] = None
@@ -77,7 +87,7 @@ class UserInDB(UserInDBBase):
 
 # ── Admin Schemas ──────────────────────────────────────────
 class AdminUserView(BaseModel):
-    id: Union[str, int]  # Support both UUID (PostgreSQL) and Integer (SQLite)
+    id: Union[UUID, str, int]
     email: str
     role: str
     is_active: bool
@@ -106,7 +116,7 @@ class DeleteUserRequest(BaseModel):
     user_id: str
 
 class BlacklistRecord(BaseModel):
-    user_id: Union[str, int]  # Support both UUID (PostgreSQL) and Integer (SQLite)
+    user_id: Union[UUID, str, int]
     email: str
     reason: Optional[str] = None
     blacklisted_at: Optional[datetime] = None

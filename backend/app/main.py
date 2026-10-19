@@ -37,7 +37,7 @@ from app.core.resilience import (
 )
 from app.db.base_class import Base
 from app.db.mongodb import close_mongodb, init_mongodb
-from app.db.session import check_db_health, engine
+from app.db.session import check_db_health, check_db_readiness, engine
 from app.models.career import (
     InterviewSession,
     LearningCache,
@@ -76,8 +76,19 @@ async def lifespan(app: FastAPI):
 
     # 1. Initialize relational database + pre-warm connection pool
     try:
-        initialize_relational_database()
-        logger.info("PostgreSQL: OK")
+        # Schema writes belong to reviewed migrations in production.  Local
+        # development keeps the existing convenience initializer, whereas a
+        # production process performs a read-only readiness check and fails
+        # closed for traffic if a required relation is missing.
+        if settings.APP_ENV.lower() == "production":
+            schema_status = check_db_readiness()
+            if schema_status.get("status") != "healthy":
+                logger.error("Production database schema is not ready: %s", schema_status.get("status"))
+            else:
+                logger.info("Production database schema: OK")
+        else:
+            initialize_relational_database()
+            logger.info("Development relational database: OK")
 
         # Pre-warm pool so first real requests don't suffer cold-start latency
         try:
@@ -86,18 +97,21 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.warning("Pool pre-warm failed (non-fatal).")
 
-        # Seed default subscription plans
-        try:
-            from app.services.subscription_service import seed_default_plans
-            from app.db.session import SessionLocal
-            seed_db = SessionLocal()
+        # Seed data is a development convenience only.  Production starts
+        # read-only; plan changes must go through a reviewed migration or
+        # approved administrative workflow, never a serverless cold start.
+        if settings.APP_ENV.lower() != "production":
             try:
-                seed_default_plans(seed_db)
-            finally:
-                seed_db.close()
-            logger.info("Subscription plans: seeded")
-        except Exception:
-            logger.exception("Subscription plan seeding failed (non-fatal).")
+                from app.services.subscription_service import seed_default_plans
+                from app.db.session import SessionLocal
+                seed_db = SessionLocal()
+                try:
+                    seed_default_plans(seed_db)
+                finally:
+                    seed_db.close()
+                logger.info("Subscription plans: seeded")
+            except Exception:
+                logger.exception("Subscription plan seeding failed (non-fatal).")
     except Exception:
         logger.exception("Relational DB startup failed (non-fatal).")
 
@@ -163,11 +177,13 @@ async def lifespan(app: FastAPI):
     logger.info("=== LakshyaTrack API Shutdown Complete ===")
 
 
+_DOCS_ENABLED = settings.ENABLE_API_DOCS or settings.APP_ENV.lower() != "production"
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json" if _DOCS_ENABLED else None,
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
     lifespan=lifespan,
 )
 
@@ -343,13 +359,8 @@ def initialize_relational_database() -> None:
 
 
 # ── CORS configuration ────────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.get_cors_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The middleware itself is registered after the protection/idempotency layers
+# below so it is outermost and can decorate error responses with CORS headers.
 
 # Production guard: never allow wildcard origins with credentials.
 if settings.APP_ENV.lower() == "production" and "*" in settings.get_cors_origins():
@@ -367,17 +378,36 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # ── ASGI timing + rate limiting middleware ─────────────────────
 
+class _RequestBodyTooLarge(Exception):
+    """Internal signal used to abort a streaming request body over the limit."""
+
+
 class RequestProtectionMiddleware:
     """
     Production ASGI middleware:
     - Request timing with X-Response-Time header
     - Slow request detection and logging
-    - Global rate limiting per IP
-    - Request size protection
+    - Global, per-IP, and authentication-specific rate limiting
+    - Bounded request bodies
+    - Baseline security response headers
     """
 
     SLOW_REQUEST_THRESHOLD_MS = 2000
-    MAX_REQUEST_BODY_BYTES = 50 * 1024 * 1024  # 50MB
+    AUTH_PATH_SUFFIXES = (
+        "/signup",
+        "/send-otp",
+        "/verify-otp",
+        "/login/access-token",
+        "/google-login",
+        "/auth/register",
+        "/auth/login",
+        "/auth/refresh",
+        "/auth/verify-otp",
+    )
+
+    @classmethod
+    def _is_auth_path(cls, path: str) -> bool:
+        return path.rstrip("/").endswith(cls.AUTH_PATH_SUFFIXES)
 
     def __init__(self, app):
         self.app = app
@@ -385,12 +415,15 @@ class RequestProtectionMiddleware:
     @staticmethod
     def _extract_client_ip(scope) -> str:
         headers = {k.lower(): v for (k, v) in (scope.get("headers") or [])}
-        xff = headers.get(b"x-forwarded-for")
-        if xff:
-            try:
-                return xff.decode("utf-8").split(",")[0].strip() or "unknown"
-            except Exception:
-                return "unknown"
+        if settings.TRUST_PROXY_HEADERS:
+            xff = headers.get(b"x-forwarded-for")
+            if xff:
+                try:
+                    # The left-most entry is the original client. Only enable
+                    # this when a trusted proxy overwrites/appends the header.
+                    return xff.decode("utf-8").split(",")[0].strip() or "unknown"
+                except Exception:
+                    return "unknown"
         client = scope.get("client")
         if client and len(client) > 0:
             return str(client[0])
@@ -419,6 +452,26 @@ class RequestProtectionMiddleware:
         # Fast-path: skip rate limiting + heavy metric tracking for lightweight endpoints
         is_fast_path = path in _FAST_PATHS
 
+        max_body_bytes = int(settings.MAX_REQUEST_BODY_BYTES)
+        header_map = {k.lower(): v for (k, v) in (scope.get("headers") or [])}
+        declared_length = header_map.get(b"content-length")
+        if declared_length:
+            try:
+                if int(declared_length) > max_body_bytes:
+                    response = JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request body is too large."},
+                    )
+                    await response(scope, receive, send)
+                    return
+            except (TypeError, ValueError):
+                response = JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header."},
+                )
+                await response(scope, receive, send)
+                return
+
         # Rate limiting (skip low-cost infra endpoints)
         if (
             settings.RATE_LIMIT_ENABLED
@@ -440,7 +493,16 @@ class RequestProtectionMiddleware:
                 backend=settings.RATE_LIMIT_BACKEND,
                 redis_url=settings.REDIS_URL,
             )
-            if not global_allowed or not ip_allowed:
+            auth_allowed = True
+            if self._is_auth_path(path):
+                auth_allowed = await allow_rate_limit(
+                    name=f"auth:{client_ip}",
+                    max_calls=settings.AUTH_RATE_LIMIT_PER_MINUTE,
+                    window_seconds=60,
+                    backend=settings.RATE_LIMIT_BACKEND,
+                    redis_url=settings.REDIS_URL,
+                )
+            if not global_allowed or not ip_allowed or not auth_allowed:
                 response = JSONResponse(
                     status_code=429,
                     content={"detail": "Too many requests. Please slow down."},
@@ -459,6 +521,21 @@ class RequestProtectionMiddleware:
                     (b"x-response-time", f"{duration_ms:.1f}ms".encode())
                 )
                 headers.append((b"x-request-id", request_id_bytes))
+                headers.append((b"x-content-type-options", b"nosniff"))
+                headers.append((b"x-frame-options", b"DENY"))
+                headers.append((b"referrer-policy", b"no-referrer"))
+                headers.append(
+                    (b"permissions-policy", b"camera=(), microphone=(), geolocation=()")
+                )
+                headers.append(
+                    (b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+                )
+                if settings.APP_ENV.lower() == "production":
+                    headers.append(
+                        (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+                    )
+                if path.startswith(("/api/v1/auth", "/api/v1/users", "/api/v1/subscription")):
+                    headers.append((b"cache-control", b"no-store"))
                 message = {**message, "headers": headers}
 
                 # Only record metrics for non-fast-path endpoints (skip for / and /health/live)
@@ -478,8 +555,27 @@ class RequestProtectionMiddleware:
                         )
             await send(message)
 
+        received_bytes = 0
+
+        async def limited_receive():
+            nonlocal received_bytes
+            message = await receive()
+            if message["type"] == "http.request":
+                received_bytes += len(message.get("body") or b"")
+                if received_bytes > max_body_bytes:
+                    raise _RequestBodyTooLarge()
+            return message
+
         try:
-            await self.app(scope, receive, timed_send)
+            await self.app(scope, limited_receive, timed_send)
+        except _RequestBodyTooLarge:
+            if not is_fast_path:
+                health_metrics.record_request("oversized", 0, success=False)
+            response = JSONResponse(
+                status_code=413,
+                content={"detail": "Request body is too large."},
+            )
+            await response(scope, receive, send)
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
             if not is_fast_path:
@@ -493,9 +589,6 @@ class RequestProtectionMiddleware:
             await response(scope, receive, send)
         finally:
             set_request_id(None)
-
-
-app.add_middleware(RequestProtectionMiddleware)
 
 class IdempotencyMiddleware:
     """
@@ -541,6 +634,8 @@ class IdempotencyMiddleware:
 
         while more_body:
             message = await buffered_receive()
+            if message["type"] == "http.disconnect":
+                break
             if message["type"] != "http.request":
                 continue
             chunk = message.get("body", b"")
@@ -617,8 +712,9 @@ class IdempotencyMiddleware:
                 response_start = message
             elif message["type"] == "http.response.body":
                 chunk = message.get("body", b"")
-                if chunk and len(response_body) <= settings.IDEMPOTENCY_MAX_RESPONSE_BYTES:
-                    response_body.extend(chunk)
+                remaining = settings.IDEMPOTENCY_MAX_RESPONSE_BYTES - len(response_body)
+                if chunk and remaining > 0:
+                    response_body.extend(chunk[:remaining])
             await send(message)
 
         await self.app(scope, replay_receive, capturing_send)
@@ -653,6 +749,18 @@ class IdempotencyMiddleware:
 
 
 app.add_middleware(IdempotencyMiddleware)
+
+# Registration order is outermost-last in Starlette. RequestProtection must sit
+# outside Idempotency so body limits and rate limits apply before buffering;
+# CORS is outermost so even rejected requests carry proper CORS headers.
+app.add_middleware(RequestProtectionMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.get_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Global exception handlers ─────────────────────────────────
@@ -738,7 +846,7 @@ async def health_check():
     _HEALTH_REFRESHING = True
     try:
         # Run synchronous DB health check in thread pool to avoid blocking event loop
-        db_status = await asyncio.to_thread(check_db_health)
+        db_status = await asyncio.to_thread(check_db_readiness)
         mongo_status = "connected" if get_mongodb() is not None else "disconnected"
 
         overall = "healthy"
@@ -810,7 +918,7 @@ async def health_ready():
 
     _READY_REFRESHING = True
     try:
-        db_status = await asyncio.to_thread(check_db_health)
+        db_status = await asyncio.to_thread(check_db_readiness)
         db_healthy = db_status.get("status") == "healthy"
         status_code = 200 if db_healthy else 503
         payload = {

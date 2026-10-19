@@ -9,10 +9,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -91,6 +92,18 @@ async def stream_updates(
     request: Request,
     current_user: User = Depends(get_current_user),
 ):
+    # Vercel functions have a finite execution window.  Holding an SSE
+    # response open guarantees a runtime timeout, which was observed in the
+    # production logs after five minutes.  Keep dashboard reads and event
+    # ingestion available, but explicitly decline this optional live-update
+    # transport until it is hosted on a runtime that supports long-lived
+    # connections.
+    if os.getenv("VERCEL") == "1":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Live progress streaming is unavailable in this serverless runtime",
+        )
+
     user_id = str(current_user.id)
     subscriber_id, local_queue = realtime.subscribe_local(user_id)
     pubsub = realtime.open_pubsub(user_id)

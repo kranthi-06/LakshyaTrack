@@ -1,11 +1,13 @@
 import hashlib
 import logging
+import secrets
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 import requests
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -76,6 +78,31 @@ def _build_external_identity(raw_user: dict[str, Any]) -> Optional[dict[str, Any
     if not user_id or not email:
         return None
 
+    # Only verified emails may be linked to a local account. Without this
+    # check an unconfirmed Supabase identity could claim an existing account
+    # that happens to use the same address.
+    confirmed_at = (
+        raw_user.get("email_confirmed_at")
+        or raw_user.get("confirmed_at")
+        or raw_user.get("email_verified")
+    )
+    if not confirmed_at:
+        logger.warning("Rejecting Supabase identity with unconfirmed email.")
+        return None
+
+    banned_until = raw_user.get("banned_until")
+    if banned_until:
+        try:
+            banned_ts = datetime.fromisoformat(str(banned_until).replace("Z", "+00:00"))
+            if banned_ts.tzinfo is None:
+                banned_ts = banned_ts.replace(tzinfo=timezone.utc)
+            if banned_ts > datetime.now(timezone.utc):
+                logger.warning("Rejecting Supabase identity for a banned account.")
+                return None
+        except ValueError:
+            logger.warning("Rejecting Supabase identity with an unparsable ban marker.")
+            return None
+
     user_metadata = raw_user.get("user_metadata")
     if not isinstance(user_metadata, dict):
         user_metadata = {}
@@ -95,6 +122,7 @@ def _build_external_identity(raw_user: dict[str, Any]) -> Optional[dict[str, Any
         "name": user_metadata.get("full_name") or user_metadata.get("name"),
         "user_metadata": user_metadata,
         "provider": provider or "supabase",
+        "identity_source": "supabase",
     }
 
 
@@ -162,6 +190,7 @@ def _verify_supabase_access_token(token: str) -> Optional[dict[str, Any]]:
 def _resolve_token_identity(token: str) -> Optional[dict[str, Any]]:
     internal_payload = decode_access_token(token)
     if internal_payload:
+        internal_payload["identity_source"] = "internal"
         email = crud_user.normalize_email(internal_payload.get("email"))
         if email:
             internal_payload["email"] = email
@@ -251,25 +280,40 @@ def get_current_user(
     if user_id is None:
         raise get_credentials_exception("Token missing 'sub' claim")
 
+    identity_source = payload.get("identity_source", "internal")
     user = None
-    try:
-        # Use the updated get_user that handles both UUID and Integer
-        user = crud_user.get_user(db, user_id)
-    except Exception:
-        pass
-
-    if not user and email:
-        user = crud_user.get_user_by_email(db, email=email)
-
-    if not user and email:
+    if identity_source == "supabase":
+        # Supabase subjects live in a different namespace from local user IDs.
+        # Resolve those identities strictly by the verified email and never by
+        # an ID that might collide with public.users.id.
+        if not email:
+            raise get_credentials_exception("External identity is missing an email")
         try:
-            import random
+            user = crud_user.get_user_by_email(db, email=email)
+        except SQLAlchemyError as exc:
+            logger.exception("Current-user lookup by verified email failed")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            ) from exc
+    else:
+        try:
+            # Use the updated get_user that handles both UUID and Integer
+            user = crud_user.get_user(db, user_id)
+        except SQLAlchemyError as exc:
+            logger.exception("Current-user lookup by ID failed")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            ) from exc
 
+    if not user and identity_source == "supabase" and email:
+        try:
             from app.core import security
             from app.models.user import Profile
             from app.models.user import User as UserModel
 
-            random_password = "".join([str(random.randint(0, 9)) for _ in range(16)])
+            random_password = secrets.token_urlsafe(32)
             hashed_password = security.get_password_hash(random_password)
             login_type = payload.get("provider") or "google_or_supabase"
             user_metadata = payload.get("user_metadata")
@@ -295,6 +339,12 @@ def get_current_user(
             db.commit()
         except HTTPException:
             raise
+        except SQLAlchemyError as exc:
+            logger.exception("Auto-provisioning authenticated user failed due to database error")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            ) from exc
         except Exception as exc:
             logger.exception("Auto-provisioning authenticated user failed: %s", str(exc))
             raise get_credentials_exception("Could not validate credentials")
@@ -329,6 +379,11 @@ def get_current_active_user(
 ) -> User:
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    if not getattr(current_user, "is_verified", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification is required.",
+        )
     return current_user
 
 

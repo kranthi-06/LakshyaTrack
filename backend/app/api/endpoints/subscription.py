@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, require_admin, require_black_admin
-from app.core.config import settings
 from app.db.session import get_db
 from app.models.subscription import (
     Coupon, MicroPlan, PaymentTransaction, SubscriptionPlan,
@@ -40,11 +39,15 @@ from app.schemas.subscription import (
     VerifyPaymentResponse,
 )
 from app.services.subscription_service import (
+    PaymentUnavailableError,
+    SubscriptionStateUnavailableError,
     create_checkout,
     get_active_micro_purchases,
     get_active_subscription,
     get_subscription_status,
+    payments_are_verifiable,
     resolve_feature_access,
+    resolve_plan_pricing,
     validate_coupon,
     verify_payment_and_activate,
     admin_manage_subscription,
@@ -85,7 +88,13 @@ def subscription_status(
     """
     from app.api.deps import _resolve_user_role
     role = _resolve_user_role(current_user)
-    return get_subscription_status(db, current_user.id, role)
+    try:
+        return get_subscription_status(db, current_user.id, role)
+    except SubscriptionStateUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Subscription service temporarily unavailable",
+        ) from exc
 
 
 # ══════════════════════════════════════════════════════════════
@@ -185,9 +194,14 @@ def create_checkout_session(
             status=txn.status,
             demo_payment_url=f"/subscription/verify-payment?txn={txn.id}",
         )
+    except PaymentUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail="Online payment checkout is not configured yet.",
+        )
     except ValueError as e:
         logger.warning("Checkout validation failed: %s", str(e))
-        raise HTTPException(status_code=400, detail="Invalid checkout request")
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/verify-payment", response_model=VerifyPaymentResponse)
@@ -197,7 +211,7 @@ def verify_payment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Verify payment and activate subscription/micro purchase."""
-    if settings.APP_ENV.lower() == "production" or not settings.PAYMENTS_DEMO_MODE:
+    if not payments_are_verifiable():
         raise HTTPException(
             status_code=503,
             detail="Online payment verification is not configured yet.",
@@ -254,14 +268,23 @@ def apply_coupon(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Validate and calculate discount for a coupon."""
+    """Validate and calculate discount for a coupon.
+
+    The order amount is derived from the plan record; the amount supplied by
+    the browser is ignored so a coupon cannot be tested against a fake total.
+    """
+    try:
+        _, amount, _ = resolve_plan_pricing(db, request.plan_id, request.plan_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     valid, discount, final_amount, message = validate_coupon(
         db=db,
         coupon_code=request.coupon_code,
         user_id=current_user.id,
         plan_type=request.plan_type,
         plan_id=request.plan_id,
-        amount=request.amount,
+        amount=amount,
     )
     return ApplyCouponResponse(
         valid=valid,

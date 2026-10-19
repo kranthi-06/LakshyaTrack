@@ -1,8 +1,8 @@
 """
 Pydantic schemas for subscription, micro-plan, coupon, and payment systems.
 """
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, UUID4
+from typing import Optional, List, Dict, Any, Literal
+from pydantic import BaseModel, UUID4, Field
 from datetime import datetime
 
 
@@ -11,14 +11,14 @@ from datetime import datetime
 # ══════════════════════════════════════════════════════════════
 
 class SubscriptionPlanBase(BaseModel):
-    name: str
-    stage: int
-    billing_cycle: str  # "monthly" | "yearly"
-    price: float
-    currency: str = "INR"
+    name: str = Field(min_length=1, max_length=120)
+    stage: int = Field(ge=1, le=3)
+    billing_cycle: Literal["monthly", "yearly"]
+    price: float = Field(ge=0, le=10_000_000)
+    currency: str = Field(default="INR", min_length=3, max_length=3)
     features: List[str] = []
-    resume_limit: int = 1
-    roadmap_limit: int = 1
+    resume_limit: int = Field(default=1, ge=-1, le=100_000)
+    roadmap_limit: int = Field(default=1, ge=-1, le=100_000)
     is_recommended: bool = False
     is_active: bool = True
 
@@ -28,11 +28,11 @@ class SubscriptionPlanCreate(SubscriptionPlanBase):
 
 
 class SubscriptionPlanUpdate(BaseModel):
-    name: Optional[str] = None
-    price: Optional[float] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    price: Optional[float] = Field(default=None, ge=0, le=10_000_000)
     features: Optional[List[str]] = None
-    resume_limit: Optional[int] = None
-    roadmap_limit: Optional[int] = None
+    resume_limit: Optional[int] = Field(default=None, ge=-1, le=100_000)
+    roadmap_limit: Optional[int] = Field(default=None, ge=-1, le=100_000)
     is_recommended: Optional[bool] = None
     is_active: Optional[bool] = None
 
@@ -51,13 +51,13 @@ class SubscriptionPlanResponse(SubscriptionPlanBase):
 # ══════════════════════════════════════════════════════════════
 
 class MicroPlanBase(BaseModel):
-    name: str
-    feature_key: str
-    price: float
-    currency: str = "INR"
-    duration_hours: Optional[float] = None
-    usage_type: str = "time_limited"
-    description: Optional[str] = None
+    name: str = Field(min_length=1, max_length=120)
+    feature_key: str = Field(min_length=1, max_length=80)
+    price: float = Field(ge=0, le=10_000_000)
+    currency: str = Field(default="INR", min_length=3, max_length=3)
+    duration_hours: Optional[float] = Field(default=None, ge=0, le=8760)
+    usage_type: Literal["time_limited", "single_use"] = "time_limited"
+    description: Optional[str] = Field(default=None, max_length=2000)
     is_active: bool = True
 
 
@@ -66,10 +66,10 @@ class MicroPlanCreate(MicroPlanBase):
 
 
 class MicroPlanUpdate(BaseModel):
-    name: Optional[str] = None
-    price: Optional[float] = None
-    duration_hours: Optional[float] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    price: Optional[float] = Field(default=None, ge=0, le=10_000_000)
+    duration_hours: Optional[float] = Field(default=None, ge=0, le=8760)
+    description: Optional[str] = Field(default=None, max_length=2000)
     is_active: Optional[bool] = None
 
 
@@ -141,14 +141,14 @@ class FeatureAccessResponse(BaseModel):
 # ══════════════════════════════════════════════════════════════
 
 class CouponBase(BaseModel):
-    code: str
-    discount_type: str  # "percentage" | "fixed"
-    discount_value: float
-    max_uses: Optional[int] = None
-    applicable_to: str = "all"
+    code: str = Field(min_length=1, max_length=64)
+    discount_type: Literal["percentage", "fixed"]
+    discount_value: float = Field(gt=0, le=10_000_000)
+    max_uses: Optional[int] = Field(default=None, ge=1, le=10_000_000)
+    applicable_to: Literal["all", "subscription", "micro"] = "all"
     applicable_plan_id: Optional[UUID4] = None
-    min_amount: float = 0
-    max_discount: Optional[float] = None
+    min_amount: float = Field(default=0, ge=0, le=10_000_000)
+    max_discount: Optional[float] = Field(default=None, gt=0, le=10_000_000)
     expires_at: Optional[datetime] = None
     is_active: bool = True
 
@@ -158,13 +158,13 @@ class CouponCreate(CouponBase):
 
 
 class CouponUpdate(BaseModel):
-    code: Optional[str] = None
-    discount_type: Optional[str] = None
-    discount_value: Optional[float] = None
-    max_uses: Optional[int] = None
-    applicable_to: Optional[str] = None
-    min_amount: Optional[float] = None
-    max_discount: Optional[float] = None
+    code: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    discount_type: Optional[Literal["percentage", "fixed"]] = None
+    discount_value: Optional[float] = Field(default=None, gt=0, le=10_000_000)
+    max_uses: Optional[int] = Field(default=None, ge=1, le=10_000_000)
+    applicable_to: Optional[Literal["all", "subscription", "micro"]] = None
+    min_amount: Optional[float] = Field(default=None, ge=0, le=10_000_000)
+    max_discount: Optional[float] = Field(default=None, gt=0, le=10_000_000)
     expires_at: Optional[datetime] = None
     is_active: Optional[bool] = None
 
@@ -181,10 +181,11 @@ class CouponResponse(CouponBase):
 
 
 class ApplyCouponRequest(BaseModel):
-    coupon_code: str
-    plan_type: str  # "subscription" | "micro"
+    coupon_code: str = Field(min_length=1, max_length=64)
+    plan_type: Literal["subscription", "micro"]
     plan_id: UUID4
-    amount: float
+    # Retained for wire compatibility; the server derives the amount from the plan.
+    amount: Optional[float] = Field(default=None, ge=0)
 
 
 class ApplyCouponResponse(BaseModel):
@@ -200,8 +201,8 @@ class ApplyCouponResponse(BaseModel):
 
 class CheckoutRequest(BaseModel):
     plan_id: UUID4
-    plan_type: str  # "subscription" | "micro"
-    coupon_code: Optional[str] = None
+    plan_type: Literal["subscription", "micro"]
+    coupon_code: Optional[str] = Field(default=None, max_length=64)
 
 
 class CheckoutResponse(BaseModel):
@@ -220,9 +221,9 @@ class CheckoutResponse(BaseModel):
 class VerifyPaymentRequest(BaseModel):
     transaction_id: UUID4
     # For real gateway integration:
-    gateway_payment_id: Optional[str] = None
-    gateway_order_id: Optional[str] = None
-    gateway_signature: Optional[str] = None
+    gateway_payment_id: Optional[str] = Field(default=None, max_length=255)
+    gateway_order_id: Optional[str] = Field(default=None, max_length=255)
+    gateway_signature: Optional[str] = Field(default=None, max_length=512)
 
 
 class VerifyPaymentResponse(BaseModel):
@@ -259,7 +260,7 @@ class PaymentTransactionResponse(BaseModel):
 # ══════════════════════════════════════════════════════════════
 
 class AdminManageSubscriptionRequest(BaseModel):
-    user_id: str
-    action: str  # "upgrade" | "downgrade" | "cancel" | "extend"
-    stage: Optional[int] = None
-    days: Optional[int] = None
+    user_id: str = Field(min_length=1, max_length=64)
+    action: Literal["upgrade", "downgrade", "cancel", "extend"]
+    stage: Optional[int] = Field(default=None, ge=1, le=3)
+    days: Optional[int] = Field(default=None, ge=1, le=3650)

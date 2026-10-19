@@ -12,6 +12,7 @@ from app.api.endpoints import resume as resume_endpoint
 from app.api.endpoints import subscription as subscription_endpoint
 from app.core.config import settings
 from app.schemas.subscription import VerifyPaymentRequest
+from app.services import cloudinary_service
 from app.services import sandbox_controller as sandbox_module
 from app.services import subscription_service
 
@@ -47,6 +48,114 @@ def test_sandbox_never_allows_host_fallback_in_production(monkeypatch):
     assert result["error"] == "Secure code execution is temporarily unavailable"
 
 
+def test_auth_rate_limit_paths_cover_all_login_and_registration_routes():
+    from app.main import RequestProtectionMiddleware
+
+    auth_paths = (
+        "/api/v1/signup",
+        "/api/v1/send-otp",
+        "/api/v1/verify-otp",
+        "/api/v1/login/access-token",
+        "/api/v1/google-login",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/refresh",
+    )
+    for path in auth_paths:
+        assert RequestProtectionMiddleware._is_auth_path(path), path
+
+    assert not RequestProtectionMiddleware._is_auth_path("/api/v1/quiz/generate")
+    assert not RequestProtectionMiddleware._is_auth_path("/api/v1/learning-content/refresh")
+
+
+def test_request_protection_rejects_an_oversized_declared_body(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.main import RequestProtectionMiddleware
+
+    monkeypatch.setattr(settings, "MAX_REQUEST_BODY_BYTES", 1024)
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+
+    inner = FastAPI()
+
+    @inner.post("/echo")
+    def echo():
+        return {"ok": True}
+
+    client = TestClient(RequestProtectionMiddleware(inner))
+    response = client.post("/echo", content=b"x" * 2048)
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request body is too large."
+
+
+def test_login_attempts_use_the_strict_auth_rate_limit(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.core import resilience
+    from app.main import RequestProtectionMiddleware
+
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "memory")
+    monkeypatch.setattr(settings, "AUTH_RATE_LIMIT_PER_MINUTE", 1)
+    resilience._rate_limiters.clear()
+    resilience._rate_limiters_last_seen.clear()
+
+    inner = FastAPI()
+
+    @inner.post("/api/v1/login/access-token")
+    def login():
+        return {"ok": True}
+
+    client = TestClient(RequestProtectionMiddleware(inner))
+    assert client.post("/api/v1/login/access-token").status_code == 200
+    limited = client.post("/api/v1/login/access-token")
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "Too many requests. Please slow down."
+
+
+def test_media_upload_validation_rejects_unsupported_extension_mime_and_content():
+    with pytest.raises(ValueError):
+        cloudinary_service._validate_upload(
+            filename="payload.exe",
+            content=b"MZ",
+            content_type="application/octet-stream",
+            media_type=cloudinary_service.MediaType.RESUME,
+        )
+
+    with pytest.raises(ValueError):
+        cloudinary_service._validate_upload(
+            filename="resume.pdf",
+            content=b"<html>not a pdf</html>",
+            content_type="application/pdf",
+            media_type=cloudinary_service.MediaType.RESUME,
+        )
+
+    with pytest.raises(ValueError):
+        cloudinary_service._validate_upload(
+            filename="avatar.png",
+            content=b"\x89PNG\r\n\x1a\nimage",
+            content_type="text/html",
+            media_type=cloudinary_service.MediaType.PROFILE_IMAGE,
+        )
+
+
+def test_media_upload_validation_accepts_matching_content_signatures():
+    cloudinary_service._validate_upload(
+        filename="resume.pdf",
+        content=b"%PDF-1.7\nreal content",
+        content_type="application/pdf",
+        media_type=cloudinary_service.MediaType.RESUME,
+    )
+    cloudinary_service._validate_upload(
+        filename="avatar.jpg",
+        content=b"\xff\xd8\xff\xe0image",
+        content_type="image/jpeg",
+        media_type=cloudinary_service.MediaType.PROFILE_IMAGE,
+    )
+
+
 def test_production_payment_verification_returns_503_without_touching_pending_transaction(monkeypatch):
     pending = SimpleNamespace(status="pending")
 
@@ -73,56 +182,18 @@ def test_production_payment_verification_returns_503_without_touching_pending_tr
     assert raised.value.detail == "Online payment verification is not configured yet."
 
 
-def test_nonproduction_demo_payment_still_activates_transaction(monkeypatch):
-    transaction = SimpleNamespace(
-        id=uuid4(),
-        user_id=uuid4(),
-        status="pending",
-        order_type="micro",
-        plan_id=uuid4(),
-        coupon_code=None,
-        discount=0,
-        final_amount=10,
-    )
-    micro_plan = SimpleNamespace(id=transaction.plan_id, duration_hours=1, feature_key="resume_download")
-
-    class Query:
-        def __init__(self, model):
-            self.model = model
-
-        def filter(self, *_args):
-            return self
-
-        def first(self):
-            if self.model is subscription_service.PaymentTransaction:
-                return transaction
-            return micro_plan
-
-    class Database:
-        def query(self, model):
-            return Query(model)
-
-        def add(self, _value):
-            pass
-
-        def commit(self):
-            pass
-
-        def refresh(self, _value):
-            pass
-
+def test_demo_payments_require_the_explicit_demo_flag(monkeypatch):
     monkeypatch.setattr(settings, "APP_ENV", "development")
+    monkeypatch.setattr(settings, "PAYMENTS_DEMO_MODE", False)
+
+    assert subscription_service.payments_are_verifiable() is False
+
     monkeypatch.setattr(settings, "PAYMENTS_DEMO_MODE", True)
-    result = subscription_service.verify_payment_and_activate(
-        Database(),
-        transaction.id,
-        transaction.user_id,
-    )
-    assert result["success"] is True
-    assert transaction.status == "success"
+
+    assert subscription_service.payments_are_verifiable() is True
 
 
-def test_reasoning_submissions_ignore_anonymous_body_user_id(monkeypatch):
+def test_reasoning_submissions_ignore_body_user_id(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         reasoning_endpoint,
@@ -149,10 +220,11 @@ def test_reasoning_submissions_ignore_anonymous_body_user_id(monkeypatch):
         topic="Python",
         is_correct=False,
     )
-    asyncio.run(reasoning_endpoint.submit_test(test_request, current_user=None))
-    assert captured["user_id"] == "anonymous"
-    asyncio.run(reasoning_endpoint.submit_answer(answer_request, current_user=None))
-    assert captured["user_id"] == "anonymous"
+    current_user = SimpleNamespace(id="authenticated-user")
+    asyncio.run(reasoning_endpoint.submit_test(test_request, current_user=current_user))
+    assert captured["user_id"] == "authenticated-user"
+    asyncio.run(reasoning_endpoint.submit_answer(answer_request, current_user=current_user))
+    assert captured["user_id"] == "authenticated-user"
 
 
 def test_reasoning_progress_denies_other_users(monkeypatch):

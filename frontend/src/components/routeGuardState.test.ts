@@ -4,6 +4,7 @@ import { resolveRouteGuardState, type RouteGuardStateInput } from './routeGuardS
 const resolvedState: RouteGuardStateInput = {
     loading: false,
     authReady: true,
+    authUnavailable: false,
     hasUser: false,
     hasToken: false,
     waitExpired: false,
@@ -54,6 +55,15 @@ describe('resolveRouteGuardState', () => {
             hasToken: true,
             waitExpired: true,
         })).toBe('render');
+    });
+
+    it('never renders a cached user after the current-user request fails', () => {
+        expect(resolveRouteGuardState({
+            ...resolvedState,
+            authUnavailable: true,
+            hasUser: true,
+            hasToken: true,
+        })).toBe('recover');
     });
 
     it('redirects when auth is resolved and neither user nor token exists', () => {

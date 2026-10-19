@@ -2,20 +2,43 @@ from datetime import timedelta, datetime, timezone
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-import random
+import secrets
 from app import crud, models, schemas
 from app.api import deps
 from app.api.deps import _get_black_admin_emails
 from app.core import security
 from app.core.config import settings
-from app.services.subscription_service import get_subscription_status
+from app.services.subscription_service import (
+    SubscriptionStateUnavailableError,
+    get_subscription_status,
+)
 from app.services.email_service import send_email_otp
 import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _generate_otp() -> str:
+    """Cryptographically secure six-digit OTP."""
+    return "".join(secrets.choice("0123456789") for _ in range(6))
+
+
+def _deliver_otp(email: str, otp_code: str) -> None:
+    """Fail closed when the verification email cannot be delivered."""
+    try:
+        delivered = send_email_otp(email, otp_code)
+    except Exception:
+        logger.exception("OTP email delivery raised for %s", email)
+        delivered = False
+    if not delivered:
+        logger.error("OTP email delivery failed for %s", email)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification email could not be sent. Please try again shortly.",
+        )
 
 
 def _normalize_email_or_raise(email: str) -> str:
@@ -26,12 +49,12 @@ def _normalize_email_or_raise(email: str) -> str:
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(min_length=16, max_length=4096)
 
 
 class AuthSessionResponse(BaseModel):
@@ -44,7 +67,13 @@ def _build_user_response_payload(db: Session, user: models.user.User) -> dict[st
     hydrated_user = crud.get_user(db, user_id=user.id) or user
     role = deps._resolve_user_role(hydrated_user)
     payload = schemas.user.User.model_validate(hydrated_user).model_dump()
-    payload["subscription_status"] = get_subscription_status(db, hydrated_user.id, role)
+    try:
+        payload["subscription_status"] = get_subscription_status(db, hydrated_user.id, role)
+    except SubscriptionStateUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Subscription service temporarily unavailable",
+        ) from exc
     return payload
 
 @router.post("/signup")
@@ -72,7 +101,7 @@ def signup(
     
     # Generate OTP
     now = datetime.now(timezone.utc)
-    otp_code = "".join([str(random.randint(0, 9)) for _ in range(6)])
+    otp_code = _generate_otp()
     expires_at = now + timedelta(minutes=5)
     
     # Prepare user data for deferred creation
@@ -90,20 +119,7 @@ def signup(
     # Store OTP with user data
     crud.create_otp(db, email=email, otp_code=otp_code, expires_at=expires_at, user_data=user_data)
     
-    # Send Email
-    try:
-        email_sent = send_email_otp(email, otp_code)
-    except Exception as e:
-        logger.exception("Error sending signup OTP email: %s", str(e))
-        email_sent = False
-    
-    if not email_sent:
-         # Log the OTP so developer can see it
-         logger.warning("OTP email failed during signup for %s", email)
-         return {
-             "message": "Account created. Email sending failed (check server logs/console for OTP).",
-             "warning": "Email failed"
-         }
+    _deliver_otp(email, otp_code)
 
     return {"message": "Verification code sent to email."}
 
@@ -117,6 +133,7 @@ def send_otp(
     """
     email = _normalize_email_or_raise(otp_in.email)
     user = crud.get_user_by_email(db, email=email)
+    generic_response = {"message": "If this account can verify, a code has been sent."}
     
     # If user not found, check if there is a pending registration (OTP with user_data)
     pending_user_data = None
@@ -125,13 +142,10 @@ def send_otp(
         if latest_otp and latest_otp.user_data:
             pending_user_data = latest_otp.user_data
         else:
-             raise HTTPException(
-                status_code=404,
-                detail="User not found with this email.",
-            )
+            return generic_response
             
     if user and user.is_verified:
-         return {"message": "User is already verified."}
+        return generic_response
 
     # Check cooldown
     latest_otp = crud.get_latest_otp(db, email=email)
@@ -152,7 +166,7 @@ def send_otp(
             )
 
     # Generate OTP
-    otp_code = "".join([str(random.randint(0, 9)) for _ in range(6)])
+    otp_code = _generate_otp()
     expires_at = now + timedelta(minutes=5)
     
     logger.info("Generated OTP for resend flow: %s", email)
@@ -160,24 +174,10 @@ def send_otp(
     # Store OTP
     # If we have pending_user_data, pass it along so the new OTP can also create the user
     crud.create_otp(db, email=email, otp_code=otp_code, expires_at=expires_at, user_data=pending_user_data)
-    
-    # Send Email
-    try:
-        email_sent = send_email_otp(email, otp_code)
-    except Exception as e:
-        logger.exception("Error sending OTP email: %s", str(e))
-        email_sent = False
-    
-    if email_sent:
-        return {"message": "OTP sent successfully."}
-    else:
-        # Log the OTP so developer can see it
-         logger.warning("OTP email failed in send-otp flow for %s", email)
-         # Don't raise 500, return success so frontend flow continues
-         return {
-             "message": "OTP generated but email failed. Check server logs/console for code.",
-             "warning": "Email failed"
-         }
+
+    _deliver_otp(email, otp_code)
+
+    return {"message": "OTP sent successfully."}
 
 @router.post("/verify-otp")
 def verify_otp(
@@ -221,6 +221,11 @@ def verify_otp(
     if not security.verify_password(otp_in.otp, latest_otp.hashed_otp):
         crud.increment_attempts(db, latest_otp)
         raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    # Consume the OTP atomically before any account side effects so two
+    # concurrent verification requests cannot both succeed.
+    if not crud.claim_otp_as_used(db, latest_otp):
+        raise HTTPException(status_code=400, detail="OTP already used")
         
     # Check if we need to create the user (Deferred Registration)
     if user:
@@ -231,7 +236,7 @@ def verify_otp(
             full_name = user_data.pop("full_name", None)
 
             # Only allow specific fields to update existing user safely
-            for field in ("email", "hashed_password", "is_active", "is_verified", "login_type"):
+            for field in ("hashed_password", "is_active", "is_verified", "login_type"):
                 value = user_data.get(field)
                 if value is not None and value != "":
                     setattr(user, field, value)
@@ -270,9 +275,6 @@ def verify_otp(
     else:
         # User not found and no user_data? Should not happen in new flow
         raise HTTPException(status_code=400, detail="Registration data not found. Please sign up again.")
-    
-    # Mark OTP as used
-    crud.mark_otp_as_used(db, latest_otp)
     
     db.commit()
     
@@ -409,8 +411,13 @@ def refresh_session(
     # isolated SQLite environment unusable.
     user = crud.get_user(db, user_id=user_id)
 
-    if not user or not user.is_active:
+    if not user or not user.is_active or not user.is_verified:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    black_emails = _get_black_admin_emails()
+    is_black_admin = user.email and user.email.lower() in black_emails
+    if not is_black_admin and user.is_blacklisted:
+        raise HTTPException(status_code=403, detail="Account is blocked")
 
     return AuthSessionResponse(
         access_token=security.create_access_token(
@@ -424,7 +431,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 class GoogleToken(BaseModel):
-    token: str
+    token: str = Field(min_length=16, max_length=4096)
 
 @router.post("/google-login", response_model=schemas.user.TokenWithUser)
 def google_login(
@@ -435,36 +442,35 @@ def google_login(
     Login or Register with Google ID Token.
     """
     try:
-        # Verify Google ID token.
-        # SECURITY: When GOOGLE_CLIENT_ID is configured, pass it as `audience`
-        # to restrict token acceptance to only your application's tokens.
-        google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None) or None
+        # SECURITY: never accept an arbitrary Google token in production.
+        google_client_id = (settings.GOOGLE_CLIENT_ID or "").strip()
+        if not google_client_id:
+            if settings.APP_ENV == "production":
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Google sign-in is not configured.",
+                )
+            logger.warning("Google login: GOOGLE_CLIENT_ID not set — development mode accepts any audience.")
+
         id_info = id_token.verify_oauth2_token(
             token_data.token,
             google_requests.Request(),
-            audience=google_client_id,
+            audience=google_client_id or None,
         )
-        if not google_client_id:
-            logger.warning("Google login: GOOGLE_CLIENT_ID not set — accepting tokens from any audience.")
 
-        # ID token is valid. Get the user's Google Account ID from the decoded token.
+        if id_info.get("email_verified") is not True:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Google account email is not verified.",
+            )
+
         email = _normalize_email_or_raise(id_info['email'])
         name = id_info.get('name', '')
         user = crud.get_user_by_email(db, email=email)
         if not user:
-            # Create user
-            user_in = schemas.user.UserCreate(
-                email=email,
-                full_name=name,
-                password="", # No password for google login
-                login_type="google"
-            )
-            # We need to handle password hashing even if empty, or allow empty password for google users
-            # Our UserCreate requires password. Let's make a random one.
-            random_password =  "".join([str(random.randint(0, 9)) for _ in range(16)])
+            random_password = secrets.token_urlsafe(32)
             hashed_password = security.get_password_hash(random_password)
-            
-            # Create DB User directly (Verified)
+
             user = models.User(
                 email=email,
                 hashed_password=hashed_password,
@@ -473,20 +479,23 @@ def google_login(
                 login_type="google"
             )
             db.add(user)
+            db.flush()
+            db.add(models.Profile(id=user.id, full_name=name))
             db.commit()
             db.refresh(user)
-            
-            # Create Profile if needed
-            profile = models.Profile(id=user.id, full_name=name)
-            db.add(profile)
-            db.commit()
-            
         else:
-             # Ensure verified if google login
-             if not user.is_verified:
-                 user.is_verified = True
-                 db.add(user)
-                 db.commit()
+            # Never merge a verified Google identity into a password account by
+            # email alone: that would let whoever controls the Google address
+            # silently take over an existing local account.
+            if (user.login_type or "custom").lower() == "custom":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="An account with this email already exists. Sign in with your existing method.",
+                )
+            if not user.is_verified:
+                user.is_verified = True
+                db.add(user)
+                db.commit()
         
         # ── BLACKLIST CHECK AT GOOGLE LOGIN ──────────────────
         black_emails = _get_black_admin_emails()
@@ -516,6 +525,8 @@ def google_login(
             "user": _build_user_response_payload(db, user),
         }
 
+    except HTTPException:
+        raise
     except ValueError as e:
         # Invalid token
         logger.warning("Invalid Google token: %s", str(e))

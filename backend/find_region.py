@@ -1,3 +1,4 @@
+import os
 from sqlalchemy import create_engine, text
 import sys
 
@@ -11,11 +12,11 @@ regions = [
     "ap-south-1", "sa-east-1", "ca-central-1"
 ]
 
-project_ref = "prrbjfnmuzxbtesrtvmc"
+project_ref = os.environ['SUPABASE_PROJECT_REF']
 # User format for Supabase Pooler: matches the direct DB user usually
 # But for pooler, it is explicitly: role.project_ref
 user = f"postgres.{project_ref}"
-password = "Kranthi%402006" # URL encoded
+password = os.environ['SUPABASE_DB_PASSWORD']
 dbname = "postgres"
 
 found_region = None

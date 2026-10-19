@@ -14,17 +14,17 @@ router = APIRouter()
 # ─── Request Schemas ─────────────────────────────────────
 
 class RunCodeRequest(BaseModel):
-    code: str
-    language: str = "python"
-    test_cases: List[Dict[str, Any]] = Field(default_factory=list)
+    code: str = Field(min_length=1, max_length=50_000)
+    language: str = Field(default="python", max_length=20)
+    test_cases: List[Dict[str, Any]] = Field(default_factory=list, max_length=50)
 
 
 class SubmitCodeRequest(BaseModel):
-    code: str
-    language: str = "python"
-    test_cases: List[Dict[str, Any]] = Field(default_factory=list)
-    session_id: Optional[str] = None
-    problem_title: Optional[str] = None
+    code: str = Field(min_length=1, max_length=50_000)
+    language: str = Field(default="python", max_length=20)
+    test_cases: List[Dict[str, Any]] = Field(default_factory=list, max_length=50)
+    session_id: Optional[str] = Field(default=None, max_length=200)
+    problem_title: Optional[str] = Field(default=None, max_length=200)
 
 
 # ─── Endpoints ───────────────────────────────────────────

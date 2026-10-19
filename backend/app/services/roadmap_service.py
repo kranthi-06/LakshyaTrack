@@ -15,6 +15,14 @@ from app.core.resilience import safe_json_parse, sanitize_for_logging
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_roadmap_id(value) -> Optional[uuid.UUID]:
+    """Coerce a path/body identifier before binding it to a UUID column."""
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
 # ─── Pass thresholds per level ────────────────────────────
 PASS_THRESHOLDS = {
     "Beginner": 70,
@@ -181,6 +189,12 @@ async def generate_roadmap_background(
     IMPORTANT: Return ONLY valid JSON. No markdown, no conversational text.
     """
 
+    parsed_roadmap_id = _parse_roadmap_id(roadmap_id)
+    if parsed_roadmap_id is None:
+        logger.error("Background roadmap generation skipped: invalid roadmap id")
+        db.close()
+        return
+
     try:
         response = await ai_hub.chat_completion(
             [{"role": "user", "content": prompt}],
@@ -202,7 +216,7 @@ async def generate_roadmap_background(
                     skill["status"] = "locked"
 
         from sqlalchemy.orm.attributes import flag_modified
-        roadmap = db.query(Roadmap).filter(Roadmap.id == roadmap_id).with_for_update().first()
+        roadmap = db.query(Roadmap).filter(Roadmap.id == parsed_roadmap_id).with_for_update().first()
         if roadmap:
             roadmap.roadmap_data = roadmap_data
             roadmap.generation_status = "completed"
@@ -211,7 +225,7 @@ async def generate_roadmap_background(
 
     except Exception as e:
         logger.error("Background roadmap generation failed: %s", sanitize_for_logging(str(e)))
-        roadmap = db.query(Roadmap).filter(Roadmap.id == roadmap_id).with_for_update().first()
+        roadmap = db.query(Roadmap).filter(Roadmap.id == parsed_roadmap_id).with_for_update().first()
         if roadmap:
             roadmap.generation_status = "failed"
             roadmap.generation_error = str(e)
@@ -274,20 +288,24 @@ def get_all_user_roadmaps(user_id: str, db: Session) -> list:
 
 def set_active_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
     """Switch the active roadmap for a user. Deactivates all others."""
-    # Deactivate all
-    db.query(Roadmap).filter(
-        Roadmap.user_id == user_id,
-        Roadmap.is_active == True
-    ).update({"is_active": False})
+    parsed_roadmap_id = _parse_roadmap_id(roadmap_id)
+    if parsed_roadmap_id is None:
+        raise ValueError("Roadmap not found")
 
-    # Activate the selected one
     roadmap = db.query(Roadmap).filter(
-        Roadmap.id == roadmap_id,
+        Roadmap.id == parsed_roadmap_id,
         Roadmap.user_id == user_id
     ).first()
 
     if not roadmap:
         raise ValueError("Roadmap not found")
+
+    # Deactivate all remaining roadmaps only after ownership is proven.
+    db.query(Roadmap).filter(
+        Roadmap.user_id == user_id,
+        Roadmap.is_active == True,
+        Roadmap.id != parsed_roadmap_id,
+    ).update({"is_active": False})
 
     roadmap.is_active = True
     roadmap.last_opened = datetime.now(timezone.utc)
@@ -307,8 +325,12 @@ def set_active_roadmap(user_id: str, roadmap_id: str, db: Session) -> dict:
 
 def delete_roadmap(user_id: str, roadmap_id: str, db: Session, commit: bool = True) -> dict:
     """Delete a specific roadmap for a user."""
+    parsed_roadmap_id = _parse_roadmap_id(roadmap_id)
+    if parsed_roadmap_id is None:
+        raise ValueError("Roadmap not found")
+
     roadmap = db.query(Roadmap).filter(
-        Roadmap.id == roadmap_id,
+        Roadmap.id == parsed_roadmap_id,
         Roadmap.user_id == user_id
     ).first()
 
@@ -343,8 +365,12 @@ def update_skill_status(
     Update a skill's status in the roadmap.
     When a skill is completed, unlock dependent skills.
     """
+    parsed_roadmap_id = _parse_roadmap_id(roadmap_id)
+    if parsed_roadmap_id is None:
+        raise ValueError("Roadmap not found")
+
     roadmap = db.query(Roadmap).filter(
-        Roadmap.id == roadmap_id,
+        Roadmap.id == parsed_roadmap_id,
         Roadmap.user_id == user_id
     ).first()
 

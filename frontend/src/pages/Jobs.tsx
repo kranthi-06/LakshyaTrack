@@ -12,6 +12,7 @@ import {
     liveSearchOpportunities,
 } from '../services/careerPlatform';
 import { useFeatureGate } from '../hooks/useFeatureGate';
+import { useAuth } from '../context/AuthContext';
 import PremiumGate from '../components/PremiumGate';
 import BlurOverlay from '../components/BlurOverlay';
 
@@ -84,6 +85,9 @@ const getCategoryBg = (cat: string) => {
 // ════════════════════════════════════════════════════════════
 
 export default function Jobs() {
+    const { user } = useAuth();
+    const isAdmin = user?.role === 'admin' || user?.role === 'black_admin';
+
     // ── Subscription gate for job portal ──
     const { isLocked, gateProps } = useFeatureGate(
         'job_portal',
@@ -185,11 +189,13 @@ export default function Jobs() {
         };
     }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── Refresh: fetch external + reload ─────────────────
+    // ── Refresh: admin triggers ingestion; everyone reloads ──
     const handleRefresh = async () => {
         setIsRefreshing(true);
         try {
-            await fetchExternalSources();
+            if (isAdmin) {
+                await fetchExternalSources();
+            }
             await loadOpportunities(true);
             await loadFilterOptions();
         } catch (err) {

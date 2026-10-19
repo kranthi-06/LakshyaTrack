@@ -4,7 +4,7 @@ Topic-wise learning, practice, tests, company questions, and AI generation.
 """
 import json
 import logging
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
 from fastapi.responses import JSONResponse
@@ -33,6 +33,9 @@ from app.services.job_queue import get_job, submit_job
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_MAX_EXTRACT_UPLOAD_BYTES = 10 * 1024 * 1024
+_MAX_EXTRACT_TEXT_CHARS = 500_000
+
 
 async def _invalidate_reasoning_read_cache() -> None:
     await cache_delete_prefix("resp:reasoning:")
@@ -43,32 +46,33 @@ async def _invalidate_reasoning_read_cache() -> None:
 # ═══════════════════════════════════════════════════════════════
 
 class GenerateQuestionsRequest(BaseModel):
-    topic: str
-    difficulty: str = "medium"
+    topic: str = Field(min_length=1, max_length=100)
+    difficulty: str = Field("medium", max_length=20)
     count: int = Field(10, ge=1, le=60)
-    company: str = ""
+    company: str = Field("", max_length=100)
 
 
 class SubmitTestRequest(BaseModel):
-    user_id: str = "anonymous"
-    test_type: str = Field(..., description="topic_test | company_test | ai_test")
-    category: str
-    answers: list = Field(default_factory=list)  # [{question_id, selected, correct, is_correct}]
-    score: int
-    total: int
+    # Accepted for wire compatibility only; the authenticated identity is used.
+    user_id: str = Field("anonymous", max_length=64)
+    test_type: Literal["topic_test", "company_test", "ai_test"]
+    category: str = Field(..., min_length=1, max_length=100)
+    answers: list = Field(default_factory=list, max_length=200)
+    score: int = Field(..., ge=0)
+    total: int = Field(..., ge=0)
 
 
 class SubmitAnswerRequest(BaseModel):
-    user_id: str = "anonymous"
-    question_id: str
-    topic: str
+    user_id: str = Field("anonymous", max_length=64)
+    question_id: str = Field(..., min_length=1, max_length=200)
+    topic: str = Field(..., min_length=1, max_length=100)
     is_correct: bool
 
 
 class BulkInsertRequest(BaseModel):
-    questions: list = Field(default_factory=list)
-    topic: str = ""
-    company: str = ""
+    questions: list = Field(default_factory=list, max_length=500)
+    topic: str = Field("", max_length=100)
+    company: str = Field("", max_length=100)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -103,9 +107,10 @@ async def list_companies():
 async def get_topic_questions(
     topic: str,
     difficulty: Optional[str] = None,
-    limit: int = 36,
-    skip: int = 0,
+    limit: int = Query(36, ge=1, le=100),
+    skip: int = Query(0, ge=0),
     mode: str = "learn",
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Get questions for a topic.
@@ -148,8 +153,9 @@ async def get_topic_questions(
 @router.get("/questions/company/{company}")
 async def get_company_questions(
     company: str,
-    limit: int = 30,
-    skip: int = 0,
+    limit: int = Query(30, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get questions for a specific company (DB → on-demand populate → fallback)."""
     cache_key = f"resp:reasoning:company:{company}:limit={limit}:skip={skip}"
@@ -228,8 +234,9 @@ async def admin_populate_status(_: User = Depends(require_admin)):
 async def generate_questions(
     request: GenerateQuestionsRequest,
     async_mode: bool = Query(False, description="If true, execute in background and return job_id"),
+    current_user: User = Depends(get_current_active_user),
 ):
-    """Generate new AI questions for a topic."""
+    """Generate new AI questions for a topic (authenticated users only)."""
     if async_mode:
         async def _work():
             questions = await generate_questions_ai(
@@ -282,11 +289,14 @@ async def generate_questions(
 @router.post("/submit-test")
 async def submit_test(
     request: SubmitTestRequest,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_active_user),
 ):
-    """Submit a completed test and save results."""
+    """Submit a completed test and save results for the authenticated user."""
+    if request.score > request.total:
+        raise HTTPException(status_code=400, detail="Score cannot exceed total")
+
     test_id = save_test_result(
-        user_id=str(current_user.id) if current_user else "anonymous",
+        user_id=str(current_user.id),
         test_type=request.test_type,
         topic_or_company=request.category,
         score=request.score,
@@ -307,11 +317,11 @@ async def submit_test(
 @router.post("/submit-answer")
 async def submit_answer(
     request: SubmitAnswerRequest,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_active_user),
 ):
-    """Record a single answer for progress tracking."""
+    """Record a single answer for the authenticated user."""
     record_user_answer(
-        user_id=str(current_user.id) if current_user else "anonymous",
+        user_id=str(current_user.id),
         question_id=request.question_id,
         topic=request.topic,
         is_correct=request.is_correct,
@@ -358,11 +368,17 @@ async def upload_and_extract(
     Admin: Upload a PDF or text and extract structured questions using AI.
     """
     raw_text = text_content
+    if len(raw_text) > _MAX_EXTRACT_TEXT_CHARS:
+        raise HTTPException(status_code=413, detail="Text content is too large")
 
     if file:
-        content = await file.read()
+        content = await file.read(_MAX_EXTRACT_UPLOAD_BYTES + 1)
+        if len(content) > _MAX_EXTRACT_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Uploaded file is too large")
         # For PDF extraction, try basic text extraction
         if file.filename and file.filename.lower().endswith(".pdf"):
+            if not content.startswith(b"%PDF-"):
+                raise HTTPException(status_code=400, detail="Invalid PDF file")
             try:
                 import io
                 # Try PyPDF2 first

@@ -1,3 +1,4 @@
+import uuid
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -25,6 +26,13 @@ class ResumeSaveRequest(BaseModel):
     target_role: Optional[str] = None
     ats_score: Optional[float] = None
     is_primary: bool = False
+
+def _parse_resume_id(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+
 
 def extract_skills_from_resume(resume_data: Dict[str, Any]) -> List[str]:
     """Helper to extract skills efficiently from structured resume data."""
@@ -164,8 +172,9 @@ async def update_saved_resume(
     current_user = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update an existing saved resume without consuming monthly download quota."""
+    parsed_resume_id = _parse_resume_id(resume_id)
     resume = db.query(SavedResume).filter(
-        SavedResume.id == resume_id,
+        SavedResume.id == parsed_resume_id,
         SavedResume.user_id == current_user.id
     ).first()
     
@@ -193,7 +202,7 @@ async def update_saved_resume(
             if request.is_primary:
                 db.query(SavedResume).filter(
                     SavedResume.user_id == current_user.id,
-                    SavedResume.id != resume_id
+                    SavedResume.id != parsed_resume_id
                 ).update({"is_primary": False})
             resume.is_primary = request.is_primary
 
@@ -228,7 +237,7 @@ async def authorize_resume_download(
     """Consume monthly resume download quota before any official export action."""
     if request.resume_id:
         resume = db.query(SavedResume).filter(
-            SavedResume.id == request.resume_id,
+            SavedResume.id == _parse_resume_id(request.resume_id),
             SavedResume.user_id == current_user.id,
         ).first()
         if not resume:
@@ -262,7 +271,7 @@ async def delete_saved_resume(
 ) -> Any:
     """Delete a saved resume."""
     resume = db.query(SavedResume).filter(
-        SavedResume.id == resume_id,
+        SavedResume.id == _parse_resume_id(resume_id),
         SavedResume.user_id == current_user.id
     ).first()
     

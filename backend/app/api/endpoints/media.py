@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -7,6 +8,7 @@ from app.api import deps
 from app.services import cloudinary_service, media_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/upload")
@@ -17,7 +19,19 @@ async def upload_media(
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     try:
-        content = await file.read()
+        rule = cloudinary_service.MEDIA_RULES.get(media_type)
+        if rule is None:
+            raise HTTPException(status_code=400, detail="Unsupported media type.")
+
+        # Bound the read so an oversized upload cannot exhaust worker memory
+        # before validation runs.
+        content = await file.read(rule["max_bytes"] + 1)
+        if len(content) > rule["max_bytes"]:
+            size_limit_mb = rule["max_bytes"] // (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"Uploads must be {size_limit_mb}MB or smaller.",
+            )
         if not content:
             raise HTTPException(status_code=400, detail="The uploaded file is empty.")
 
@@ -49,5 +63,6 @@ async def upload_media(
         raise HTTPException(status_code=500, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to upload media: {exc}")
+    except Exception:
+        logger.exception("Media upload failed")
+        raise HTTPException(status_code=500, detail="Failed to upload media.")

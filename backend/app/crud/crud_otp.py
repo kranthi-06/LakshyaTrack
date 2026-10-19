@@ -31,6 +31,20 @@ def mark_otp_as_used(db: Session, otp: OTP):
     otp.is_used = True
     db.commit()
 
+def claim_otp_as_used(db: Session, otp: OTP) -> bool:
+    """Atomically consume an OTP so concurrent verification cannot reuse it."""
+    updated = (
+        db.query(OTP)
+        .filter(OTP.id == otp.id, OTP.is_used == False)  # noqa: E712
+        .update({OTP.is_used: True}, synchronize_session=False)
+    )
+    db.commit()
+    return updated == 1
+
 def increment_attempts(db: Session, otp: OTP):
-    otp.attempts += 1
+    """Atomically count a failed attempt, capped at the allowed maximum."""
+    db.query(OTP).filter(
+        OTP.id == otp.id,
+        OTP.attempts < 5,
+    ).update({OTP.attempts: OTP.attempts + 1}, synchronize_session=False)
     db.commit()

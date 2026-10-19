@@ -5,7 +5,7 @@ Supports stage-based subscriptions, micro-plan purchases, coupons, and payment t
 import uuid
 from sqlalchemy import (
     Boolean, Column, String, DateTime, Float, Integer,
-    ForeignKey, Text, JSON, Enum as SQLEnum
+    ForeignKey, Text, JSON, Enum as SQLEnum, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -116,6 +116,9 @@ class Coupon(Base):
 class CouponUsage(Base):
     """Tracks which users have used which coupons."""
     __tablename__ = "coupon_usages"
+    __table_args__ = (
+        UniqueConstraint("coupon_id", "user_id", name="uq_coupon_usages_coupon_user"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     coupon_id = Column(UUID(as_uuid=True), ForeignKey("coupons.id"), nullable=False)
@@ -130,6 +133,10 @@ class CouponUsage(Base):
 class PaymentTransaction(Base):
     """Records all payment attempts and completions."""
     __tablename__ = "payment_transactions"
+    __table_args__ = (
+        # Nullable: pending/demo transactions have no gateway payment id.
+        UniqueConstraint("gateway_payment_id", name="uq_payment_transactions_gateway_payment_id"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)

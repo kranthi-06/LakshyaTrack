@@ -291,11 +291,11 @@ async def live_search(
 async def fetch_external_sources(
     async_mode: bool = Query(False, description="If true, execute in background and return job_id"),
     db: Session = Depends(deps.get_db),
-    current_user=Depends(deps.get_current_active_user),
+    current_user=Depends(deps.require_admin),
 ) -> Any:
     """
     Trigger fetching from external sources (RSS feeds + public APIs).
-    Can be used by admin or the scheduler.
+    Admin-only: this mutates the shared opportunity catalog.
     """
     try:
         if async_mode:
@@ -336,9 +336,9 @@ async def fetch_external_sources(
 @router.post("/cleanup")
 async def cleanup_expired(
     db: Session = Depends(deps.get_db),
-    current_user=Depends(deps.get_current_active_user),
+    current_user=Depends(deps.require_admin),
 ) -> Any:
-    """Mark expired opportunities and remove duplicates."""
+    """Admin-only: mark expired opportunities and remove duplicates."""
     expired_count = opportunity_service.cleanup_expired_opportunities(db)
     dupe_count = opportunity_service.remove_duplicates(db)
     await _invalidate_opportunities_read_cache()

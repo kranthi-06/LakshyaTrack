@@ -730,6 +730,21 @@ interface ProgressStreamOptions {
   onError?: (error: unknown) => void;
 }
 
+const MAX_PROGRESS_STREAM_RECONNECT_ATTEMPTS = 3;
+const NON_RETRYABLE_STREAM_STATUS_CODES = new Set([401, 403, 501]);
+
+class ProgressStreamHttpError extends Error {
+  constructor(public readonly status: number) {
+    super(`Progress stream failed with status ${status}`);
+    this.name = 'ProgressStreamHttpError';
+  }
+}
+
+export function shouldRetryProgressStream(status: number | undefined, attempts: number): boolean {
+  return !NON_RETRYABLE_STREAM_STATUS_CODES.has(status ?? 0)
+    && attempts < MAX_PROGRESS_STREAM_RECONNECT_ATTEMPTS;
+}
+
 function getProgressStreamUrl(): string {
   const baseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
   return `${baseUrl}${PE_BASE}/stream`;
@@ -771,10 +786,15 @@ export function subscribeToProgressUpdates(options: ProgressStreamOptions = {}):
   const decoder = new TextDecoder();
   let disposed = false;
   let reconnectDelayMs = 1000;
+  let reconnectAttempts = 0;
   let reconnectTimer: number | null = null;
 
-  const scheduleReconnect = () => {
+  const scheduleReconnect = (status?: number) => {
     if (disposed || reconnectTimer !== null) {
+      return;
+    }
+
+    if (!shouldRetryProgressStream(status, reconnectAttempts)) {
       return;
     }
 
@@ -782,6 +802,7 @@ export function subscribeToProgressUpdates(options: ProgressStreamOptions = {}):
       reconnectTimer = null;
       void connect();
     }, reconnectDelayMs);
+    reconnectAttempts += 1;
     reconnectDelayMs = Math.min(reconnectDelayMs * 2, 15000);
   };
 
@@ -789,7 +810,6 @@ export function subscribeToProgressUpdates(options: ProgressStreamOptions = {}):
     const token = localStorage.getItem('token');
     if (!token || token === 'undefined' || token === 'null') {
       options.onError?.(new Error('Missing auth token for progress stream'));
-      scheduleReconnect();
       return;
     }
 
@@ -803,11 +823,12 @@ export function subscribeToProgressUpdates(options: ProgressStreamOptions = {}):
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`Progress stream failed with status ${response.status}`);
+        throw new ProgressStreamHttpError(response.status);
       }
 
       options.onOpen?.();
       reconnectDelayMs = 1000;
+      reconnectAttempts = 0;
 
       const reader = response.body.getReader();
       let buffer = '';
@@ -836,7 +857,8 @@ export function subscribeToProgressUpdates(options: ProgressStreamOptions = {}):
     } catch (error) {
       if (!disposed && !(error instanceof DOMException && error.name === 'AbortError')) {
         options.onError?.(error);
-        scheduleReconnect();
+        const status = error instanceof ProgressStreamHttpError ? error.status : undefined;
+        scheduleReconnect(status);
       }
     }
   };

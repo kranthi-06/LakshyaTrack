@@ -3,17 +3,34 @@ Database session layer — production-grade with connection pooling,
 health monitoring, automatic reconnection, and pool pre-warming.
 """
 import logging
+import os
 import time
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# These tables are required to authenticate a user and resolve their feature
+# access.  Keep this list explicit rather than treating a successful TCP/SQL
+# connection as proof that the application can serve authenticated traffic.
+_READINESS_TABLES = (
+    "users",
+    "profiles",
+    "subscription_plans",
+    "micro_plans",
+    "coupons",
+    "user_subscriptions",
+    "user_micro_purchases",
+    "coupon_usages",
+    "payment_transactions",
+)
 
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
@@ -27,6 +44,7 @@ if SQLALCHEMY_DATABASE_URL.startswith(("postgresql://", "postgres://", "postgres
     if len(_database_target) == 2:
         SQLALCHEMY_DATABASE_URL = f"postgresql+psycopg2://{_database_target[1]}"
 _is_sqlite = "sqlite" in SQLALCHEMY_DATABASE_URL
+_is_serverless = os.getenv("VERCEL") == "1"
 
 # ── Production-grade engine configuration ──────────────────────
 _engine_kwargs = {
@@ -35,6 +53,12 @@ _engine_kwargs = {
 
 if _is_sqlite:
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
+elif _is_serverless:
+    # A persistent QueuePool per Vercel instance exhausts Supabase's limited
+    # session-mode connection allowance as instances scale.  NullPool closes a
+    # connection when each request session closes, so it cannot retain idle
+    # sessions across warm serverless instances.
+    _engine_kwargs["poolclass"] = NullPool
 else:
     # PostgreSQL connection pool tuning
     _engine_kwargs.update({
@@ -114,6 +138,37 @@ def check_db_health() -> dict:
         }
 
 
+def check_db_readiness() -> dict:
+    """Check connectivity *and* the schema needed for authenticated traffic.
+
+    This is intentionally a metadata/read-only check.  It runs behind the
+    short readiness cache in ``app.main`` and never creates, alters, or seeds
+    database objects.
+    """
+    try:
+        start = time.monotonic()
+        with engine.connect() as conn:
+            available_tables = set(inspect(conn).get_table_names())
+            missing_tables = sorted(set(_READINESS_TABLES) - available_tables)
+            if missing_tables:
+                logger.error("Database readiness failed; missing tables: %s", ", ".join(missing_tables))
+                return {
+                    "status": "schema_unhealthy",
+                    "missing_tables": missing_tables,
+                }
+
+            # Static identifiers from _READINESS_TABLES only; this validates
+            # privileges and relation availability without reading user data.
+            for table_name in _READINESS_TABLES:
+                conn.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
+
+        latency_ms = (time.monotonic() - start) * 1000
+        return {"status": "healthy", "latency_ms": round(latency_ms, 1)}
+    except Exception as exc:
+        logger.error("Database readiness check failed: %s", str(exc))
+        return {"status": "unhealthy"}
+
+
 def safe_db_execute(db: Session, func, *args, operation_name: str = "db_operation", max_retries: int = 2, **kwargs):
     """
     Execute a database operation with automatic retry on transient errors.
@@ -160,7 +215,7 @@ def prewarm_pool(min_connections: int = 3) -> None:
     Pre-warm the connection pool by checking out and returning connections.
     Call once at startup to avoid cold-start latency on the first real request.
     """
-    if _is_sqlite:
+    if _is_sqlite or _is_serverless:
         return
     connections = []
     target = min(min_connections, settings.DB_POOL_SIZE)

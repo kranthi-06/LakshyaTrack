@@ -3,6 +3,7 @@ API Endpoints for the AI Roadmap Engine.
 Integrates with the Plan page (CareerIntelligence).
 Supports multiple roadmaps per user with switcher.
 """
+import uuid
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -49,7 +50,7 @@ async def generate_roadmap(
     """Generate a personalized skill roadmap using AI. Enforces plan_count limit."""
     try:
         result = await roadmap_service.generate_roadmap(
-            user_id=str(current_user.id),
+            user_id=current_user.id,
             target_role=request.target_role,
             current_skills=request.current_skills,
             skill_gaps=request.skill_gaps,
@@ -109,8 +110,12 @@ async def get_roadmap_status(
 ) -> Any:
     """Check the background generation status of a roadmap."""
     from app.models.career import Roadmap
+    try:
+        parsed_roadmap_id = uuid.UUID(str(roadmap_id))
+    except (TypeError, ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail="Roadmap not found")
     roadmap = db.query(Roadmap).filter(
-        Roadmap.id == roadmap_id,
+        Roadmap.id == parsed_roadmap_id,
         Roadmap.user_id == current_user.id
     ).first()
     
@@ -131,7 +136,7 @@ async def get_active_roadmap(
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     """Get the user's active roadmap."""
-    roadmap = roadmap_service.get_user_roadmap(str(current_user.id), db)
+    roadmap = roadmap_service.get_user_roadmap(current_user.id, db)
     if not roadmap:
         return {"roadmap": None, "message": "No active roadmap found. Generate one first."}
     return {"roadmap": roadmap}
@@ -143,7 +148,7 @@ async def get_all_roadmaps(
     current_user=Depends(deps.get_current_active_user),
 ) -> Any:
     """Get all roadmaps for the current user (for the switcher)."""
-    roadmaps = roadmap_service.get_all_user_roadmaps(str(current_user.id), db)
+    roadmaps = roadmap_service.get_all_user_roadmaps(current_user.id, db)
     return {"roadmaps": roadmaps}
 
 
@@ -165,7 +170,7 @@ async def set_active_roadmap(
     """Switch the active roadmap for the current user."""
     try:
         result = roadmap_service.set_active_roadmap(
-            user_id=str(current_user.id),
+            user_id=current_user.id,
             roadmap_id=request.roadmap_id,
             db=db
         )
@@ -187,7 +192,7 @@ async def delete_roadmap(
     """Delete a roadmap."""
     try:
         result = roadmap_service.delete_roadmap(
-            user_id=str(current_user.id),
+            user_id=current_user.id,
             roadmap_id=request.roadmap_id,
             db=db,
             commit=False,
@@ -214,7 +219,7 @@ async def update_skill(
     """Update a skill's status in the roadmap."""
     try:
         result = roadmap_service.update_skill_status(
-            user_id=str(current_user.id),
+            user_id=current_user.id,
             roadmap_id=request.roadmap_id,
             skill_id=request.skill_id,
             new_status=request.status,
