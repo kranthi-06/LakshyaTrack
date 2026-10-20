@@ -15,7 +15,7 @@ export function CorporateTemplate({ data, accentColor = '#1e3a5f' }: TemplatePro
                     <h1 className="text-2xl font-bold" style={{ color: accentColor }}>{p.full_name || 'YOUR NAME'}</h1>
                     <p className="text-xs text-gray-500 mt-0.5">{p.headline || data.target_role}</p>
                 </div>
-                <ContactLinks items={buildContactItems(p)} layout="stack" gap="gap-0.5" className="text-right items-end text-[10px] text-gray-500" />
+                <ContactLinks items={buildContactItems(p)} layout="stack" showIcons compactNames gap="gap-0.5" className="text-right items-end text-[10px] text-gray-500" />
             </div>
             <div className="px-10 py-7 space-y-5">
                 {(() => {

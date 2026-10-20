@@ -23,6 +23,7 @@ export function TwoColumnTemplate({ data, accentColor = '#0ea5e9' }: TemplatePro
                     <ContactLinks
                         items={buildContactItems(p)}
                         showIcons
+                        compactNames
                         layout="stack"
                         gap="gap-1.5"
                         className="mt-4"

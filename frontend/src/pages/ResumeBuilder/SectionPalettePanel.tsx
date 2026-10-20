@@ -117,7 +117,7 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
                                 ) : (
                                     <button
                                         onClick={() => { if (isCustom && custom) { setRenamingId(custom.id); setRenameValue(custom.title); } }}
-                                        className={`flex-1 min-w-0 truncate text-[10px] font-bold text-left ${e.visible ? 'text-gray-700 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500 line-through'} ${isCustom ? 'cursor-text' : 'cursor-default'}`}
+                                        className={`flex-1 min-w-0 truncate text-[11px] font-semibold text-left ${e.visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 line-through'} ${isCustom ? 'cursor-text' : 'cursor-default'}`}
                                         title={isCustom ? 'Rename section' : e.label}
                                     >
                                         {e.label}

@@ -19,7 +19,7 @@ export function ClassicTemplate({ data, accentColor = '#1a1a2e' }: TemplateProps
                     {p.full_name || 'YOUR NAME'}
                 </h1>
                 <p className="text-sm font-medium text-gray-500 mt-2 tracking-wider uppercase">{p.headline || data.target_role || 'Professional Title'}</p>
-                <ContactLinks items={buildContactItems(p)} separator="|" gap="gap-x-3" className="justify-center mt-3 text-[11px] text-gray-500" separatorClassName="text-gray-300" />
+                <ContactLinks items={buildContactItems(p)} separator="|" showIcons compactNames gap="gap-x-3" className="justify-center mt-3 text-[11px] text-gray-500" separatorClassName="text-gray-300" />
             </div>
 
             {/* Body — rendered in the user's saved section order */}

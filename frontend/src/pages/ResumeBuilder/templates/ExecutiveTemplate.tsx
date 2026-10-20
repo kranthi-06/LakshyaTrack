@@ -17,7 +17,7 @@ export function ExecutiveTemplate({ data, accentColor = '#0f172a' }: TemplatePro
             <div className="px-10 py-8 text-white" style={{ backgroundColor: accentColor }}>
                 <h1 className="text-3xl font-bold tracking-wide">{p.full_name || 'YOUR NAME'}</h1>
                 <p className="text-sm font-light mt-1 tracking-wider opacity-80 uppercase">{p.headline || data.target_role || 'Executive Professional'}</p>
-                <ContactLinks items={buildContactItems(p)} gap="gap-x-4 gap-y-1" className="mt-3 text-[10px] opacity-70 tracking-wide" />
+                <ContactLinks items={buildContactItems(p)} showIcons compactNames gap="gap-x-4 gap-y-1" className="mt-3 text-[10px] opacity-70 tracking-wide" />
             </div>
 
             {/* Gold accent bar */}

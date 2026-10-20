@@ -20,7 +20,7 @@ export function FreshTemplate({ data, accentColor = '#06b6d4' }: TemplateProps) 
                         <p className="text-[10px] text-gray-400 font-bold">{p.headline || data.target_role} {p.location && `· ${p.location}`}</p>
                     </div>
                 </div>
-                <ContactLinks items={buildContactItems(p).filter(item => item.kind !== 'location')} gap="gap-x-4 gap-y-1" className="mt-3 text-[10px] text-gray-400" />
+                <ContactLinks items={buildContactItems(p).filter(item => item.kind !== 'location')} showIcons compactNames gap="gap-x-4 gap-y-1" className="mt-3 text-[10px] text-gray-400" />
             </div>
             <div className="px-10 py-6 space-y-5">
                 {(() => {

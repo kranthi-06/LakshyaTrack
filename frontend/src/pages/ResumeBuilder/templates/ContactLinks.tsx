@@ -7,6 +7,8 @@ interface ContactLinksProps {
     /** Glyph placed between items in inline layout (e.g. '|' or '•'). */
     separator?: string;
     showIcons?: boolean;
+    /** When true with showIcons, show compact platform name instead of full URL. */
+    compactNames?: boolean;
     /** Tailwind gap classes for the row; defaults adapt to layout/separator. */
     gap?: string;
     className?: string;
@@ -28,6 +30,7 @@ export function ContactLinks({
     layout = 'inline',
     separator,
     showIcons = false,
+    compactNames = false,
     gap,
     className = '',
     itemClassName = '',
@@ -70,7 +73,7 @@ export function ContactLinks({
                             rel={item.href.startsWith('http') ? 'noopener noreferrer' : undefined}
                             className={`break-all hover:underline ${linkClassName}`}
                         >
-                            {item.label}
+                            {compactNames && item.platformName ? item.platformName : item.label}
                         </a>
                     ) : (
                         <span className={`break-all ${linkClassName}`}>{item.label}</span>

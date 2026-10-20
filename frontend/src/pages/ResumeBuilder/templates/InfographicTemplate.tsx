@@ -18,7 +18,7 @@ export function InfographicTemplate({ data, accentColor = '#0891b2' }: TemplateP
                 </div>
                 <h1 className="text-lg font-black">{p.full_name || 'Your Name'}</h1>
                 <p className="text-[10px] opacity-80 font-bold mt-0.5">{p.headline || data.target_role}</p>
-                <ContactLinks items={buildContactItems(p)} showIcons layout="stack" gap="gap-1.5" className="mt-4 text-[10px] opacity-90" />
+                <ContactLinks items={buildContactItems(p)} showIcons compactNames layout="stack" gap="gap-1.5" className="mt-4 text-[10px] opacity-90" />
                 {resolveZoneSections(data, 'infographic', 'sidebar').map(id => {
                     if (id === 'skills' && (allSkills.length > 0 || data.skills.soft_skills.length > 0)) return (
                         <div key={id}>

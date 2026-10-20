@@ -14,7 +14,7 @@ export function ElegantTemplate({ data, accentColor = '#78716c' }: TemplateProps
                 <h1 className="text-2xl font-normal tracking-[0.3em] uppercase" style={{ color: accentColor }}>{p.full_name || 'Your Name'}</h1>
                 <div className="w-16 h-px mx-auto mt-3 mb-2" style={{ backgroundColor: accentColor }} />
                 <p className="text-[10px] tracking-[0.15em] text-gray-400 uppercase">{p.headline || data.target_role}</p>
-                <ContactLinks items={buildContactItems(p)} gap="gap-x-4 gap-y-1" className="justify-center mt-3 text-[10px] text-gray-400" />
+                <ContactLinks items={buildContactItems(p)} showIcons compactNames gap="gap-x-4 gap-y-1" className="justify-center mt-3 text-[10px] text-gray-400" />
             </div>
             {resolveLayoutSections(data, 'elegant').map(id => {
                 if (id === 'summary' && p.professional_summary) return (

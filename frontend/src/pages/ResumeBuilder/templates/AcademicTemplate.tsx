@@ -19,7 +19,7 @@ export function AcademicTemplate({ data, accentColor = '#1e40af' }: TemplateProp
                 {(p.headline || data.target_role) && <p className="text-sm text-gray-500 italic mt-0.5">{p.headline || data.target_role}</p>}
             </div>
             <div className="pb-3 mb-5" style={{ borderBottom: `2px double ${accentColor}` }}>
-                <ContactLinks items={buildContactItems(p)} separator="|" gap="gap-x-3" className="justify-center text-[10px] text-gray-500" />
+                <ContactLinks items={buildContactItems(p)} separator="|" showIcons compactNames gap="gap-x-3" className="justify-center text-[10px] text-gray-500" />
             </div>
 
             {/* Body — rendered in the user's saved section order */}

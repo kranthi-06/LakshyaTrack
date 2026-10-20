@@ -32,7 +32,7 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
             </div>
 
             {/* Contact Strip */}
-            <ContactLinks items={buildContactItems(p)} showIcons gap="gap-x-6 gap-y-1" className="px-10 py-3 text-[10px] font-bold text-gray-400 bg-gray-50 border-b border-gray-100" />
+            <ContactLinks items={buildContactItems(p)} showIcons compactNames gap="gap-x-6 gap-y-1" className="px-10 py-3 text-[10px] font-bold text-gray-400 bg-gray-50 border-b border-gray-100" />
 
             <div className="px-10 py-7 space-y-6">
                 {(() => {

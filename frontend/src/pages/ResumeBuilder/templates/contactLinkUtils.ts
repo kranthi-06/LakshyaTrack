@@ -23,6 +23,8 @@ export interface ContactItem {
     ariaLabel: string;
     /** Short prefix used by templates that render icons. */
     icon: string;
+    /** Compact platform name for icon-only display (e.g., "LinkedIn", "GitHub"). Only for profile links. */
+    platformName?: string;
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -118,14 +120,14 @@ export function buildContactItems(personal: PersonalInfo | undefined): ContactIt
         });
     }
 
-    const profiles: Array<{ kind: ContactKind; value: string | undefined; ariaLabel: string; icon: string }> = [
-        { kind: 'linkedin', value: p.linkedin_url, ariaLabel: 'LinkedIn profile', icon: '🔗' },
-        { kind: 'github', value: p.github_url, ariaLabel: 'GitHub profile', icon: '💻' },
-        { kind: 'portfolio', value: p.portfolio_url, ariaLabel: 'Portfolio', icon: '🌐' },
-        { kind: 'website', value: p.website_url, ariaLabel: 'Website', icon: '🌐' },
-        { kind: 'leetcode', value: p.leetcode_url, ariaLabel: 'LeetCode profile', icon: '🧠' },
-        { kind: 'hackerrank', value: p.hackerrank_url, ariaLabel: 'HackerRank profile', icon: '🏆' },
-        { kind: 'kaggle', value: p.kaggle_url, ariaLabel: 'Kaggle profile', icon: '📊' },
+    const profiles: Array<{ kind: ContactKind; value: string | undefined; ariaLabel: string; icon: string; platformName: string }> = [
+        { kind: 'linkedin', value: p.linkedin_url, ariaLabel: 'LinkedIn profile', icon: '🔗', platformName: 'LinkedIn' },
+        { kind: 'github', value: p.github_url, ariaLabel: 'GitHub profile', icon: '💻', platformName: 'GitHub' },
+        { kind: 'portfolio', value: p.portfolio_url, ariaLabel: 'Portfolio', icon: '🌐', platformName: 'Portfolio' },
+        { kind: 'website', value: p.website_url, ariaLabel: 'Website', icon: '🌐', platformName: 'Website' },
+        { kind: 'leetcode', value: p.leetcode_url, ariaLabel: 'LeetCode profile', icon: '🧠', platformName: 'LeetCode' },
+        { kind: 'hackerrank', value: p.hackerrank_url, ariaLabel: 'HackerRank profile', icon: '🏆', platformName: 'HackerRank' },
+        { kind: 'kaggle', value: p.kaggle_url, ariaLabel: 'Kaggle profile', icon: '📊', platformName: 'Kaggle' },
     ];
 
     for (const profile of profiles) {
@@ -137,6 +139,7 @@ export function buildContactItems(personal: PersonalInfo | undefined): ContactIt
             label: displayUrl(profile.value),
             ariaLabel: `${profile.ariaLabel} ${displayUrl(profile.value)}`,
             icon: profile.icon,
+            platformName: profile.platformName,
         });
     }
 

@@ -365,8 +365,21 @@ class AIService:
         # ── 4. Fail closed — never return fabricated content ───
         health_metrics.record_request("ai_unavailable", 0, success=False)
         logger.warning("ALL AI providers failed. Failing closed.")
+        
+        # Provide more specific error information for debugging
+        provider_status = self.get_provider_status()
+        missing_providers = [k for k, v in provider_status.items() if k != 'last_error' and not v.get('available')]
+        
+        if missing_providers:
+            raise RuntimeError(
+                f"AI service is unavailable. No AI providers are configured. "
+                f"Missing API keys for: {', '.join(missing_providers)}. "
+                f"Please configure at least one of: GROQ_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY."
+            )
+        
         raise RuntimeError(
-            "AI service is temporarily unavailable. Please try again shortly."
+            f"AI service is temporarily unavailable. All configured providers failed. "
+            f"Last error: {self.last_error or 'Unknown error'}. Please try again shortly."
         )
 
     async def generate_quiz_questions(

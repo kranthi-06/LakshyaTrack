@@ -24,7 +24,7 @@ export function CreativeTemplate({ data, accentColor = '#e11d48' }: TemplateProp
             </div>
 
             {/* Contact Bar */}
-            <ContactLinks items={buildContactItems(p)} showIcons gap="gap-x-6 gap-y-1" className="px-10 py-3 text-[10px] font-bold text-gray-500 border-b border-gray-100 bg-gray-50" />
+            <ContactLinks items={buildContactItems(p)} showIcons compactNames gap="gap-x-6 gap-y-1" className="px-10 py-3 text-[10px] font-bold text-gray-500 border-b border-gray-100 bg-gray-50" />
 
             <div className="flex">
                 {/* Left Column */}

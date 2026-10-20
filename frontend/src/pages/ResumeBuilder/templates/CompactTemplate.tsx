@@ -12,7 +12,7 @@ export function CompactTemplate({ data, accentColor = '#334155' }: TemplateProps
         <div className="bg-white w-full min-h-[1122px] px-8 py-6" style={{ fontFamily: "'Arial', sans-serif", color: '#1f2937', fontSize: '10px' }}>
             <div className="text-center pb-2 mb-3" style={{ borderBottom: `1.5px solid ${accentColor}` }}>
                 <h1 className="text-lg font-bold tracking-wide" style={{ color: accentColor }}>{p.full_name || 'YOUR NAME'}</h1>
-                <ContactLinks items={buildContactItems(p)} separator="•" gap="gap-x-1.5" className="justify-center mt-1 text-[9px] text-gray-500" separatorClassName="text-gray-300" />
+                <ContactLinks items={buildContactItems(p)} separator="•" showIcons compactNames gap="gap-x-1.5" className="justify-center mt-1 text-[9px] text-gray-500" separatorClassName="text-gray-300" />
             </div>
             {resolveLayoutSections(data, 'compact').map(id => {
                 if (id === 'summary' && p.professional_summary) return (

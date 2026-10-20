@@ -16,7 +16,7 @@ export function MinimalATSTemplate({ data, accentColor = '#111827' }: TemplatePr
             {/* Header — ultra clean, no graphics */}
             <div className="text-center pb-4 mb-5" style={{ borderBottom: `2px solid ${accentColor}` }}>
                 <h1 className="text-2xl font-bold uppercase tracking-wider" style={{ color: accentColor }}>{p.full_name || 'YOUR NAME'}</h1>
-                <ContactLinks items={buildContactItems(p)} separator="•" gap="gap-x-2" className="justify-center mt-2 text-[11px] text-gray-600" separatorClassName="text-gray-300" />
+                <ContactLinks items={buildContactItems(p)} separator="•" showIcons compactNames gap="gap-x-2" className="justify-center mt-2 text-[11px] text-gray-600" separatorClassName="text-gray-300" />
             </div>
 
             {/* Body — rendered in the user's saved section order */}

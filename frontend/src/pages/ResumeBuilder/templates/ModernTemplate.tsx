@@ -17,7 +17,7 @@ export function ModernTemplate({ data, accentColor = '#5c52d2' }: TemplateProps)
             <div className="px-10 pt-10 pb-6" style={{ borderBottom: `3px solid ${accentColor}` }}>
                 <h1 className="text-3xl font-black text-gray-900 tracking-tight">{p.full_name || 'Your Name'}</h1>
                 <p className="text-sm font-bold mt-1" style={{ color: accentColor }}>{p.headline || data.target_role || 'Professional Title'}</p>
-                <ContactLinks items={buildContactItems(p)} showIcons gap="gap-x-4 gap-y-1" className="mt-3 text-xs text-gray-500 font-medium" />
+                <ContactLinks items={buildContactItems(p)} showIcons compactNames gap="gap-x-4 gap-y-1" className="mt-3 text-xs text-gray-500 font-medium" />
             </div>
 
             <div className="flex">

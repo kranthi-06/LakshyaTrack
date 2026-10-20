@@ -13,7 +13,7 @@ export function BoldHeaderTemplate({ data, accentColor = '#dc2626' }: TemplatePr
             <div className="px-10 py-8">
                 <h1 className="text-5xl font-black tracking-tight leading-none" style={{ color: accentColor }}>{p.full_name || 'YOUR NAME'}</h1>
                 <p className="text-lg font-bold text-gray-400 mt-1">{p.headline || data.target_role}</p>
-                <ContactLinks items={buildContactItems(p)} gap="gap-x-4 gap-y-1" className="mt-3 text-[10px] text-gray-400 font-medium" />
+                <ContactLinks items={buildContactItems(p)} showIcons compactNames gap="gap-x-4 gap-y-1" className="mt-3 text-[10px] text-gray-400 font-medium" />
                 <div className="h-1 w-20 mt-4 rounded-full" style={{ backgroundColor: accentColor }} />
             </div>
             <div className="px-10 pb-8 space-y-6">

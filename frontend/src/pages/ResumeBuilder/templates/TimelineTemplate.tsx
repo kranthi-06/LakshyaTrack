@@ -50,7 +50,7 @@ export function TimelineTemplate({ data, accentColor = '#6366f1' }: TemplateProp
             <div className="mb-6">
                 <h1 className="text-2xl font-black" style={{ color: accentColor }}>{p.full_name || 'Your Name'}</h1>
                 {(p.headline || data.target_role) && <p className="text-xs text-gray-500 mt-0.5">{p.headline || data.target_role}</p>}
-                <ContactLinks items={buildContactItems(p)} gap="gap-x-3 gap-y-1" className="mt-2 text-[10px] text-gray-400" />
+                <ContactLinks items={buildContactItems(p)} showIcons compactNames gap="gap-x-3 gap-y-1" className="mt-2 text-[10px] text-gray-400" />
                 {summaryFirst && p.professional_summary && <p className="text-[11px] text-gray-600 leading-[1.7] mt-3 border-l-3 pl-4" style={{ borderLeftColor: accentColor }}>{p.professional_summary}</p>}
             </div>
             {/* Skills bar */}

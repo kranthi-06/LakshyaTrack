@@ -417,6 +417,29 @@ export function SidePanelEditor({ data, onChange }: SidePanelEditorProps) {
                                     <label className={labelCls}>Kaggle</label>
                                     <input className={inputCls} value={data.personal.kaggle_url || ''} onChange={e => updatePersonal('kaggle_url', e.target.value)} placeholder="kaggle.com/you" />
                                 </div>
+                                {/* Link count guidance */}
+                                {(() => {
+                                    const linkCount = [
+                                        data.personal.linkedin_url, data.personal.github_url, data.personal.portfolio_url,
+                                        data.personal.website_url, data.personal.leetcode_url, data.personal.hackerrank_url,
+                                        data.personal.kaggle_url
+                                    ].filter(url => url?.trim()).length;
+                                    const RECOMMENDED_MAX_LINKS = 5;
+                                    if (linkCount > RECOMMENDED_MAX_LINKS) {
+                                        return (
+                                            <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[10px]">
+                                                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="font-bold">Link Count Guidance</p>
+                                                    <p className="text-amber-700">
+                                                        You've added {linkCount} professional links. We recommend keeping your resume header concise (up to {RECOMMENDED_MAX_LINKS} links). Consider including only the links most relevant to this application.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                                 <div>
                                     <label className={labelCls}>Professional Summary</label>
                                     <textarea className={textareaCls} rows={5} value={data.personal.professional_summary} onChange={e => updatePersonal('professional_summary', e.target.value)} placeholder="Experienced professional with..." />
