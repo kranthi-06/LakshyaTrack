@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Reorder } from 'framer-motion';
 import {
     Layers, GripVertical, Eye, EyeOff, Plus, Trash2, X,
-    AlertCircle, ListX,
+    AlertCircle, ListX, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import type { ResumeData } from './types';
 import {
@@ -27,13 +27,19 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
     const [newTitle, setNewTitle] = useState('');
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
+    const [newSectionZone, setNewSectionZone] = useState<'main' | 'sidebar'>('main');
 
     const entries = useMemo(() => resolvePaletteSections(data, base), [data, base]);
     const hiddenCount = entries.filter(e => !e.visible).length;
     const zoned = entries.some(e => isStandardSectionId(e.id) && sectionZone(base, e.id) === 'sidebar');
 
-    const inZone = (id: SectionId, zone: SectionZone) =>
-        isStandardSectionId(id) ? sectionZone(base, id) === zone : zone === 'main';
+    const inZone = (id: SectionId, zone: SectionZone) => {
+        if (isStandardSectionId(id)) {
+            return sectionZone(base, id) === zone;
+        }
+        const custom = (data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id);
+        return (custom?.zone || 'main') === zone;
+    };
 
     const reorderZone = (zone: SectionZone, zoneIds: SectionId[]) => {
         const positions: number[] = [];
@@ -41,6 +47,20 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
         const next = entries.map(e => e.id);
         positions.forEach((pos, k) => { next[pos] = zoneIds[k]; });
         onChange({ section_order: next });
+    };
+
+    const moveSectionToZone = (id: SectionId, targetZone: SectionZone) => {
+        if (isStandardSectionId(id)) {
+            // Built-in sections can't move between zones - their zone is fixed by template
+            return;
+        }
+        const customSections = data.custom_sections ?? [];
+        const sectionIndex = customSections.findIndex(cs => customSectionId(cs.id) === id);
+        if (sectionIndex === -1) return;
+        
+        const updated = [...customSections];
+        updated[sectionIndex] = { ...updated[sectionIndex], zone: targetZone };
+        onChange({ custom_sections: updated });
     };
 
     const toggleVisible = (id: SectionId) => {
@@ -54,9 +74,10 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
         if (!title) return;
         const id = newCustomId();
         onChange({
-            custom_sections: [...(data.custom_sections ?? []), { id, title, content: '' }],
+            custom_sections: [...(data.custom_sections ?? []), { id, title, content: '', zone: newSectionZone }],
         });
         setNewTitle('');
+        setNewSectionZone('main');
         setAddingSection(false);
     };
 
@@ -136,13 +157,22 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
                                     {e.visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                                 </button>
                                 {isCustom && (
-                                    <button
-                                        onClick={() => custom && deleteCustomSection(custom.id)}
-                                        className="w-5 h-5 flex items-center justify-center rounded-md flex-shrink-0 text-gray-300 dark:text-gray-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                                        title={`Delete "${e.label}"`}
-                                    >
-                                        <Trash2 className="w-3 h-3" />
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={() => moveSectionToZone(e.id, e.zone === 'main' ? 'sidebar' : 'main')}
+                                            className="w-5 h-5 flex items-center justify-center rounded-md flex-shrink-0 text-gray-300 dark:text-gray-600 hover:text-[#5c52d2] hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                                            title={`Move to ${e.zone === 'main' ? 'Sidebar' : 'Main column'}`}
+                                        >
+                                            {e.zone === 'main' ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                        </button>
+                                        <button
+                                            onClick={() => custom && deleteCustomSection(custom.id)}
+                                            className="w-5 h-5 flex items-center justify-center rounded-md flex-shrink-0 text-gray-300 dark:text-gray-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                                            title={`Delete "${e.label}"`}
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </>
                                 )}
                             </Reorder.Item>
                         );
@@ -209,11 +239,26 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
                                 placeholder="Section name (e.g. Certifications)"
                                 className="w-full px-2.5 py-1.5 text-[10px] font-bold border border-purple-200 dark:border-purple-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-800 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200"
                             />
+                            <div className="flex items-center gap-2 text-[9px] font-medium text-gray-500 dark:text-gray-400">
+                                <span>Placement:</span>
+                                <button
+                                    onClick={() => setNewSectionZone('main')}
+                                    className={`px-2 py-0.5 rounded text-[8px] font-bold ${newSectionZone === 'main' ? 'bg-[#5c52d2] text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400'}`}
+                                >
+                                    Main
+                                </button>
+                                <button
+                                    onClick={() => setNewSectionZone('sidebar')}
+                                    className={`px-2 py-0.5 rounded text-[8px] font-bold ${newSectionZone === 'sidebar' ? 'bg-[#5c52d2] text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400'}`}
+                                >
+                                    Sidebar
+                                </button>
+                            </div>
                             <div className="flex gap-1.5">
                                 <button onClick={addCustomSection} disabled={!newTitle.trim()} className="flex-1 py-1 text-[9px] font-black uppercase tracking-wider text-white bg-[#5c52d2] rounded-lg disabled:opacity-40 hover:bg-[#4b41c4] transition-colors">
                                     Add
                                 </button>
-                                <button onClick={() => { setAddingSection(false); setNewTitle(''); }} className="flex-1 py-1 text-[9px] font-bold text-gray-400 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                                <button onClick={() => { setAddingSection(false); setNewTitle(''); setNewSectionZone('main'); }} className="flex-1 py-1 text-[9px] font-bold text-gray-400 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
                                     Cancel
                                 </button>
                             </div>

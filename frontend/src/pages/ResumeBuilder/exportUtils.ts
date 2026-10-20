@@ -1,218 +1,64 @@
 import { saveAs } from 'file-saver';
+import html2pdf from 'html2pdf.js';
 
 /**
- * Export resume as a print-ready PDF.
+ * Export resume as a print-ready PDF using html2pdf.js.
  *
- * Strategy: clone the rendered template into a hidden iframe that has
- * proper A4 print-CSS, then trigger window.print() inside that iframe.
+ * Strategy: Use html2pdf.js which wraps html2canvas and jspdf to generate
+ * PDFs with better hyperlink preservation than browser print-to-PDF.
  * This gives us:
  *   • Full-page, A4-sized output
  *   • Real text (not a screenshot) → ATS-safe, selectable, searchable
  *   • Correct colors and layouts
- *   • No dependency on html2canvas (which can't handle all CSS)
+ *   • Better hyperlink annotation support
  */
 export async function exportToPDF(elementId: string): Promise<void> {
     const source = document.getElementById(elementId);
     if (!source) throw new Error('Resume preview element not found');
 
-    // ── 1. Collect all stylesheets from the current page ────────────
-    const styleSheets: string[] = [];
-
-    // Grab all <link rel="stylesheet"> and inline <style> tags
-    document.querySelectorAll('link[rel="stylesheet"], style').forEach(node => {
-        if (node instanceof HTMLLinkElement) {
-            styleSheets.push(`<link rel="stylesheet" href="${node.href}" />`);
-        } else if (node instanceof HTMLStyleElement) {
-            styleSheets.push(`<style>${node.innerHTML}</style>`);
-        }
-    });
-
-    // ── 2. Build print-specific CSS ────────────────────────────────
-    const printCSS = `
-        <style>
-            /* Reset everything for print */
-            @page {
-                size: A4;
-                margin: 0;
-            }
-
-            *, *::before, *::after {
-                box-sizing: border-box;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-                color-adjust: exact !important;
-            }
-
-            html, body {
-                width: 210mm;
-                min-height: 297mm;
-                margin: 0 !important;
-                padding: 0 !important;
-                background: white !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-            }
-
-            body {
-                display: block !important;
-            }
-
-            /* The print container that holds the resume */
-            .resume-print-root {
-                width: 210mm;
-                min-height: 297mm;
-                margin: 0;
-                padding: 0;
-                background: white !important;
-                overflow: visible;
-            }
-
-            /* Reset the resume content to fill the page */
-            .resume-print-root > * {
-                width: 100% !important;
-                max-width: 100% !important;
-                min-height: 297mm;
-                margin: 0 !important;
-                transform: none !important;
-            }
-
-            /* Hide scrollbars, borders, shadows in print */
-            ::-webkit-scrollbar { display: none; }
-
-            /* Preserve anchor links for PDF hyperlink annotations */
-            a {
-                color: inherit !important;
-                text-decoration: inherit !important;
-                cursor: pointer;
-            }
-
-            @media print {
-                html, body {
-                    width: 210mm;
-                    height: auto;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    overflow: visible !important;
-                }
-
-                .resume-print-root {
-                    width: 210mm;
-                    min-height: 297mm;
-                    padding: 0;
-                    margin: 0;
-                    background: white !important;
-                    page-break-inside: auto;
-                }
-
-                .resume-print-root > * {
-                    width: 100% !important;
-                    max-width: 100% !important;
-                    margin: 0 !important;
-                    padding-left: 0 !important;
-                    padding-right: 0 !important;
-                    transform: none !important;
-                    box-shadow: none !important;
-                }
-
-                /* Ensure links are preserved in print-to-PDF with proper colors */
-                a {
-                    color: inherit !important;
-                    text-decoration: inherit !important;
-                }
-            }
-        </style>
-    `;
-
-    // ── 3. Clone the resume element ────────────────────────────────
+    // Clone the element to avoid modifying the live preview
     const clone = source.cloneNode(true) as HTMLElement;
-
-    // Verify that all anchor hrefs are preserved in the clone
-    const sourceLinks = source.querySelectorAll('a[href]');
-    const cloneLinks = clone.querySelectorAll('a[href]');
-    if (sourceLinks.length !== cloneLinks.length) {
-        console.warn('exportToPDF: Link count mismatch after clone', {
-            source: sourceLinks.length,
-            clone: cloneLinks.length
-        });
-    }
-
-    // Strip off any inline transforms the preview applied (scaling, etc.)
     clone.style.transform = 'none';
-    clone.style.width = '100%';
+    clone.style.width = '794px'; // A4 width at 96 DPI
     clone.style.position = 'static';
     clone.removeAttribute('id');
 
-    // ── 4. Build the iframe document ───────────────────────────────
-    const htmlContent = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=210mm" />
-            <title>Resume</title>
-            ${styleSheets.join('\n')}
-            ${printCSS}
-        </head>
-        <body>
-            <div class="resume-print-root">
-                ${clone.outerHTML}
-            </div>
-        </body>
-        </html>
-    `;
+    // Create a container for the clone
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '794px';
+    container.style.backgroundColor = 'white';
+    container.appendChild(clone);
+    document.body.appendChild(container);
 
-    // ── 5. Create hidden iframe and inject content ─────────────────
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.left = '-10000px';
-    iframe.style.top = '0';
-    iframe.style.width = '210mm';
-    iframe.style.height = '297mm';
-    iframe.style.border = 'none';
-    iframe.style.opacity = '0';
-    iframe.style.pointerEvents = 'none';
-    document.body.appendChild(iframe);
-
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!iframeDoc) {
-        document.body.removeChild(iframe);
-        throw new Error('Could not access iframe document');
-    }
-
-    iframeDoc.open();
-    iframeDoc.write(htmlContent);
-    iframeDoc.close();
-
-    // ── 6. Wait for stylesheets to load, then print ────────────────
-    await new Promise<void>((resolve) => {
-        let isDone = false;
-        const onReady = () => {
-            if (isDone) return;
-            isDone = true;
-            setTimeout(() => {
-                try {
-                    iframe.contentWindow?.print();
-                } catch (e) {
-                    console.error('Print failed:', e);
-                    // Fallback: trigger print on main window
-                    window.print();
-                }
-                // Cleanup after a delay to let print dialog finish
-                setTimeout(() => {
-                    if (document.body.contains(iframe)) {
-                        document.body.removeChild(iframe);
-                    }
-                    resolve();
-                }, 1000);
-            }, 500); // Let CSS settle
+    try {
+        // Configure html2pdf options
+        const opt: any = {
+            margin: 0,
+            filename: 'resume.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+                scale: 2,
+                useCORS: true,
+                letterRendering: true,
+                logging: false,
+            },
+            jsPDF: {
+                unit: 'px',
+                format: 'a4',
+                orientation: 'portrait',
+            },
+            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
         };
 
-        // Wait for iframe to finish loading
-        iframe.onload = onReady;
-
-        // Fallback if onload doesn't fire
-        setTimeout(onReady, 2000);
-    });
+        // Generate PDF
+        await html2pdf().set(opt).from(clone).save();
+    } finally {
+        // Cleanup
+        document.body.removeChild(container);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════

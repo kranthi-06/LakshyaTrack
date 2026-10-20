@@ -61,6 +61,8 @@ export interface CustomSectionItem {
     id: string;
     title: string;
     content: string;
+    /** Optional zone placement for column-based templates. If not set, defaults to 'main'. */
+    zone?: 'main' | 'sidebar';
 }
 
 export interface ResumeData {

@@ -20,6 +20,7 @@
     "clsx": "^2.1.1",
     "file-saver": "^2.0.5",
     "framer-motion": "^12.34.0",
+    "html2pdf.js": "^0.14.0",
     "lucide-react": "^0.563.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",

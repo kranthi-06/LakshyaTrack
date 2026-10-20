@@ -140,7 +140,10 @@ export function resolveLayoutSections(data: ResumeData, base?: BaseEngineId): Se
 /** Ordered entries for one zone of a column-based engine. */
 export function resolveZoneSections(data: ResumeData, base: BaseEngineId, zone: SectionZone): SectionId[] {
     return resolveLayoutSections(data, base).filter(id => {
-        if (!isStandardSectionId(id)) return zone === 'main';
+        if (!isStandardSectionId(id)) {
+            const custom = (data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id);
+            return (custom?.zone || 'main') === zone;
+        }
         return sectionZone(base, id) === zone;
     });
 }
@@ -170,10 +173,23 @@ export function resolvePaletteSections(
     const hidden = new Set(data.hidden_sections ?? []);
     return order.map(id => {
         const isStandard = isStandardSectionId(id);
+        let label: string;
+        let zone: SectionZone;
+        
+        if (isStandard) {
+            label = SECTION_LABELS[id] || id;
+            zone = sectionZone(base, id);
+        } else {
+            const custom = (data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id);
+            label = custom?.title || 'Custom Section';
+            // Use custom section's zone if specified, otherwise default to main
+            zone = (custom?.zone === 'sidebar' ? 'sidebar' : 'main') as SectionZone;
+        }
+        
         return {
             id,
-            label: isStandard ? SECTION_LABELS[id] : (data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id)?.title || 'Custom section',
-            zone: isStandard ? sectionZone(base, id) : 'main' as SectionZone,
+            label,
+            zone,
             visible: !hidden.has(id),
             renderable: isStandard ? sectionHasContent(data, id) : Boolean((data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id)?.content.trim()),
         };
