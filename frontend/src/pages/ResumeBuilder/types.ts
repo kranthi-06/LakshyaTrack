@@ -16,6 +16,9 @@ export interface PersonalInfo {
     github_url?: string;
     portfolio_url?: string;
     website_url?: string;
+    leetcode_url?: string;
+    hackerrank_url?: string;
+    kaggle_url?: string;
 }
 
 export interface EducationItem {
@@ -88,6 +91,9 @@ export const defaultResumeData: ResumeData = {
         github_url: '',
         portfolio_url: '',
         website_url: '',
+        leetcode_url: '',
+        hackerrank_url: '',
+        kaggle_url: '',
     },
     education: [{ degree: '', institution: '', duration: '', description: '' }],
     experience: [{ title: '', organization: '', duration: '', description: '', bullets: [] }],

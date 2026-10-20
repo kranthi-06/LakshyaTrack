@@ -80,9 +80,13 @@ async def enhance_personal_info(
             request.dict(), request.target_role
         )
         return result
+    except RuntimeError as e:
+        # AI service unavailable (all providers failed)
+        logger.warning("AI service unavailable for personal info enhancement: %s", str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Resume builder personal info enhancement failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="AI enhancement failed")
+        raise HTTPException(status_code=500, detail="AI enhancement failed. Please try again.")
 
 
 @router.post("/enhance/education")
@@ -95,9 +99,12 @@ async def enhance_education(
             {"items": [item.dict() for item in request.items]}, request.target_role
         )
         return result
+    except RuntimeError as e:
+        logger.warning("AI service unavailable for education enhancement: %s", str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Resume builder education enhancement failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="AI enhancement failed")
+        raise HTTPException(status_code=500, detail="AI enhancement failed. Please try again.")
 
 
 @router.post("/enhance/experience")
@@ -110,9 +117,12 @@ async def enhance_experience(
             {"items": [item.dict() for item in request.items]}, request.target_role
         )
         return result
+    except RuntimeError as e:
+        logger.warning("AI service unavailable for experience enhancement: %s", str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Resume builder experience enhancement failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="AI enhancement failed")
+        raise HTTPException(status_code=500, detail="AI enhancement failed. Please try again.")
 
 
 @router.post("/enhance/projects")
@@ -125,9 +135,12 @@ async def enhance_projects(
             {"items": [item.dict() for item in request.items]}, request.target_role
         )
         return result
+    except RuntimeError as e:
+        logger.warning("AI service unavailable for projects enhancement: %s", str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Resume builder projects enhancement failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="AI enhancement failed")
+        raise HTTPException(status_code=500, detail="AI enhancement failed. Please try again.")
 
 
 @router.post("/enhance/skills")
@@ -140,9 +153,12 @@ async def enhance_skills(
             request.dict(), request.target_role
         )
         return result
+    except RuntimeError as e:
+        logger.warning("AI service unavailable for skills enhancement: %s", str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Resume builder skills enhancement failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="AI enhancement failed")
+        raise HTTPException(status_code=500, detail="AI enhancement failed. Please try again.")
 
 
 @router.post("/ats-check")

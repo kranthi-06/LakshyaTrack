@@ -41,7 +41,10 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
             const rd = editResume.resume_data;
             return {
                 target_role: editResume.target_role || rd.target_role || '',
-                personal: rd.personal || defaultResumeData.personal,
+                personal: {
+                    ...defaultResumeData.personal,
+                    ...rd.personal,
+                },
                 education: rd.education || defaultResumeData.education,
                 experience: rd.experience || defaultResumeData.experience,
                 projects: rd.projects || defaultResumeData.projects,

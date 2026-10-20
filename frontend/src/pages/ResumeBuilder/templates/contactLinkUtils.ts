@@ -11,7 +11,7 @@ import type { PersonalInfo } from '../types';
 
 const ALLOWED_URL_SCHEMES = new Set(['http:', 'https:']);
 
-export type ContactKind = 'email' | 'phone' | 'location' | 'linkedin' | 'github' | 'portfolio' | 'website';
+export type ContactKind = 'email' | 'phone' | 'location' | 'linkedin' | 'github' | 'portfolio' | 'website' | 'leetcode' | 'hackerrank' | 'kaggle';
 
 export interface ContactItem {
     kind: ContactKind;
@@ -123,6 +123,9 @@ export function buildContactItems(personal: PersonalInfo | undefined): ContactIt
         { kind: 'github', value: p.github_url, ariaLabel: 'GitHub profile', icon: '💻' },
         { kind: 'portfolio', value: p.portfolio_url, ariaLabel: 'Portfolio', icon: '🌐' },
         { kind: 'website', value: p.website_url, ariaLabel: 'Website', icon: '🌐' },
+        { kind: 'leetcode', value: p.leetcode_url, ariaLabel: 'LeetCode profile', icon: '🧠' },
+        { kind: 'hackerrank', value: p.hackerrank_url, ariaLabel: 'HackerRank profile', icon: '🏆' },
+        { kind: 'kaggle', value: p.kaggle_url, ariaLabel: 'Kaggle profile', icon: '📊' },
     ];
 
     for (const profile of profiles) {

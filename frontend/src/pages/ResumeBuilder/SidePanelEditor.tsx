@@ -403,6 +403,20 @@ export function SidePanelEditor({ data, onChange }: SidePanelEditorProps) {
                                         <input className={inputCls} value={data.personal.website_url || ''} onChange={e => updatePersonal('website_url', e.target.value)} placeholder="example.com" />
                                     </div>
                                 </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className={labelCls}>LeetCode</label>
+                                        <input className={inputCls} value={data.personal.leetcode_url || ''} onChange={e => updatePersonal('leetcode_url', e.target.value)} placeholder="leetcode.com/you" />
+                                    </div>
+                                    <div>
+                                        <label className={labelCls}>HackerRank</label>
+                                        <input className={inputCls} value={data.personal.hackerrank_url || ''} onChange={e => updatePersonal('hackerrank_url', e.target.value)} placeholder="hackerrank.com/you" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Kaggle</label>
+                                    <input className={inputCls} value={data.personal.kaggle_url || ''} onChange={e => updatePersonal('kaggle_url', e.target.value)} placeholder="kaggle.com/you" />
+                                </div>
                                 <div>
                                     <label className={labelCls}>Professional Summary</label>
                                     <textarea className={textareaCls} rows={5} value={data.personal.professional_summary} onChange={e => updatePersonal('professional_summary', e.target.value)} placeholder="Experienced professional with..." />
