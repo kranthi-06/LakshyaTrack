@@ -177,11 +177,13 @@ export function resolvePaletteSections(
         let zone: SectionZone;
         
         if (isStandard) {
-            label = SECTION_LABELS[id] || id;
+            // Fallback to id if label is missing, then to a human-readable version
+            label = SECTION_LABELS[id] || id.charAt(0).toUpperCase() + id.slice(1) || 'Section';
             zone = sectionZone(base, id);
         } else {
             const custom = (data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id);
-            label = custom?.title || 'Custom Section';
+            // Fallback for custom sections without titles
+            label = custom?.title?.trim() || 'Custom Section';
             // Use custom section's zone if specified, otherwise default to main
             zone = (custom?.zone === 'sidebar' ? 'sidebar' : 'main') as SectionZone;
         }
@@ -191,7 +193,7 @@ export function resolvePaletteSections(
             label,
             zone,
             visible: !hidden.has(id),
-            renderable: isStandard ? sectionHasContent(data, id) : Boolean((data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id)?.content.trim()),
+            renderable: isStandard ? sectionHasContent(data, id) : Boolean((data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id)?.content?.trim()),
         };
     });
 }

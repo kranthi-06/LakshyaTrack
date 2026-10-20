@@ -21,20 +21,36 @@ export async function exportToPDF(elementId: string): Promise<void> {
     clone.style.transform = 'none';
     clone.style.width = '794px'; // A4 width at 96 DPI
     clone.style.position = 'static';
+    clone.style.margin = '0';
+    clone.style.padding = '0';
     clone.removeAttribute('id');
 
-    // Create a container for the clone
+    // Remove any fixed positioning from children that could cause blank pages
+    const removeFixedPositions = (el: HTMLElement) => {
+        if (el.style.position === 'fixed' || el.style.position === 'absolute') {
+            el.style.position = 'relative';
+        }
+        Array.from(el.children).forEach(child => {
+            if (child instanceof HTMLElement) removeFixedPositions(child);
+        });
+    };
+    removeFixedPositions(clone);
+
+    // Create a container for the clone - use a better approach than off-screen
     const container = document.createElement('div');
     container.style.position = 'fixed';
-    container.style.left = '-9999px';
-    container.style.top = '0';
+    container.style.left = '0';
+    container.style.top = '-10000px'; // Move far above viewport but still renderable
     container.style.width = '794px';
+    container.style.height = 'auto';
     container.style.backgroundColor = 'white';
+    container.style.overflow = 'visible';
+    container.style.zIndex = '-1';
     container.appendChild(clone);
     document.body.appendChild(container);
 
     try {
-        // Configure html2pdf options
+        // Configure html2pdf options with improved page-break handling
         const opt: any = {
             margin: 0,
             filename: 'resume.pdf',
@@ -44,13 +60,28 @@ export async function exportToPDF(elementId: string): Promise<void> {
                 useCORS: true,
                 letterRendering: true,
                 logging: false,
+                windowWidth: 794, // Force canvas width to match A4
+                onclone: (clonedDoc: Document) => {
+                    // Ensure the cloned document has proper page-break styles
+                    const clonedElement = clonedDoc.body.firstChild as HTMLElement;
+                    if (clonedElement) {
+                        clonedElement.style.pageBreakInside = 'avoid';
+                        clonedElement.style.pageBreakBefore = 'auto';
+                        clonedElement.style.pageBreakAfter = 'auto';
+                    }
+                },
             },
             jsPDF: {
                 unit: 'px',
                 format: 'a4',
                 orientation: 'portrait',
             },
-            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+            pagebreak: { 
+                mode: ['css', 'legacy'], // Use CSS page-break rules first
+                before: '.page-break-before',
+                after: '.page-break-after',
+                avoid: '.page-break-avoid',
+            },
         };
 
         // Generate PDF
