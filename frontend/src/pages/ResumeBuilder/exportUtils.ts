@@ -79,6 +79,13 @@ export async function exportToPDF(elementId: string): Promise<void> {
             /* Hide scrollbars, borders, shadows in print */
             ::-webkit-scrollbar { display: none; }
 
+            /* Preserve anchor links for PDF hyperlink annotations */
+            a {
+                color: inherit !important;
+                text-decoration: inherit !important;
+                cursor: pointer;
+            }
+
             @media print {
                 html, body {
                     width: 210mm;
@@ -106,12 +113,28 @@ export async function exportToPDF(elementId: string): Promise<void> {
                     transform: none !important;
                     box-shadow: none !important;
                 }
+
+                /* Ensure links are preserved in print-to-PDF with proper colors */
+                a {
+                    color: inherit !important;
+                    text-decoration: inherit !important;
+                }
             }
         </style>
     `;
 
     // ── 3. Clone the resume element ────────────────────────────────
     const clone = source.cloneNode(true) as HTMLElement;
+
+    // Verify that all anchor hrefs are preserved in the clone
+    const sourceLinks = source.querySelectorAll('a[href]');
+    const cloneLinks = clone.querySelectorAll('a[href]');
+    if (sourceLinks.length !== cloneLinks.length) {
+        console.warn('exportToPDF: Link count mismatch after clone', {
+            source: sourceLinks.length,
+            clone: cloneLinks.length
+        });
+    }
 
     // Strip off any inline transforms the preview applied (scaling, etc.)
     clone.style.transform = 'none';
@@ -270,6 +293,7 @@ function inlineComputedStyles(sourceEl: Element, cloneEl: Element): void {
  * Post-processing: strip any remaining border styles from every element.
  * This catches borders that might have been set via inline style attributes
  * on the original template elements (not just computed styles).
+ * Also preserves anchor hrefs for DOCX hyperlinks.
  */
 function stripAllBorders(el: HTMLElement): void {
     const style = el.getAttribute('style') || '';
@@ -290,6 +314,15 @@ function stripAllBorders(el: HTMLElement): void {
     if (tag === 'TABLE' || tag === 'TD' || tag === 'TR' || tag === 'TH' || tag === 'TBODY') {
         const current = el.getAttribute('style') || '';
         el.setAttribute('style', `${current}; border: none !important; border-collapse: collapse;`);
+    }
+
+    // Preserve anchor hrefs for DOCX hyperlinks
+    if (tag === 'A' && el instanceof HTMLAnchorElement) {
+        const href = el.getAttribute('href');
+        if (href) {
+            // Ensure href is preserved in the clone
+            el.setAttribute('href', href);
+        }
     }
 
     Array.from(el.children).forEach(child => {
