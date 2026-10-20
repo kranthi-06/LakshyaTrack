@@ -1,4 +1,13 @@
-import { PDFDocument, PDFString, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib';
+import {
+    PDFDocument,
+    PDFString,
+    StandardFonts,
+    rgb,
+    type PDFFont,
+    type PDFImage,
+    type PDFPage,
+    type RGB,
+} from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import type { BaseTemplate } from '../templates/templateCatalog';
 import type { SectionZone } from '../sectionModel';
@@ -8,6 +17,7 @@ import type {
     ResumeDocumentSection,
     ResumeDocumentSkillGroup,
 } from './resumeDocument';
+import { CONTACT_ICON_PNGS } from './contactIconPngs';
 
 export const A4_WIDTH_PT = 595.28;
 export const A4_HEIGHT_PT = 841.89;
@@ -75,6 +85,8 @@ interface PdfTheme {
     projectBadges?: boolean;
     summaryBox?: boolean;
     avatar?: boolean;
+    /** Per-template sidebar section treatment shared with the live preview. */
+    sidebarSkills?: 'modern' | 'creative' | 'two-column' | 'infographic';
     background?: string;
     dark?: boolean;
     pageNumber?: boolean;
@@ -135,10 +147,11 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 uppercaseHeadings: true, headingLetterSpacing: 1, margin: 30, bottomMargin: 32,
                 sectionGap: 12, entryGap: 7, bulletGap: 2.5, headerBandHeight: 104,
                 headerBandText: WHITE, headerBandMuted: WHITE, contactStrip: '#F9FAFB',
+                summaryBox: true, sidebarSkills: 'creative',
                 columns: {
-                    widthPct: 0.35, background: '#F9FAFB', text: '#374151', muted: LIGHT_MUTED,
+                    widthPct: 0.35, background: '#FBFBFC', text: '#374151', muted: LIGHT_MUTED,
                     heading: color, chipBackground: tint(color, 0.85), chipText: color,
-                    headerInSidebar: false, padding: 20,
+                    headerInSidebar: false, padding: 22,
                 },
                 skills: 'chips', chipBorder: color,
             };
@@ -191,6 +204,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 contactColor: WHITE, headingColor: color, headingStyle: 'plain',
                 uppercaseHeadings: true, headingLetterSpacing: 1, margin: 24, bottomMargin: 30,
                 sectionGap: 11, entryGap: 7, bulletGap: 2.3, skills: 'bars',
+                sidebarSkills: 'two-column',
                 columns: {
                     widthPct: 0.38, background: color, text: WHITE, muted: '#FFFFFFCC',
                     heading: WHITE, chipBackground: '#FFFFFF33', chipText: WHITE,
@@ -259,6 +273,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 contactColor: WHITE, headingColor: color, headingStyle: 'plain',
                 uppercaseHeadings: true, headingLetterSpacing: 1, margin: 26, bottomMargin: 30,
                 sectionGap: 12, entryGap: 7, bulletGap: 2.4, skills: 'bars', avatar: true,
+                sidebarSkills: 'infographic',
                 columns: {
                     widthPct: 0.35, background: color, text: WHITE, muted: '#FFFFFFCC',
                     heading: WHITE, chipBackground: '#FFFFFF33', chipText: WHITE,
@@ -294,13 +309,14 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 8.8, smallSize: 7.8, headingSize: 8.1, lineHeight: 1.42,
                 text: '#374151', muted: LIGHT_MUTED, nameColor: INK, headlineColor: color,
                 contactColor: '#6B7280', headingColor: color, headingStyle: 'plain',
-                uppercaseHeadings: true, headingLetterSpacing: 1.1, margin: 30, bottomMargin: 32,
+                uppercaseHeadings: true, headingLetterSpacing: 1.1, margin: 26, bottomMargin: 32,
                 sectionGap: 12, entryGap: 8, bulletGap: 2.4, headerRule: 2.2,
                 headerRuleColor: color, skills: 'chips', chipBorder: tint(color, 0.25),
+                sidebarSkills: 'modern',
                 columns: {
-                    widthPct: 0.32, background: tint(color, 0.045), text: '#374151',
+                    widthPct: 0.32, background: tint(color, 0.035), text: '#374151',
                     muted: LIGHT_MUTED, heading: color, chipBackground: WHITE,
-                    chipText: '#374151', headerInSidebar: false, padding: 18,
+                    chipText: '#374151', headerInSidebar: false, padding: 22,
                 },
             };
     }
@@ -329,12 +345,18 @@ interface InlineContactOptions {
     separator?: string;
     short?: boolean;
     after?: number;
+    /** Contact glyphs are on by default to match the live preview. */
+    icons?: boolean;
 }
 
 interface InlineContactToken {
     text: string;
     href: string | null;
+    /** Width including the leading icon on the first chunk. */
     width: number;
+    /** Horizontal offset from the token origin to the text. */
+    textOffset: number;
+    icon: ResumeDocumentContact['kind'] | null;
     first: boolean;
 }
 
@@ -384,11 +406,18 @@ class PdfWriter {
     private currentIndex = 0;
     private current!: PageState;
     private readonly fonts: Record<'regular' | 'bold' | 'italic' | 'boldItalic', PDFFont>;
+    private readonly contactImages: Map<string, PDFImage>;
 
-    constructor(doc: PDFDocument, theme: PdfTheme, fonts: PdfWriter['fonts']) {
+    constructor(
+        doc: PDFDocument,
+        theme: PdfTheme,
+        fonts: PdfWriter['fonts'],
+        contactImages: Map<string, PDFImage>,
+    ) {
         this.doc = doc;
         this.theme = theme;
         this.fonts = fonts;
+        this.contactImages = contactImages;
         this.newPage();
     }
 
@@ -695,6 +724,7 @@ class PdfWriter {
             after?: number;
             width?: number;
             xOffset?: number;
+            letterSpacing?: number;
         } = {},
     ): void {
         const size = options.size ?? this.theme.bodySize;
@@ -710,6 +740,7 @@ class PdfWriter {
                 this.drawText(line, x, this.y(area.zone), font, size, color, {
                     align: options.align,
                     width,
+                    letterSpacing: options.letterSpacing,
                 });
             }
             this.setY(area.zone, this.y(area.zone) + lineHeight);
@@ -799,6 +830,34 @@ class PdfWriter {
         this.setY(area.zone, y + lineHeight + 2);
     }
 
+    private contactIconSize(size: number): number {
+        return size * 1.08;
+    }
+
+    /** Draw one contact glyph with its top-left at (x, yTop). */
+    private drawContactIcon(
+        kind: ResumeDocumentContact['kind'],
+        x: number,
+        yTop: number,
+        size: number,
+        color: string,
+    ): void {
+        // The embedded PNGs mirror the preview's two icon treatments. Choose
+        // by text luminance so light contact rows on dark sidebars use the
+        // white glyph and ordinary dark-on-white rows use the slate glyph.
+        const rgbColor = hexToRgb(color);
+        const luminance = rgbColor.red * 0.2126 + rgbColor.green * 0.7152 + rgbColor.blue * 0.0722;
+        const variant = luminance > 0.6 ? 'light' : 'dark';
+        const image = this.contactImages.get(`${kind}-${variant}`);
+        if (!image) return;
+        this.current.page.drawImage(image, {
+            x,
+            y: A4_HEIGHT_PT - yTop - size,
+            width: size,
+            height: size,
+        });
+    }
+
     private inlineContactLayout(
         contacts: ResumeDocumentContact[],
         options: InlineContactOptions,
@@ -816,16 +875,24 @@ class PdfWriter {
         const lineHeight = size * 1.55;
 
         // Split over-long values (long e-mail addresses, URLs) so a single
-        // contact can never draw outside the column.
+        // contact can never draw outside the column. The first chunk reserves
+        // room for the platform glyph, matching the editor's icon + label row.
+        const showIcons = options.icons !== false;
+        const iconSize = this.contactIconSize(size);
+        const iconGap = size * 0.38;
+        const iconWidth = showIcons ? iconSize + iconGap : 0;
         const tokens: InlineContactToken[] = [];
         for (const contact of contacts) {
             const text = sanitizePdfText(options.short ? contact.shortLabel : contact.label);
-            const chunks = this.wrap(text, font, size, options.width);
+            const chunks = this.wrap(text, font, size, Math.max(24, options.width - iconWidth));
             chunks.forEach((chunk, index) => {
+                const textOffset = index === 0 ? iconWidth : 0;
                 tokens.push({
                     text: chunk,
                     href: contact.href,
-                    width: font.widthOfTextAtSize(chunk, size),
+                    width: textOffset + font.widthOfTextAtSize(chunk, size),
+                    textOffset,
+                    icon: index === 0 && showIcons ? contact.kind : null,
                     first: index === 0,
                 });
             });
@@ -891,8 +958,17 @@ class PdfWriter {
                     cursor += separatorWidth + gap;
                 }
                 const token = tokens[item.index];
+                if (token.icon) {
+                    this.drawContactIcon(
+                        token.icon,
+                        cursor,
+                        y + (lineHeight - this.contactIconSize(size)) / 2,
+                        this.contactIconSize(size),
+                        options.color,
+                    );
+                }
                 this.current.page.drawText(token.text, {
-                    x: cursor,
+                    x: cursor + token.textOffset,
                     y: A4_HEIGHT_PT - y - size,
                     font,
                     size,
@@ -908,32 +984,63 @@ class PdfWriter {
 
     contactsStack(
         contacts: ResumeDocumentContact[],
-        options: { x: number; yTop: number; width: number; size: number; color: string; gap?: number; short?: boolean; zone?: Zone },
+        options: {
+            x: number;
+            yTop: number;
+            width: number;
+            size: number;
+            color: string;
+            gap?: number;
+            short?: boolean;
+            zone?: Zone;
+            icons?: boolean;
+        },
     ): number {
         const font = this.font();
         const lineHeight = options.size * 1.55;
         const gap = options.gap ?? 1;
         const zone = options.zone ?? 'sidebar';
+        const showIcons = options.icons !== false;
+        const iconSize = this.contactIconSize(options.size);
+        const textIndent = showIcons ? iconSize + options.size * 0.38 : 0;
+        const textWidth = Math.max(24, options.width - textIndent);
         let y = options.yTop;
         let pageIndex = this.pageIndex;
         for (const contact of contacts) {
             const text = sanitizePdfText(options.short ? contact.shortLabel : contact.label);
-            const lines = this.wrap(text, font, options.size, options.width).filter(Boolean);
-            for (const line of lines.length > 0 ? lines : [text]) {
+            const lines = this.wrap(text, font, options.size, textWidth).filter(Boolean);
+            for (const [index, line] of (lines.length > 0 ? lines : [text]).entries()) {
                 this.ensure(zone, lineHeight);
                 if (this.pageIndex !== pageIndex) {
                     pageIndex = this.pageIndex;
                     y = this.y(zone);
                 }
+                if (index === 0 && showIcons) {
+                    this.drawContactIcon(
+                        contact.kind,
+                        options.x,
+                        y + (lineHeight - iconSize) / 2,
+                        iconSize,
+                        options.color,
+                    );
+                }
                 const width = font.widthOfTextAtSize(line, options.size);
                 this.current.page.drawText(line, {
-                    x: options.x,
+                    x: options.x + textIndent,
                     y: A4_HEIGHT_PT - y - options.size,
                     font,
                     size: options.size,
                     color: hexToRgb(options.color),
                 });
-                if (contact.href) this.addLink(options.x, y, Math.min(width, options.width), lineHeight, contact.href);
+                if (contact.href) {
+                    this.addLink(
+                        options.x,
+                        y,
+                        Math.min(options.width, textIndent + width),
+                        lineHeight,
+                        contact.href,
+                    );
+                }
                 y += lineHeight;
             }
             y += gap;
@@ -943,15 +1050,18 @@ class PdfWriter {
 
     contactsStackHeight(
         contacts: ResumeDocumentContact[],
-        options: { width: number; size: number; gap?: number; short?: boolean },
+        options: { width: number; size: number; gap?: number; short?: boolean; icons?: boolean },
     ): number {
         const font = this.font();
         const lineHeight = options.size * 1.55;
         const gap = options.gap ?? 1;
+        const showIcons = options.icons !== false;
+        const textIndent = showIcons ? this.contactIconSize(options.size) + options.size * 0.38 : 0;
+        const textWidth = Math.max(24, options.width - textIndent);
         let height = 0;
         for (const contact of contacts) {
             const text = sanitizePdfText(options.short ? contact.shortLabel : contact.label);
-            const lines = this.wrap(text, font, options.size, options.width).filter(Boolean);
+            const lines = this.wrap(text, font, options.size, textWidth).filter(Boolean);
             height += Math.max(1, lines.length) * lineHeight + gap;
         }
         return height;
@@ -1480,7 +1590,6 @@ function drawSummary(writer: PdfWriter, section: ResumeDocumentSection, area: Ar
     const columns = area.zone === 'sidebar' ? theme.columns : undefined;
     const bodyColor = columns?.text ?? theme.text;
     if (theme.summaryBox) {
-        const y = writer.currentYFor(area.zone);
         const lines = writer.wrap(section.paragraphs?.join(' ') ?? '', writer.font(), theme.bodySize, area.width - 18);
         const boxHeight = lines.length * theme.bodySize * theme.lineHeight + 14;
         writer.ensure(area.zone, boxHeight);
@@ -1655,35 +1764,75 @@ function drawSkillGroup(
     const theme = writer.theme;
     const columns = theme.columns;
     const sidebar = Boolean(options.sidebar);
-    const labelColor = sidebar ? columns?.muted ?? theme.muted : theme.muted;
+    const groupLabel = group.label.toLowerCase();
+    const isSoftSkills = groupLabel.includes('soft');
+    const isTools = groupLabel.startsWith('tool');
+    const sidebarVariant = sidebar ? theme.sidebarSkills : undefined;
+    const labelColor = sidebar
+        ? sidebarVariant === 'modern' || sidebarVariant === 'creative'
+            ? columns?.heading ?? theme.headingColor
+            : columns?.muted ?? theme.muted
+        : theme.muted;
     const valueColor = sidebar ? columns?.text ?? theme.text : theme.text;
+    // The templates rename and merge the shared skill groups in their sidebars:
+    // Modern calls tools "Tools & Frameworks", Creative labels the technical
+    // group "Skills", and Infographic combines technical skills and tools.
+    const displayLabel = (sidebarVariant === 'modern' && isTools
+        ? 'Tools & Frameworks'
+        : sidebarVariant === 'creative' && !isSoftSkills && !isTools
+            ? 'Skills'
+            : group.label).toUpperCase();
+    const labelOffset = sidebarVariant === 'creative' ? 22 : 0;
 
     writer.ensure(area.zone, theme.smallSize * 2.2 + 8);
-    writer.paragraph(area, group.label, {
+    if (sidebarVariant === 'creative') {
+        writer.rect(area.x, writer.currentYFor(area.zone) + theme.smallSize * 0.45, 16, 2, labelColor);
+    }
+    writer.paragraph(area, displayLabel, {
         size: theme.smallSize,
         color: labelColor,
         weight: 'bold',
         after: 2,
+        xOffset: labelOffset,
+        width: area.width - labelOffset,
+        letterSpacing: 1,
     });
 
-    const groupLabel = group.label.toLowerCase();
-    const isSoftSkills = groupLabel.includes('soft');
-    const isTools = groupLabel.startsWith('tool');
-    // Both coloured-column templates use the `sidebar` header kind; the
-    // infographic variant is the one with an avatar.
-    const sidebarTemplate = theme.header === 'sidebar' ? (theme.avatar ? 'infographic' : 'two-column') : null;
-    if (theme.skills === 'chips'
-        || (sidebar && isTools && sidebarTemplate === 'two-column')
-        || (sidebar && isSoftSkills && sidebarTemplate === 'infographic')) {
+    const translucentChips = sidebarVariant === 'two-column' || sidebarVariant === 'infographic';
+    const chipsHere = (sidebar ? sidebarVariant === 'modern' : theme.skills === 'chips')
+        || (sidebarVariant === 'two-column' && isTools)
+        || (sidebarVariant === 'infographic' && isSoftSkills)
+        || (sidebarVariant === 'creative' && isTools);
+    if (chipsHere) {
+        const creativeTools = sidebarVariant === 'creative';
         writer.chips(area, group.values, {
-            background: sidebar
-                ? columns?.chipBackground ?? WHITE
-                : theme.chipBorder ? tint(theme.headingColor, 0.07) : '#F3F4F6',
-            text: sidebar ? columns?.chipText ?? valueColor : theme.chipBorder ? theme.text : valueColor,
-            border: sidebar ? undefined : theme.chipBorder,
-            opacity: sidebar ? 0.22 : 1,
+            background: creativeTools
+                ? columns?.heading ?? theme.headingColor
+                : sidebar ? columns?.chipBackground ?? WHITE
+                    : theme.chipBorder ? tint(theme.headingColor, 0.07) : '#F3F4F6',
+            text: creativeTools
+                ? WHITE
+                : sidebar ? columns?.chipText ?? valueColor : theme.chipBorder ? theme.text : valueColor,
+            border: sidebar
+                ? sidebarVariant === 'modern' ? theme.chipBorder : undefined
+                : theme.chipBorder,
+            opacity: creativeTools ? 0.8 : translucentChips ? 0.22 : 1,
         });
-    } else if (theme.skills === 'bars' && sidebar && !(isSoftSkills && sidebarTemplate)) {
+    } else if (sidebarVariant === 'creative') {
+        // Creative uses accent bullets for technical skills and plain lines for
+        // soft skills; only tools are chips.
+        group.values.forEach(value => {
+            writer.ensure(area.zone, theme.smallSize * 1.5);
+            const y = writer.currentYFor(area.zone);
+            if (!isSoftSkills) {
+                writer.circle(area.x + 2, y + theme.smallSize * 0.55, 1.2, columns?.heading ?? theme.headingColor);
+                writer.drawText(value, area.x + 9, y, writer.font(), theme.bodySize, valueColor);
+            } else {
+                writer.drawText(value, area.x, y, writer.font(), theme.bodySize, valueColor);
+            }
+            writer.advance(area.zone, theme.bodySize * 1.55);
+        });
+    } else if (theme.skills === 'bars' && sidebar && !(isSoftSkills && sidebarVariant)) {
         group.values.forEach((value, index) => {
             const pct = 70 + ((index * 7 + 11) % 30);
             writer.ensure(area.zone, 13);
@@ -1701,7 +1850,7 @@ function drawSkillGroup(
         group.values.forEach(value => {
             writer.ensure(area.zone, theme.smallSize * 1.5);
             const y = writer.currentYFor(area.zone);
-            writer.circle(area.x + 2, y + theme.smallSize * 0.55, 1.2, sidebar ? '#FFFFFFCC' : theme.headingColor);
+            writer.circle(area.x + 2, y + theme.smallSize * 0.55, 1.2, '#FFFFFFCC');
             writer.drawText(value, area.x + 9, y, writer.font(), theme.bodySize, valueColor);
             writer.advance(area.zone, theme.bodySize * 1.55);
         });
@@ -1768,8 +1917,23 @@ function drawSection(writer: PdfWriter, section: ResumeDocumentSection, area: Ar
         drawSummary(writer, section, area);
     } else if (isSkills) {
         if (groupedSkills) {
-            for (const group of section.skillGroups ?? []) {
-                drawSkillGroup(writer, group, area, { sidebar: area.zone === 'sidebar' });
+            const groups = section.skillGroups ?? [];
+            if (area.zone === 'sidebar' && theme.sidebarSkills === 'infographic') {
+                const softGroups = groups.filter(group => group.label.toLowerCase().includes('soft'));
+                const combined = groups
+                    .filter(group => !group.label.toLowerCase().includes('soft'))
+                    .flatMap(group => group.values)
+                    .slice(0, 10);
+                if (combined.length > 0) {
+                    drawSkillGroup(writer, { label: 'Skills', values: combined }, area, { sidebar: true });
+                }
+                for (const group of softGroups) {
+                    drawSkillGroup(writer, group, area, { sidebar: true });
+                }
+            } else {
+                for (const group of groups) {
+                    drawSkillGroup(writer, group, area, { sidebar: area.zone === 'sidebar' });
+                }
             }
         } else {
             const values = (section.skillGroups ?? []).flatMap(group => group.values);
@@ -1884,7 +2048,22 @@ export async function buildResumePdf(model: ResumeDocumentModel): Promise<BuiltR
         fonts = { regular: mono, bold: monoBold, italic: monoItalic, boldItalic: monoBoldItalic };
     }
 
-    const writer = new PdfWriter(doc, theme, fonts);
+    // Only embed the icon pairs the resume actually uses; a typical resume
+    // has three or four contact kinds, not all ten.
+    const contactKinds = new Set(model.contacts.map(contact => contact.kind));
+    const contactImages = new Map<string, PDFImage>();
+    await Promise.all(
+        [...contactKinds].flatMap(kind =>
+            (['dark', 'light'] as const).map(async variant => {
+                contactImages.set(
+                    `${kind}-${variant}`,
+                    await doc.embedPng(CONTACT_ICON_PNGS[kind][variant]),
+                );
+            }),
+        ),
+    );
+
+    const writer = new PdfWriter(doc, theme, fonts, contactImages);
     const headerBottom = drawHeader(writer, model);
 
     if (theme.columns) {

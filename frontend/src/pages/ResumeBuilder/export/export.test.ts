@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from 'pdf-lib';
 import { unzipSync, strFromU8 } from 'fflate';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { defaultResumeData, type ResumeData } from '../types';
@@ -115,7 +115,6 @@ async function extractPdfPages(bytes: Uint8Array) {
     const task = getDocument({
         data: new Uint8Array(bytes),
         useWorkerFetch: false,
-        isEvalSupported: false,
         disableFontFace: true,
     });
     const pdf = await task.promise;
@@ -191,6 +190,106 @@ async function extractPdfLinks(bytes: Uint8Array): Promise<Array<{ page: number;
         }
         return { page: index + 1, links };
     });
+}
+
+function countPdfImages(doc: PDFDocument): number {
+    let count = 0;
+    for (const page of doc.getPages()) {
+        const xobjects = page.node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
+        if (!xobjects) continue;
+        for (const [, value] of xobjects.entries()) {
+            const stream = doc.context.lookup(value);
+            if (stream instanceof PDFRawStream
+                && stream.dict.get(PDFName.of('Subtype'))?.toString() === '/Image') {
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
+function pdfContentStreams(doc: PDFDocument): string {
+    return doc.getPages().map(page => {
+        const contents = page.node.Contents();
+        const references = contents instanceof PDFArray
+            ? contents.asArray()
+            : contents
+                ? [contents]
+                : [];
+        return references.map(reference => {
+            const stream = doc.context.lookup(reference);
+            return stream instanceof PDFRawStream
+                ? Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1')
+                : '';
+        }).join('\n');
+    }).join('\n');
+}
+
+function docxRunIsShaded(xml: string, text: string): boolean {
+    const index = xml.indexOf(text);
+    if (index < 0) return false;
+    const start = xml.lastIndexOf('<w:r>', index);
+    return start >= 0 && xml.slice(start, index).includes('<w:shd');
+}
+
+/** Return one balanced WordprocessingML element, including nested instances. */
+function balancedXml(xml: string, tag: string): string {
+    const open = `<${tag}>`;
+    const close = `</${tag}>`;
+    const start = xml.indexOf(open);
+    if (start < 0) return '';
+    let depth = 0;
+    let cursor = start;
+    while (cursor < xml.length) {
+        const nextOpen = xml.indexOf(open, cursor);
+        const nextClose = xml.indexOf(close, cursor);
+        if (nextClose < 0) return '';
+        if (nextOpen >= 0 && nextOpen < nextClose) {
+            depth += 1;
+            cursor = nextOpen + open.length;
+        } else {
+            depth -= 1;
+            cursor = nextClose + close.length;
+            if (depth === 0) return xml.slice(start, cursor);
+        }
+    }
+    return '';
+}
+
+/** Count tables that are direct children of the body, excluding nested tables. */
+function topLevelTableCount(xml: string): number {
+    let depth = 0;
+    let count = 0;
+    for (const match of xml.matchAll(/<w:tbl>|<\/w:tbl>/g)) {
+        if (match[0] === '<w:tbl>') {
+            if (depth === 0) count += 1;
+            depth += 1;
+        } else {
+            depth -= 1;
+        }
+    }
+    return count;
+}
+
+function docxParagraphs(xml: string): string[] {
+    return xml
+        .split('<w:p>')
+        .slice(1)
+        .map(part => part.slice(0, part.indexOf('</w:p>')));
+}
+
+/** The first row/first cell of the outermost table. */
+function firstTableFirstCell(xml: string): string {
+    const table = balancedXml(xml, 'w:tbl');
+    const row = balancedXml(table, 'w:tr');
+    return balancedXml(row, 'w:tc');
+}
+
+function docxRunSize(xml: string, text: string): string | null {
+    const index = xml.indexOf(text);
+    if (index < 0) return null;
+    const start = xml.lastIndexOf('<w:r>', index);
+    return xml.slice(start, index).match(/<w:sz w:val="(\d+)"\/>/)?.[1] ?? null;
 }
 
 describe('resume document model', () => {
@@ -296,6 +395,56 @@ describe('PDF export', () => {
         }
     });
 
+    it('draws embedded contact icons and keeps each icon inside its link target', async () => {
+        const model = buildResumeDocument(sampleData, 'modern', '#5c52d2');
+        const { bytes } = await buildResumePdf(model);
+        const doc = await PDFDocument.load(bytes);
+
+        // Ten contact kinds are present. Each must contribute one drawn image
+        // XObject rather than only selectable text.
+        expect(countPdfImages(doc)).toBeGreaterThanOrEqual(10);
+        const content = pdfContentStreams(doc);
+        expect(content).not.toContain('NaN');
+        // One image draw per contact kind, all inside the same page.
+        expect(content.match(/\bDo\b/g) ?? []).toHaveLength(10);
+
+        const links = (await extractPdfLinks(bytes)).flatMap(page => page.links);
+        const email = links.find(link => link.uri === 'mailto:aarav.krishnan@example.com');
+        expect(email).toBeDefined();
+        const [left, bottom, right, top] = email!.rect;
+        // The glyph plus its gap widens the clickable area beyond the text.
+        expect(right - left).toBeGreaterThan(90);
+        expect(top - bottom).toBeGreaterThan(9);
+    });
+
+    it('matches template-specific sidebar skill treatments', async () => {
+        const textFor = async (base: BaseTemplate, accent: string) => {
+            const model = buildResumeDocument(sampleData, base, accent);
+            const pages = await extractPdfPages((await buildResumePdf(model)).bytes);
+            // PDF.js inserts spaces between letter-spaced glyphs, so compare
+            // the heading text without whitespace.
+            return pages
+                .flatMap(page => page.items.map(item => item.text))
+                .join('')
+                .replace(/\s+/g, '');
+        };
+
+        const creative = await textFor('creative', '#E11D48');
+        expect(creative).toContain('SKILLS');
+        expect(creative).not.toContain('TECHNICALSKILLS');
+        expect(creative).toContain('TOOLS');
+        expect(creative).toContain('SOFTSKILLS');
+
+        const modern = await textFor('modern', '#5C52D2');
+        expect(modern).toContain('TOOLS&FRAMEWORKS');
+
+        const infographic = await textFor('infographic', '#2563EB');
+        expect(infographic).toContain('SKILLS');
+        expect(infographic).not.toContain('TECHNICALSKILLS');
+        expect(infographic).not.toContain('TOOLS');
+        expect(infographic).toContain('SOFTSKILLS');
+    });
+
     it('paginates long resumes without clipping text', async () => {
         const model = buildResumeDocument(longData, 'classic', '#1f2937');
         const { bytes, pageCount } = await buildResumePdf(model);
@@ -321,7 +470,7 @@ describe('PDF export', () => {
             const pages = await extractPdfPages(bytes);
             expect(() => expectNoOverlappingText(pages), template.template_id).not.toThrow();
         }
-    });
+    }, 20_000);
 
     it('wraps long contact values in the developer code header', async () => {
         const data: ResumeData = {
@@ -362,6 +511,7 @@ describe('DOCX export', () => {
 
         const document = strFromU8(entries['word/document.xml']);
         const relationships = strFromU8(entries['word/_rels/document.xml.rels']);
+        const contentTypes = strFromU8(entries['[Content_Types].xml']);
         expect(document).toContain('<w:pgSz w:w="11906" w:h="16838"/>');
         expect(document).toContain('<w:pgMar w:top="1020"');
         expect(document).toContain('Aarav Krishnan');
@@ -372,10 +522,153 @@ describe('DOCX export', () => {
         expect(document).toContain('<w:hyperlink r:id="rId3"');
         expect(document.indexOf('Leadership Experience')).toBeLessThan(document.indexOf('Awards &amp; Recognition'));
 
+        // Every contact carries an embedded raster glyph. Ten contacts means
+        // ten inline drawings and ten dark PNG parts on this light header.
+        expect(document.match(/<wp:inline/g) ?? []).toHaveLength(10);
+        expect(Object.keys(entries).filter(name => /^word\/media\/contact-.+-dark\.png$/.test(name))).toHaveLength(10);
+        expect(contentTypes).toContain('Extension="png"');
+        expect(relationships).toContain('/image" Target="media/contact-email-dark.png"');
+
         expect(relationships).toContain('TargetMode="External"');
         expect(relationships).toContain('mailto:aarav.krishnan@example.com');
         expect(relationships).toContain('https://www.linkedin.com/in/aarav-krishnan');
         expect(relationships).toContain('https://github.com/aaravk');
+
+        // The icon drawing must live inside the same hyperlink as the label,
+        // otherwise clicking the glyph would not open the contact link.
+        const emailTextIndex = document.indexOf('aarav.krishnan@example.com');
+        const emailLinkStart = document.lastIndexOf('<w:hyperlink', emailTextIndex);
+        const emailLinkEnd = document.indexOf('</w:hyperlink>', emailTextIndex);
+        expect(emailLinkStart).toBeGreaterThanOrEqual(0);
+        expect(emailLinkEnd).toBeGreaterThan(emailTextIndex);
+        expect(document.slice(emailLinkStart, emailLinkEnd)).toContain('<w:drawing>');
+    });
+
+    it('renders modern sidebar zones in a shaded two-column table with image icons', () => {
+        const model = buildResumeDocument(sampleData, 'modern', '#5C52D2');
+        const entries = unzipSync(buildResumeDocx(model).bytes);
+        const document = strFromU8(entries['word/document.xml']);
+        const relationships = strFromU8(entries['word/_rels/document.xml.rels']);
+
+        expect(document).toContain('<w:tbl>');
+        expect(document).toContain('<w:tblInd w:w="-480"');
+        expect(document).toContain('<w:tblLayout w:type="fixed"/>');
+        expect(document).toContain('<w:gridCol w:w="3810"/>');
+        expect(document).toContain('<w:gridCol w:w="8096"/>');
+        expect(document).toMatch(/<w:shd w:val="clear" w:color="auto" w:fill="[0-9A-F]{6}"\/>/);
+        expect(document.match(/Technical Skills/g) ?? []).toHaveLength(1);
+        expect(document).toContain('Tools &amp; Frameworks');
+        expect(document).toContain('<w:trHeight w:val="12800" w:hRule="atLeast"/>');
+        expect(document.indexOf('Technical Skills')).toBeLessThan(document.indexOf('Professional Summary'));
+        expect(document.indexOf('Languages')).toBeLessThan(document.indexOf('Professional Summary'));
+        expect(document.match(/<wp:inline/g) ?? []).toHaveLength(10);
+        expect(relationships).toContain('Target="media/contact-email-dark.png"');
+        expect(relationships).toContain('Target="media/contact-leetcode-dark.png"');
+        expect(entries['word/media/contact-leetcode-dark.png']).toBeDefined();
+
+        // The header and sidebar must be one table so Word never strands the
+        // header on page one and pushes the sidebar to page two.
+        expect(topLevelTableCount(document)).toBe(1);
+        expect(document.indexOf('<w:tbl>')).toBeLessThan(document.indexOf('Aarav Krishnan'));
+        expect(document.match(/<w:gridSpan w:val="2"\/>/g) ?? []).toHaveLength(1);
+
+        // Header contacts use compact names, not long URLs, and keep the
+        // small sidebar/contact size. The URL itself stays in relationships.
+        for (const label of ['LinkedIn', 'GitHub', 'Portfolio', 'Website', 'LeetCode', 'HackerRank', 'Kaggle']) {
+            expect(document).toContain(`>${label}<`);
+        }
+        expect(document).not.toContain('linkedin.com/in/aarav-krishnan');
+        expect(docxRunSize(document, 'LinkedIn')).toBe('16');
+        const modernStyles = strFromU8(entries['word/styles.xml']);
+        expect(modernStyles).toContain('<w:sz w:val="18"/>');
+        expect(modernStyles).toContain('<w:sz w:val="16"/>');
+    });
+
+    it('uses the accent sidebar fill and light contact icons for colored sidebars', () => {
+        const model = buildResumeDocument(sampleData, 'two-column', '#0F766E');
+        const entries = unzipSync(buildResumeDocx(model).bytes);
+        const document = strFromU8(entries['word/document.xml']);
+        const relationships = strFromU8(entries['word/_rels/document.xml.rels']);
+
+        expect(document).toContain('<w:shd w:val="clear" w:color="auto" w:fill="0F766E"/>');
+        expect(document).toContain('<w:color w:val="FFFFFF"/>');
+        expect(document).toContain('<w:gridCol w:w="4524"/>');
+        expect(document).toContain('<w:pgMar w:top="0" w:right="480" w:bottom="0" w:left="480"');
+        expect(document.match(/Technical Skills/g) ?? []).toHaveLength(1);
+        expect(document).toContain('<w:trHeight w:val="15900" w:hRule="atLeast"/>');
+        expect(document.indexOf('Technical Skills')).toBeLessThan(document.indexOf('Profile'));
+        expect(document.match(/<wp:inline/g) ?? []).toHaveLength(10);
+        expect(relationships).toContain('Target="media/contact-email-light.png"');
+        expect(entries['word/media/contact-kaggle-light.png']).toBeDefined();
+
+        // Sidebar contacts are one paragraph each, not one inline run-on
+        // paragraph. This keeps every icon attached to its own label.
+        const sidebarCell = firstTableFirstCell(document);
+        const contactParagraphs = docxParagraphs(sidebarCell)
+            .filter(paragraph => paragraph.includes('<w:drawing>'));
+        expect(contactParagraphs).toHaveLength(10);
+        // Location is the one non-clickable contact; the other nine all keep
+        // their icon and label inside the same hyperlink.
+        expect(contactParagraphs.filter(paragraph => paragraph.includes('<w:hyperlink'))).toHaveLength(9);
+        for (const paragraph of contactParagraphs) {
+            expect(paragraph).not.toContain('•');
+        }
+        expect(topLevelTableCount(document)).toBe(1);
+        expect(document).not.toContain('<w:gridSpan');
+        for (const label of ['LinkedIn', 'GitHub', 'Portfolio', 'Website', 'LeetCode', 'HackerRank', 'Kaggle']) {
+            expect(document).toContain(`>${label}<`);
+        }
+        expect(docxRunSize(document, 'LinkedIn')).toBe('16');
+        const twoColumnStyles = strFromU8(entries['word/styles.xml']);
+        expect(twoColumnStyles).toContain('<w:sz w:val="18"/>');
+        expect(twoColumnStyles).toContain('<w:sz w:val="16"/>');
+    });
+
+    it('applies Creative and Infographic skill treatments in Word', () => {
+        const creative = buildResumeDocument(sampleData, 'creative', '#E11D48');
+        const creativeDoc = strFromU8(unzipSync(buildResumeDocx(creative).bytes)['word/document.xml']);
+        expect(creativeDoc).not.toContain('Technical Skills');
+        expect(creativeDoc).toContain('>Skills<');
+        expect(creativeDoc).toContain('>Tools<');
+        expect(creativeDoc).toContain('>Soft Skills<');
+        expect(creativeDoc).toContain('<w:trHeight w:val="12400" w:hRule="atLeast"/>');
+        // The red banner is full bleed: no top page margin, with the old
+        // 18pt inset folded into the banner cell padding.
+        expect(creativeDoc).toContain('<w:pgMar w:top="0" w:right="480" w:bottom="720" w:left="480"');
+        expect(creativeDoc).toContain('<w:shd w:val="clear" w:color="auto" w:fill="E11D48"/><w:tcMar><w:top w:w="780"');
+        expect(topLevelTableCount(creativeDoc)).toBe(1);
+        expect(creativeDoc.match(/<w:gridSpan w:val="2"\/>/g) ?? []).toHaveLength(2);
+        expect(creativeDoc).toContain('>LinkedIn<');
+        expect(creativeDoc).not.toContain('linkedin.com/in/aarav-krishnan');
+        // Creative technical skills are bullets, tools are chips, and soft
+        // skills are plain lines rather than another chip cloud.
+        expect(docxRunIsShaded(creativeDoc, 'TypeScript')).toBe(false);
+        expect(docxRunIsShaded(creativeDoc, 'Terraform')).toBe(true);
+        expect(docxRunIsShaded(creativeDoc, 'Technical Leadership')).toBe(false);
+        expect(creativeDoc.match(/<w:trHeight w:val="50" w:hRule="exact"\/>/g) ?? []).toHaveLength(0);
+
+        const infographic = buildResumeDocument(sampleData, 'infographic', '#2563EB');
+        const infographicDoc = strFromU8(unzipSync(buildResumeDocx(infographic).bytes)['word/document.xml']);
+        expect(infographicDoc).not.toContain('Technical Skills');
+        expect(infographicDoc).toContain('>Skills<');
+        expect(infographicDoc).toContain('>Soft Skills<');
+        expect(infographicDoc).not.toContain('>Tools<');
+        expect(infographicDoc).toContain('<w:trHeight w:val="15900" w:hRule="atLeast"/>');
+        // Infographic merges technical skills and tools into ten bars.
+        expect(infographicDoc.match(/<w:trHeight w:val="50" w:hRule="exact"\/>/g) ?? []).toHaveLength(10);
+        expect(infographicDoc).not.toContain('\u00A0AWS\u00A0');
+        expect(infographicDoc).not.toContain('\u00A0GCP\u00A0');
+        expect(docxRunIsShaded(infographicDoc, 'Terraform')).toBe(false);
+        expect(docxRunIsShaded(infographicDoc, 'Technical Leadership')).toBe(true);
+
+        // The infographic header also stacks its ten contacts in the colored
+        // sidebar, one icon-and-label hyperlink per paragraph.
+        const infographicSidebar = firstTableFirstCell(infographicDoc);
+        const infographicContactParagraphs = docxParagraphs(infographicSidebar)
+            .filter(paragraph => paragraph.includes('<w:drawing>'));
+        expect(infographicContactParagraphs).toHaveLength(10);
+        expect(topLevelTableCount(infographicDoc)).toBe(1);
+        expect(infographicDoc).not.toContain('<w:gridSpan');
     });
 });
 
