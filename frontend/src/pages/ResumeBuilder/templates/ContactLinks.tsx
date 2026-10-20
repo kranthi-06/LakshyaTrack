@@ -60,7 +60,7 @@ export function ContactLinks({
                     )}
                     {showIcons && item.icon && (
                         <span aria-hidden="true" className={`flex-shrink-0 ${iconClassName}`}>
-                            {item.icon}
+                            <item.icon className="w-3.5 h-3.5" />
                         </span>
                     )}
                     {item.href ? (

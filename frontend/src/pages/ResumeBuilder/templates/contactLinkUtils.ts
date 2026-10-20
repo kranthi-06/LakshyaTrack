@@ -1,4 +1,5 @@
 import type { PersonalInfo } from '../types';
+import { Mail, Phone, MapPin, Linkedin, Github, Globe, ExternalLink, Code, Trophy, Database } from 'lucide-react';
 
 /**
  * Contact-link normalization shared by every resume template.
@@ -21,8 +22,8 @@ export interface ContactItem {
     label: string;
     /** Accessible name; falls back to the visible label. */
     ariaLabel: string;
-    /** Short prefix used by templates that render icons. */
-    icon: string;
+    /** Lucide React icon component for authentic platform icons. */
+    icon: React.ComponentType<{ className?: string }>;
     /** Compact platform name for icon-only display (e.g., "LinkedIn", "GitHub"). Only for profile links. */
     platformName?: string;
 }
@@ -95,7 +96,7 @@ export function buildContactItems(personal: PersonalInfo | undefined): ContactIt
             href: emailHref,
             label: p.email.trim(),
             ariaLabel: `Email ${p.email.trim()}`,
-            icon: '✉',
+            icon: Mail,
         });
     }
 
@@ -106,7 +107,7 @@ export function buildContactItems(personal: PersonalInfo | undefined): ContactIt
             href: phoneHref,
             label: p.phone.trim(),
             ariaLabel: `Phone ${p.phone.trim()}`,
-            icon: '📱',
+            icon: Phone,
         });
     }
 
@@ -116,18 +117,18 @@ export function buildContactItems(personal: PersonalInfo | undefined): ContactIt
             href: null,
             label: p.location.trim(),
             ariaLabel: `Location ${p.location.trim()}`,
-            icon: '📍',
+            icon: MapPin,
         });
     }
 
-    const profiles: Array<{ kind: ContactKind; value: string | undefined; ariaLabel: string; icon: string; platformName: string }> = [
-        { kind: 'linkedin', value: p.linkedin_url, ariaLabel: 'LinkedIn profile', icon: '🔗', platformName: 'LinkedIn' },
-        { kind: 'github', value: p.github_url, ariaLabel: 'GitHub profile', icon: '💻', platformName: 'GitHub' },
-        { kind: 'portfolio', value: p.portfolio_url, ariaLabel: 'Portfolio', icon: '🌐', platformName: 'Portfolio' },
-        { kind: 'website', value: p.website_url, ariaLabel: 'Website', icon: '🌐', platformName: 'Website' },
-        { kind: 'leetcode', value: p.leetcode_url, ariaLabel: 'LeetCode profile', icon: '🧠', platformName: 'LeetCode' },
-        { kind: 'hackerrank', value: p.hackerrank_url, ariaLabel: 'HackerRank profile', icon: '🏆', platformName: 'HackerRank' },
-        { kind: 'kaggle', value: p.kaggle_url, ariaLabel: 'Kaggle profile', icon: '📊', platformName: 'Kaggle' },
+    const profiles: Array<{ kind: ContactKind; value: string | undefined; ariaLabel: string; icon: React.ComponentType<{ className?: string }>; platformName: string }> = [
+        { kind: 'linkedin', value: p.linkedin_url, ariaLabel: 'LinkedIn profile', icon: Linkedin, platformName: 'LinkedIn' },
+        { kind: 'github', value: p.github_url, ariaLabel: 'GitHub profile', icon: Github, platformName: 'GitHub' },
+        { kind: 'portfolio', value: p.portfolio_url, ariaLabel: 'Portfolio', icon: Globe, platformName: 'Portfolio' },
+        { kind: 'website', value: p.website_url, ariaLabel: 'Website', icon: ExternalLink, platformName: 'Website' },
+        { kind: 'leetcode', value: p.leetcode_url, ariaLabel: 'LeetCode profile', icon: Code, platformName: 'LeetCode' },
+        { kind: 'hackerrank', value: p.hackerrank_url, ariaLabel: 'HackerRank profile', icon: Trophy, platformName: 'HackerRank' },
+        { kind: 'kaggle', value: p.kaggle_url, ariaLabel: 'Kaggle profile', icon: Database, platformName: 'Kaggle' },
     ];
 
     for (const profile of profiles) {

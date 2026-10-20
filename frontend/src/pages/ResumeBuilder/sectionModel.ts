@@ -17,11 +17,11 @@ export type StandardSectionId = (typeof STANDARD_SECTIONS)[number];
 export type SectionId = StandardSectionId | `custom:${string}`;
 
 export const SECTION_LABELS: Record<StandardSectionId, string> = {
-    summary: 'Summary',
-    experience: 'Experience',
+    summary: 'Professional Summary',
+    experience: 'Work Experience',
     education: 'Education',
     projects: 'Projects',
-    skills: 'Skills',
+    skills: 'Technical Skills',
 };
 
 export const DEFAULT_SECTION_ORDER: StandardSectionId[] = ['summary', 'experience', 'education', 'projects', 'skills'];
