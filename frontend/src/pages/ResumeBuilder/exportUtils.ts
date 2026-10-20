@@ -16,13 +16,23 @@ export async function exportToPDF(elementId: string): Promise<void> {
     const source = document.getElementById(elementId);
     if (!source) throw new Error('Resume preview element not found');
 
+    // A4 dimensions in millimeters
+    const A4_WIDTH_MM = 210;
+    const A4_HEIGHT_MM = 297;
+    
+    // Convert to pixels at 96 DPI (standard screen DPI)
+    const A4_WIDTH_PX = Math.round(A4_WIDTH_MM * 96 / 25.4); // ~794px
+    const A4_HEIGHT_PX = Math.round(A4_HEIGHT_MM * 96 / 25.4); // ~1123px
+
     // Clone the element to avoid modifying the live preview
     const clone = source.cloneNode(true) as HTMLElement;
     clone.style.transform = 'none';
-    clone.style.width = '794px'; // A4 width at 96 DPI
+    clone.style.width = '100%';
     clone.style.position = 'static';
     clone.style.margin = '0';
     clone.style.padding = '0';
+    clone.style.boxSizing = 'border-box';
+    clone.style.overflow = 'hidden';
     clone.removeAttribute('id');
 
     // Remove any fixed positioning from children that could cause blank pages
@@ -30,6 +40,8 @@ export async function exportToPDF(elementId: string): Promise<void> {
         if (el.style.position === 'fixed' || el.style.position === 'absolute') {
             el.style.position = 'relative';
         }
+        // Ensure box-sizing is border-box to prevent padding overflow
+        el.style.boxSizing = 'border-box';
         Array.from(el.children).forEach(child => {
             if (child instanceof HTMLElement) removeFixedPositions(child);
         });
@@ -41,7 +53,7 @@ export async function exportToPDF(elementId: string): Promise<void> {
     container.style.position = 'fixed';
     container.style.left = '0';
     container.style.top = '-10000px'; // Move far above viewport but still renderable
-    container.style.width = '794px';
+    container.style.width = `${A4_WIDTH_PX}px`;
     container.style.height = 'auto';
     container.style.backgroundColor = 'white';
     container.style.overflow = 'visible';
@@ -52,7 +64,7 @@ export async function exportToPDF(elementId: string): Promise<void> {
     try {
         // Configure html2pdf options with improved page-break handling
         const opt: any = {
-            margin: 0,
+            margin: 0, // No margins - let the template handle its own padding
             filename: 'resume.pdf',
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: {
@@ -60,7 +72,7 @@ export async function exportToPDF(elementId: string): Promise<void> {
                 useCORS: true,
                 letterRendering: true,
                 logging: false,
-                windowWidth: 794, // Force canvas width to match A4
+                windowWidth: A4_WIDTH_PX,
                 onclone: (clonedDoc: Document) => {
                     // Ensure the cloned document has proper page-break styles
                     const clonedElement = clonedDoc.body.firstChild as HTMLElement;
@@ -68,12 +80,13 @@ export async function exportToPDF(elementId: string): Promise<void> {
                         clonedElement.style.pageBreakInside = 'avoid';
                         clonedElement.style.pageBreakBefore = 'auto';
                         clonedElement.style.pageBreakAfter = 'auto';
+                        clonedElement.style.boxSizing = 'border-box';
                     }
                 },
             },
             jsPDF: {
                 unit: 'px',
-                format: 'a4',
+                format: [A4_WIDTH_PX, A4_HEIGHT_PX],
                 orientation: 'portrait',
             },
             pagebreak: { 
