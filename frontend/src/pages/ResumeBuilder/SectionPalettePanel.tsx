@@ -126,7 +126,7 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
                                 }`}
                             >
                                 <GripVertical className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
-                                {renamingId === (custom?.id ?? null) ? (
+                                {renamingId !== null && renamingId === (custom?.id ?? null) ? (
                                     <input
                                         autoFocus
                                         value={renameValue}
@@ -141,7 +141,7 @@ export function SectionPalettePanel({ data, onChange, base, onClose }: SectionPa
                                         className={`flex-1 min-w-0 truncate text-[12px] font-bold text-left ${e.visible ? 'text-gray-900 dark:text-gray-50' : 'text-gray-500 dark:text-gray-400 line-through'} ${isCustom ? 'cursor-text' : 'cursor-default'}`}
                                         title={isCustom ? 'Rename section' : e.label}
                                     >
-                                        {e.label || 'Unnamed Section'}
+                                        {e.label || e.id || 'Unnamed Section'}
                                     </button>
                                 )}
                                 {!e.renderable && (

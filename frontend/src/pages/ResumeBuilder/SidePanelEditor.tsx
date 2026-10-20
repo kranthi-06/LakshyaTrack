@@ -262,8 +262,17 @@ export function SidePanelEditor({ data, onChange }: SidePanelEditorProps) {
     };
 
     const updateCustomSection = (id: string, patch: Partial<CustomSectionItem>) => {
+        // Ensure immutability - create new array and objects
+        const currentSections = data.custom_sections ?? [];
+        const updatedSections = currentSections.map(cs => {
+            if (cs.id === id) {
+                return { ...cs, ...patch };
+            }
+            return { ...cs }; // Return a copy to ensure immutability
+        });
+        
         onChange({
-            custom_sections: (data.custom_sections ?? []).map(cs => cs.id === id ? { ...cs, ...patch } : cs),
+            custom_sections: updatedSections,
         });
     };
 
