@@ -91,6 +91,20 @@ export function TwoColumnTemplate({ data, accentColor = '#0ea5e9' }: TemplatePro
                             </div>
                         </div>
                     );
+                    const customId = parseCustomSectionId(id);
+                    if (customId) {
+                        const entry = data.custom_sections?.find(cs => cs.id === customId);
+                        if (entry && entry.title) return (
+                            <CustomSectionBlock
+                                key={id}
+                                entry={entry}
+                                wrapperClass=""
+                                headingClass="text-[9px] font-black uppercase tracking-[0.2em] mb-2 opacity-70"
+                                bodyClass="text-[10px] opacity-90 leading-relaxed"
+                            />
+                        );
+                        return null;
+                    }
                     return null;
                 })}
             </div>
@@ -110,12 +124,12 @@ export function TwoColumnTemplate({ data, accentColor = '#0ea5e9' }: TemplatePro
                             <div className="space-y-4">
                                 {data.experience.filter(e => e.title).map((exp, i) => (
                                     <div key={i}>
-                                        <div className="flex justify-between items-start">
-                                            <div>
+                                        <div className="flex justify-between items-start gap-3">
+                                            <div className="min-w-0">
                                                 <p className="text-xs font-bold text-gray-900">{exp.title}</p>
                                                 <p className="text-[10px]" style={{ color: accentColor }}>{exp.organization}</p>
                                             </div>
-                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full text-gray-500 bg-gray-100 whitespace-nowrap">{exp.duration}</span>
+                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full text-gray-500 bg-gray-100 whitespace-nowrap flex-shrink-0">{exp.duration}</span>
                                         </div>
                                         {exp.bullets && exp.bullets.length > 0 ? (
                                             <ul className="mt-1.5 space-y-0.5 pl-3">

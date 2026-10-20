@@ -33,9 +33,9 @@ export function MinimalATSTemplate({ data, accentColor = '#111827' }: TemplatePr
                         <div className="space-y-4">
                             {data.experience.filter(e => e.title).map((exp, i) => (
                                 <div key={i}>
-                                    <div className="flex justify-between items-baseline">
-                                        <span className="text-xs font-bold text-gray-900">{exp.title}</span>
-                                        <span className="text-[10px] text-gray-500">{exp.duration}</span>
+                                    <div className="flex justify-between items-baseline gap-3">
+                                        <span className="text-xs font-bold text-gray-900 min-w-0 break-words">{exp.title}</span>
+                                        <span className="text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0">{exp.duration}</span>
                                     </div>
                                     <p className="text-[11px] text-gray-600">{exp.organization}</p>
                                     {exp.bullets && exp.bullets.length > 0 ? (
@@ -74,9 +74,9 @@ export function MinimalATSTemplate({ data, accentColor = '#111827' }: TemplatePr
                         <div className="space-y-2">
                             {data.education.filter(e => e.degree).map((ed, i) => (
                                 <div key={i}>
-                                    <div className="flex justify-between items-baseline">
-                                        <span className="text-xs font-bold text-gray-900">{ed.degree}</span>
-                                        <span className="text-[10px] text-gray-500">{ed.duration}</span>
+                                    <div className="flex justify-between items-baseline gap-3">
+                                        <span className="text-xs font-bold text-gray-900 min-w-0 break-words">{ed.degree}</span>
+                                        <span className="text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0">{ed.duration}</span>
                                     </div>
                                     <p className="text-[11px] text-gray-600">{ed.institution}</p>
                                     {ed.description && <p className="text-[11px] text-gray-500 mt-0.5">{ed.description}</p>}

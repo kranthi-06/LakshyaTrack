@@ -71,9 +71,9 @@ export function TimelineTemplate({ data, accentColor = '#6366f1' }: TemplateProp
                             {badgeLabel(entry.type)}
                         </span>
                         <h3 className="text-xs font-bold text-gray-900 mt-1">{entry.title}</h3>
-                        <div className="flex justify-between items-baseline">
-                            <p className="text-[10px]" style={{ color: accentColor }}>{entry.sub}</p>
-                            {entry.duration && <span className="text-[9px] text-gray-400">{entry.duration}</span>}
+                        <div className="flex justify-between items-baseline gap-2">
+                            <p className="text-[10px] min-w-0 break-words" style={{ color: accentColor }}>{entry.sub}</p>
+                            {entry.duration && <span className="text-[9px] text-gray-400 whitespace-nowrap flex-shrink-0">{entry.duration}</span>}
                         </div>
                         {entry.desc && <p className="text-[10px] text-gray-600 leading-[1.6] mt-1" style={entry.type === 'summary' ? { whiteSpace: 'pre-wrap' } : undefined}>{entry.desc}</p>}
                     </div>

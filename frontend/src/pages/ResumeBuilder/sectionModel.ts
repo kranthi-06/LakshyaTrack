@@ -133,7 +133,11 @@ export function resolveLayoutSections(data: ResumeData, base?: BaseEngineId): Se
     return order.filter(id => {
         if (hidden.has(id)) return false;
         if (isStandardSectionId(id)) return sectionHasContent(data, id);
-        return true;
+        // A newly added custom section starts empty. It should stay in the
+        // palette (so the user can fill it in) but must not render a heading
+        // with a blank body in the resume or in exports.
+        const custom = (data.custom_sections ?? []).find(cs => customSectionId(cs.id) === id);
+        return Boolean(custom?.title?.trim() && custom?.content?.trim());
     });
 }
 

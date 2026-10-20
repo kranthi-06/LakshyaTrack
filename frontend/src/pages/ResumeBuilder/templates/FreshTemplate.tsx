@@ -41,7 +41,7 @@ export function FreshTemplate({ data, accentColor = '#06b6d4' }: TemplateProps) 
                                 </h2>
                                 {data.experience.filter(e => e.title).map((exp, i) => (
                                     <div key={i} className="mb-4 pl-4" style={{ borderLeft: `2px solid ${accentColor}30` }}>
-                                        <div className="flex justify-between"><span className="text-xs font-bold">{exp.title}</span><span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${accentColor}10`, color: accentColor }}>{exp.duration}</span></div>
+                                        <div className="flex justify-between gap-3"><span className="text-xs font-bold min-w-0">{exp.title}</span><span className="text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0" style={{ backgroundColor: `${accentColor}10`, color: accentColor }}>{exp.duration}</span></div>
                                         <p className="text-[10px] font-bold" style={{ color: accentColor }}>{exp.organization}</p>
                                         {exp.bullets?.length ? <ul className="mt-1 pl-3 space-y-0.5">{exp.bullets.map((b, bi) => <li key={bi} className="text-[10px] text-gray-600 leading-[1.6] list-disc">{b}</li>)}</ul> : exp.description && <p className="text-[10px] text-gray-600 mt-1">{exp.description}</p>}
                                     </div>

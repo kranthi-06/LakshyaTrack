@@ -86,12 +86,12 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
                                         )}
                                     </div>
                                     <div className="pb-4 flex-1">
-                                        <div className="flex justify-between items-start">
-                                            <div>
+                                        <div className="flex justify-between items-start gap-3">
+                                            <div className="min-w-0">
                                                 <p className="text-xs font-bold text-gray-900">{exp.title}</p>
                                                 <p className="text-[10px] font-bold" style={{ color: accentColor }}>{exp.organization}</p>
                                             </div>
-                                            <span className="text-[9px] font-bold text-gray-400 px-2 py-0.5 bg-gray-50 rounded-full">{exp.duration}</span>
+                                            <span className="text-[9px] font-bold text-gray-400 px-2 py-0.5 bg-gray-50 rounded-full whitespace-nowrap flex-shrink-0">{exp.duration}</span>
                                         </div>
                                         {exp.bullets && exp.bullets.length > 0 ? (
                                             <ul className="mt-1.5 space-y-0.5">

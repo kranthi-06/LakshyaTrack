@@ -1,5 +1,6 @@
 import type { PersonalInfo } from '../types';
-import { Mail, Phone, MapPin, Linkedin, Github, Globe, ExternalLink, Code, Trophy, Database } from 'lucide-react';
+import { Mail, Phone, MapPin, Linkedin, Github, Globe, ExternalLink } from 'lucide-react';
+import { HackerRankIcon, KaggleIcon, LeetCodeIcon } from './BrandIcons';
 
 /**
  * Contact-link normalization shared by every resume template.
@@ -126,9 +127,9 @@ export function buildContactItems(personal: PersonalInfo | undefined): ContactIt
         { kind: 'github', value: p.github_url, ariaLabel: 'GitHub profile', icon: Github, platformName: 'GitHub' },
         { kind: 'portfolio', value: p.portfolio_url, ariaLabel: 'Portfolio', icon: Globe, platformName: 'Portfolio' },
         { kind: 'website', value: p.website_url, ariaLabel: 'Website', icon: ExternalLink, platformName: 'Website' },
-        { kind: 'leetcode', value: p.leetcode_url, ariaLabel: 'LeetCode profile', icon: Code, platformName: 'LeetCode' },
-        { kind: 'hackerrank', value: p.hackerrank_url, ariaLabel: 'HackerRank profile', icon: Trophy, platformName: 'HackerRank' },
-        { kind: 'kaggle', value: p.kaggle_url, ariaLabel: 'Kaggle profile', icon: Database, platformName: 'Kaggle' },
+        { kind: 'leetcode', value: p.leetcode_url, ariaLabel: 'LeetCode profile', icon: LeetCodeIcon, platformName: 'LeetCode' },
+        { kind: 'hackerrank', value: p.hackerrank_url, ariaLabel: 'HackerRank profile', icon: HackerRankIcon, platformName: 'HackerRank' },
+        { kind: 'kaggle', value: p.kaggle_url, ariaLabel: 'Kaggle profile', icon: KaggleIcon, platformName: 'Kaggle' },
     ];
 
     for (const profile of profiles) {

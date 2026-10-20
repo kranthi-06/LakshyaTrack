@@ -42,12 +42,12 @@ export function ExecutiveTemplate({ data, accentColor = '#0f172a' }: TemplatePro
                                 <div className="space-y-6">
                                     {data.experience.filter(e => e.title).map((exp, i) => (
                                         <div key={i}>
-                                            <div className="flex justify-between items-baseline pb-1 mb-2" style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                                <div>
+                                            <div className="flex justify-between items-baseline gap-3 pb-1 mb-2" style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <div className="min-w-0">
                                                     <span className="text-sm font-bold text-gray-900">{exp.title}</span>
                                                     <span className="text-xs text-gray-500 ml-3">{exp.organization}</span>
                                                 </div>
-                                                <span className="text-[10px] font-bold tracking-wider text-gray-400">{exp.duration}</span>
+                                                <span className="text-[10px] font-bold tracking-wider text-gray-400 whitespace-nowrap flex-shrink-0">{exp.duration}</span>
                                             </div>
                                             {exp.bullets && exp.bullets.length > 0 ? (
                                                 <ul className="space-y-1.5 pl-1">

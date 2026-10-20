@@ -17,7 +17,7 @@ export { CorporateTemplate } from './CorporateTemplate';
 export { FreshTemplate } from './FreshTemplate';
 
 // Template catalog (50+ templates)
-export { TEMPLATE_CATALOG, TEMPLATE_CATEGORIES, getTemplatesByCategory } from './templateCatalog';
+export { TEMPLATE_CATALOG, TEMPLATE_CATEGORIES, getTemplatesByCategory, resolveBaseTemplate } from './templateCatalog';
 export type { CatalogTemplate, TemplateCategory, BaseTemplate, ATSPriority, LayoutType } from './templateCatalog';
 
 // Color themes

@@ -93,6 +93,21 @@ export function CreativeTemplate({ data, accentColor = '#e11d48' }: TemplateProp
                                 </div>
                             </div>
                         );
+                        const customId = parseCustomSectionId(id);
+                        if (customId) {
+                            const entry = data.custom_sections?.find(cs => cs.id === customId);
+                            if (entry && entry.title) return (
+                                <CustomSectionBlock
+                                    key={id}
+                                    entry={entry}
+                                    wrapperClass=""
+                                    headingClass="text-[10px] font-black uppercase tracking-[0.2em] mb-3"
+                                    headingStyle={{ color: accentColor }}
+                                    bodyClass="text-[11px] text-gray-600 leading-relaxed font-medium"
+                                />
+                            );
+                            return null;
+                        }
                         return null;
                     })}
                 </div>
@@ -119,12 +134,12 @@ export function CreativeTemplate({ data, accentColor = '#e11d48' }: TemplateProp
                                             {i < data.experience.filter(e => e.title).length - 1 && (
                                                 <div className="absolute left-[3px] top-4 w-0.5 h-full" style={{ backgroundColor: `${accentColor}20` }} />
                                             )}
-                                            <div className="flex justify-between items-start">
-                                                <div>
+                                            <div className="flex justify-between items-start gap-3">
+                                                <div className="min-w-0">
                                                     <p className="text-sm font-bold text-gray-900">{exp.title}</p>
                                                     <p className="text-xs font-medium" style={{ color: accentColor }}>{exp.organization}</p>
                                                 </div>
-                                                <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap ml-4 px-2 py-0.5 bg-gray-50 rounded-full">{exp.duration}</span>
+                                                <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap ml-1 px-2 py-0.5 bg-gray-50 rounded-full flex-shrink-0">{exp.duration}</span>
                                             </div>
                                             {exp.bullets && exp.bullets.length > 0 ? (
                                                 <ul className="mt-2 space-y-1">

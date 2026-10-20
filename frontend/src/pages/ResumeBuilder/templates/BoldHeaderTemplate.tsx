@@ -31,7 +31,7 @@ export function BoldHeaderTemplate({ data, accentColor = '#dc2626' }: TemplatePr
                                 <h2 className="text-sm font-black uppercase mb-3" style={{ color: accentColor }}>Experience</h2>
                                 {data.experience.filter(e => e.title).map((exp, i) => (
                                     <div key={i} className="mb-4 pl-4" style={{ borderLeft: `3px solid ${accentColor}20` }}>
-                                        <div className="flex justify-between"><span className="text-xs font-bold">{exp.title}</span><span className="text-[10px] text-gray-400 font-bold">{exp.duration}</span></div>
+                                        <div className="flex justify-between gap-3"><span className="text-xs font-bold min-w-0">{exp.title}</span><span className="text-[10px] text-gray-400 font-bold whitespace-nowrap flex-shrink-0">{exp.duration}</span></div>
                                         <p className="text-[10px]" style={{ color: accentColor }}>{exp.organization}</p>
                                         {exp.bullets?.length ? <ul className="mt-1 space-y-0.5 pl-3">{exp.bullets.map((b, bi) => <li key={bi} className="text-[10px] text-gray-600 leading-[1.6] list-disc">{b}</li>)}</ul> : exp.description && <p className="text-[10px] text-gray-600 mt-1">{exp.description}</p>}
                                     </div>

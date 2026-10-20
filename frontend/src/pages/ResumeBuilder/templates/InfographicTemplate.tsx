@@ -54,6 +54,20 @@ export function InfographicTemplate({ data, accentColor = '#0891b2' }: TemplateP
                             ))}
                         </div>
                     );
+                    const customId = parseCustomSectionId(id);
+                    if (customId) {
+                        const entry = data.custom_sections?.find(cs => cs.id === customId);
+                        if (entry && entry.title) return (
+                            <CustomSectionBlock
+                                key={id}
+                                entry={entry}
+                                wrapperClass="mt-5"
+                                headingClass="text-[9px] font-black uppercase tracking-wider opacity-70 mb-2"
+                                bodyClass="text-[9px] opacity-80 leading-relaxed"
+                            />
+                        );
+                        return null;
+                    }
                     return null;
                 })}
             </div>
@@ -68,7 +82,7 @@ export function InfographicTemplate({ data, accentColor = '#0891b2' }: TemplateP
                             <h2 className="text-[10px] font-black uppercase tracking-wider mb-3" style={{ color: accentColor }}>Experience</h2>
                             {data.experience.filter(e => e.title).map((exp, i) => (
                                 <div key={i} className="mb-4">
-                                    <div className="flex justify-between"><span className="text-xs font-bold">{exp.title}</span><span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${accentColor}15`, color: accentColor }}>{exp.duration}</span></div>
+                                    <div className="flex justify-between gap-3"><span className="text-xs font-bold min-w-0">{exp.title}</span><span className="text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0" style={{ backgroundColor: `${accentColor}15`, color: accentColor }}>{exp.duration}</span></div>
                                     <p className="text-[10px]" style={{ color: accentColor }}>{exp.organization}</p>
                                     {exp.bullets?.length ? <ul className="mt-1 space-y-0.5 pl-3">{exp.bullets.map((b, bi) => <li key={bi} className="text-[10px] text-gray-600 leading-[1.6] list-disc">{b}</li>)}</ul> : exp.description && <p className="text-[10px] text-gray-600 mt-1">{exp.description}</p>}
                                 </div>

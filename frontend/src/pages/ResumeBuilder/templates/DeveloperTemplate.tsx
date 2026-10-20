@@ -32,7 +32,7 @@ export function DeveloperTemplate({ data, accentColor = '#22c55e' }: TemplatePro
                         {p.email && <div><span className="text-blue-400">email</span>: <a href={normalizeEmailHref(p.email) ?? undefined} className="text-amber-300 hover:underline">"{p.email}"</a>,</div>}
                         {p.phone && <div><span className="text-blue-400">phone</span>: <a href={normalizePhoneHref(p.phone) ?? undefined} className="text-amber-300 hover:underline">"{p.phone}"</a>,</div>}
                         {p.location && <div><span className="text-blue-400">location</span>: <span className="text-amber-300">"{p.location}"</span>,</div>}
-                        {([['linkedin', p.linkedin_url], ['github', p.github_url], ['portfolio', p.portfolio_url], ['website', p.website_url]] as const).map(([key, value]) => {
+                        {([['linkedin', p.linkedin_url], ['github', p.github_url], ['portfolio', p.portfolio_url], ['website', p.website_url], ['leetcode', p.leetcode_url], ['hackerrank', p.hackerrank_url], ['kaggle', p.kaggle_url]] as const).map(([key, value]) => {
                             const href = normalizeProfileUrl(value);
                             if (!href) return null;
                             return (

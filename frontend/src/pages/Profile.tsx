@@ -16,9 +16,11 @@ import {
     ModernTemplate, ClassicTemplate, CreativeTemplate, DeveloperTemplate,
     MinimalATSTemplate, AcademicTemplate, ExecutiveTemplate, TwoColumnTemplate,
     PortfolioTemplate, CompactTemplate, TimelineTemplate, ElegantTemplate,
-    BoldHeaderTemplate, InfographicTemplate, CorporateTemplate, FreshTemplate
+    BoldHeaderTemplate, InfographicTemplate, CorporateTemplate, FreshTemplate,
+    resolveBaseTemplate
 } from './ResumeBuilder/templates';
-import { exportToPDF } from './ResumeBuilder/exportUtils';
+import { buildResumeDocument } from './ResumeBuilder/export/resumeDocument';
+import { exportToPDF } from './ResumeBuilder/export/pdfExport';
 import type { BaseTemplate } from './ResumeBuilder/templates';
 import type { ResumeData } from './ResumeBuilder/types';
 
@@ -121,7 +123,7 @@ function LazyResumePreview({ resume, onDelete, onDownload, onEdit, downloadLocke
                     >
                         <div id={`resume-preview-${resume.id}`} className="w-full h-full">
                             <RenderTemplate
-                                base={resume.template_id as BaseTemplate}
+                                base={resolveBaseTemplate(resume.template_id)}
                                 data={resume.resume_data}
                                 color={resume.theme || '#5c52d2'}
                             />
@@ -334,7 +336,11 @@ export default function Profile() {
         try {
             await authorizeResumeDownload(resume.id);
             await refreshUsage();
-            await exportToPDF(`resume-preview-${resume.id}`);
+            const base = resolveBaseTemplate(resume.template_id);
+            await exportToPDF(
+                buildResumeDocument(resume.resume_data, base, resume.theme || '#5c52d2'),
+                `${(resume.resume_name || resume.resume_data?.personal?.full_name || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`,
+            );
         } catch (error) {
             const limitInfo = extractLimitExceededError(error);
             if (limitInfo) {

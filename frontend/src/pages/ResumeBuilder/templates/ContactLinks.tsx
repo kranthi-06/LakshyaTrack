@@ -52,14 +52,18 @@ export function ContactLinks({
     return (
         <div className={containerClass}>
             {items.map((item, index) => (
-                <span key={item.kind} className={`inline-flex items-center min-w-0 ${itemClassName || 'gap-1'}`}>
+                <span key={item.kind} className={`inline-flex items-center min-w-0 max-w-full ${itemClassName || 'gap-1'}`}>
                     {separator && index > 0 && (
-                        <span aria-hidden="true" className={separatorClassName}>
+                        <span aria-hidden="true" className={`flex-shrink-0 ${separatorClassName}`}>
                             {separator}
                         </span>
                     )}
                     {showIcons && item.icon && (
-                        <span aria-hidden="true" className={`flex-shrink-0 ${iconClassName}`}>
+                        // `flex` + `leading-none` gives the icon wrapper an exact
+                        // line-box height, so it stays optically centred with the
+                        // label at every font size instead of sitting on the
+                        // text baseline.
+                        <span aria-hidden="true" className={`flex items-center justify-center flex-shrink-0 leading-none ${iconClassName}`}>
                             <item.icon className="w-3.5 h-3.5" />
                         </span>
                     )}
@@ -71,12 +75,12 @@ export function ContactLinks({
                             // preview opens them in a new tab like a real document.
                             target={item.href.startsWith('http') ? '_blank' : undefined}
                             rel={item.href.startsWith('http') ? 'noopener noreferrer' : undefined}
-                            className={`break-all hover:underline ${linkClassName}`}
+                            className={`min-w-0 break-words [overflow-wrap:anywhere] hover:underline ${linkClassName}`}
                         >
                             {compactNames && item.platformName ? item.platformName : item.label}
                         </a>
                     ) : (
-                        <span className={`break-all ${linkClassName}`}>{item.label}</span>
+                        <span className={`min-w-0 break-words [overflow-wrap:anywhere] ${linkClassName}`}>{item.label}</span>
                     )}
                 </span>
             ))}

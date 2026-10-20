@@ -36,11 +36,11 @@ export function AcademicTemplate({ data, accentColor = '#1e40af' }: TemplateProp
                         <div className="space-y-3">
                             {data.education.filter(e => e.degree).map((ed, i) => (
                                 <div key={i}>
-                                    <div className="flex justify-between items-baseline">
-                                        <div>
-                                            <span className="text-xs font-bold text-gray-900">{ed.degree}</span>
+                                    <div className="flex justify-between items-baseline gap-3">
+                                        <div className="min-w-0">
+                                            <span className="text-xs font-bold text-gray-900 break-words">{ed.degree}</span>
                                         </div>
-                                        <span className="text-[10px] text-gray-500 italic">{ed.duration}</span>
+                                        <span className="text-[10px] text-gray-500 italic whitespace-nowrap flex-shrink-0">{ed.duration}</span>
                                     </div>
                                     <p className="text-[11px] text-gray-600 italic">{ed.institution}</p>
                                     {ed.description && <p className="text-[11px] text-gray-600 mt-1">{ed.description}</p>}
@@ -69,9 +69,9 @@ export function AcademicTemplate({ data, accentColor = '#1e40af' }: TemplateProp
                         <div className="space-y-3">
                             {data.experience.filter(e => e.title).map((exp, i) => (
                                 <div key={i}>
-                                    <div className="flex justify-between items-baseline">
-                                        <span className="text-xs font-bold text-gray-900">{exp.title}</span>
-                                        <span className="text-[10px] text-gray-500 italic">{exp.duration}</span>
+                                    <div className="flex justify-between items-baseline gap-3">
+                                        <span className="text-xs font-bold text-gray-900 min-w-0 break-words">{exp.title}</span>
+                                        <span className="text-[10px] text-gray-500 italic whitespace-nowrap flex-shrink-0">{exp.duration}</span>
                                     </div>
                                     <p className="text-[11px] text-gray-600 italic">{exp.organization}</p>
                                     {exp.bullets && exp.bullets.length > 0 ? (

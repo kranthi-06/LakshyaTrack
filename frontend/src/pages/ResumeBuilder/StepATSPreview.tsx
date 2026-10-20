@@ -6,6 +6,7 @@ import { authorizeResumeDownload } from '../../services/resumeStorage';
 import { extractLimitExceededError } from '../../services/api';
 import UpgradeModal from '../../components/UpgradeModal';
 import { useUsage } from '../../context/UsageContext';
+import { stringifyResumeJson } from './export/jsonExport';
 import type { ResumeData } from './types';
 
 export function StepATSPreview({ data, onChange }: { data: ResumeData; onChange: (d: Partial<ResumeData>) => void }) {
@@ -64,18 +65,12 @@ export function StepATSPreview({ data, onChange }: { data: ResumeData; onChange:
             await authorizeResumeDownload();
             await refreshUsage();
 
-            const output = {
-                meta: { generated_at: new Date().toISOString(), target_role: data.target_role, ats_score: ats?.score },
-                personal_info: data.personal,
-                education: data.education,
-                experience: data.experience,
-                projects: data.projects,
-                skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
-            };
-            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
+            const json = stringifyResumeJson(data, { atsScore: ats?.score });
+            const blob = new Blob([json], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
+            a.href = url; a.download = `${name}_Resume.json`; a.click();
             URL.revokeObjectURL(url);
         } catch (e) {
             const limitInfo = extractLimitExceededError(e);

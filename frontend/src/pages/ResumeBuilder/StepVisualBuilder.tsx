@@ -17,7 +17,10 @@ import {
 } from './templates';
 import type { BaseTemplate } from './templates';
 import type { ResumeData } from './types';
-import { exportToPDF, exportToDOCX } from './exportUtils';
+import { buildResumeDocument } from './export/resumeDocument';
+import { exportToPDF } from './export/pdfExport';
+import { exportToDOCX } from './export/docxExport';
+import { stringifyResumeJson } from './export/jsonExport';
 import { optimizeResumeContent } from '../../services/resumeBuilder';
 import { authorizeResumeDownload, saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
 import { extractLimitExceededError } from '../../services/api';
@@ -132,7 +135,13 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
     const [exporting, setExporting] = useState<string | null>(null);
     const [optimizing, setOptimizing] = useState(false);
     const [optimized, setOptimized] = useState(false);
-    const [previewScale, setPreviewScale] = useState(0.55);
+    // Fit the A4 preview inside the available canvas on first paint instead
+    // of forcing horizontal scrolling on phones. Users can still zoom with
+    // the range control afterwards.
+    const [previewScale, setPreviewScale] = useState(() => {
+        if (typeof window === 'undefined') return 0.55;
+        return Math.min(0.55, Math.max(0.3, (window.innerWidth - 48) / 794));
+    });
     const [showPanel, setShowPanel] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set(TEMPLATE_CATEGORIES));
@@ -311,6 +320,24 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
         return () => { document.body.style.overflow = ''; };
     }, [showFullPreview]);
 
+    // Escape dismisses the floating section editor and the mobile template
+    // drawer, matching the full-screen preview behaviour.
+    useEffect(() => {
+        if (!showPanel && !rightPanelOpen) return;
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            if (showPanel) {
+                setShowPanel(false);
+                return;
+            }
+            if (rightPanelOpen && window.matchMedia('(max-width: 767px)').matches) {
+                setRightPanelOpen(false);
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [showPanel, rightPanelOpen]);
+
     const toggleCategory = (cat: string) => {
         setExpandedCats(prev => {
             const next = new Set(prev);
@@ -362,7 +389,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
             try {
                 await authorizeResumeDownload();
                 await refreshUsage();
-                await exportToPDF('resume-preview-container');
+                await exportToPDF(buildResumeDocument(data, selected.base, accentColor));
             } catch (e) {
                 const limitInfo = extractLimitExceededError(e);
                 if (limitInfo) {
@@ -392,7 +419,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                 await authorizeResumeDownload();
                 await refreshUsage();
                 const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
-                await exportToDOCX('resume-preview-container', `${name}_Resume.doc`);
+                await exportToDOCX(buildResumeDocument(data, selected.base, accentColor), `${name}_Resume.docx`);
             } catch (e) {
                 const limitInfo = extractLimitExceededError(e);
                 if (limitInfo) {
@@ -561,18 +588,15 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     await authorizeResumeDownload();
                     await refreshUsage();
 
-                    const output = {
-                        meta: { generated_at: new Date().toISOString(), target_role: data.target_role, template: selectedId, ats_score: data.ats?.score },
-                        personal_info: data.personal,
-                        education: data.education,
-                        experience: data.experience,
-                        projects: data.projects,
-                        skills: { technical_skills: data.skills.technical_skills, tools: data.skills.tools, soft_skills: data.skills.soft_skills },
-                    };
-                    const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+                    const name = data.personal.full_name?.replace(/\s+/g, '_') || 'resume';
+                    const json = stringifyResumeJson(data, {
+                        template: selectedId,
+                        templateName: selected.name,
+                    });
+                    const blob = new Blob([json], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url; a.download = `resume-${Date.now()}.json`; a.click();
+                    a.href = url; a.download = `${name}_Resume.json`; a.click();
                     URL.revokeObjectURL(url);
                 } catch (e) {
                     const limitInfo = extractLimitExceededError(e);
@@ -625,7 +649,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {/* Zoom Control */}
                     <div className="hidden sm:flex items-center gap-2 bg-gray-50 dark:bg-slate-800 rounded-lg px-2.5 py-1.5">
                         <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">Zoom</span>
-                        <input type="range" min="0.3" max="1" step="0.05" value={previewScale} onChange={e => setPreviewScale(parseFloat(e.target.value))} className="w-16 h-1 accent-[#5c52d2]" />
+                        <input type="range" min="0.3" max="1" step="0.05" value={previewScale} onChange={e => setPreviewScale(parseFloat(e.target.value))} aria-label="Preview zoom" className="w-16 h-1 accent-[#5c52d2]" />
                         <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 w-7">{Math.round(previewScale * 100)}%</span>
                     </div>
 
@@ -642,6 +666,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setLeftPanelOpen(prev => !prev)}
+                        aria-expanded={leftPanelOpen}
+                        aria-label={leftPanelOpen ? 'Close sections panel' : 'Open sections panel'}
                         className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                             leftPanelOpen
                                 ? 'bg-purple-100 dark:bg-purple-900/40 text-[#5c52d2] dark:text-purple-300'
@@ -658,6 +684,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setShowFullPreview(true)}
+                        aria-label="Open full-screen resume preview"
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] text-white rounded-lg text-[10px] font-bold shadow-md shadow-purple-200/40 hover:shadow-lg transition-all"
                     >
                         <Maximize2 className="w-3 h-3" /> Preview
@@ -668,6 +695,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setRightPanelOpen(prev => !prev)}
+                        aria-expanded={rightPanelOpen}
+                        aria-label={rightPanelOpen ? 'Close templates panel' : 'Open templates panel'}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                             rightPanelOpen
                                 ? 'bg-purple-100 dark:bg-purple-900/40 text-[#5c52d2] dark:text-purple-300'
@@ -741,6 +770,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                 <button
                                     key={theme.id}
                                     onClick={() => setCustomColor(customColor === theme.color ? null : theme.color)}
+                                    aria-label={`Use ${theme.label} theme color`}
+                                    aria-pressed={customColor === theme.color}
                                     className={`w-4 h-4 rounded transition-all flex items-center justify-center ${customColor === theme.color ? 'ring-2 ring-offset-1 ring-gray-300 scale-110' : 'opacity-50 hover:opacity-100 hover:scale-105'}`}
                                     style={{ backgroundColor: theme.color }}
                                     title={theme.label}
@@ -749,7 +780,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                 </button>
                             ))}
                             {customColor && (
-                                <button onClick={() => setCustomColor(null)} className="text-[8px] text-gray-400 hover:text-gray-600 ml-1 underline">Reset</button>
+                                <button onClick={() => setCustomColor(null)} aria-label="Reset theme color" className="text-[8px] text-gray-400 hover:text-gray-600 ml-1 underline">Reset</button>
                             )}
                         </div>
                     </div>
@@ -810,7 +841,12 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         <div className="flex justify-center py-6 px-4" style={{ minHeight: '100%' }}>
                             <div
                                 className={`shadow-2xl border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden relative bg-white flex-shrink-0 resume-protected-paper ${isCapturing ? 'resume-capturing' : ''}`}
-                                style={{ width: `${794 * previewScale}px`, transformOrigin: 'top center', ...paperProtectionStyle }}
+                                style={{
+                                    width: `${794 * previewScale}px`,
+                                    height: `${pageCount * A4_PAGE_HEIGHT * previewScale}px`,
+                                    transformOrigin: 'top center',
+                                    ...paperProtectionStyle,
+                                }}
                                 ref={inlinePaperRef}
                                 {...paperProtectionHandlers}
                             >
@@ -899,6 +935,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         </div>
                         <button
                             onClick={() => setRightPanelOpen(false)}
+                            aria-label="Close templates panel"
                             className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 dark:text-gray-500 transition-colors"
                         >
                             <X className="w-3.5 h-3.5" />
@@ -912,6 +949,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                             <input
                                 type="text"
                                 placeholder="Search templates..."
+                                aria-label="Search templates"
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
                                 className="w-full pl-7 pr-3 py-2 text-[11px] border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 dark:focus:ring-purple-800 focus:border-[#5c52d2] bg-gray-50/50 dark:bg-slate-800/50 text-gray-700 dark:text-gray-300"
@@ -937,6 +975,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                             <button
                                                 key={`recent-${tmpl.template_id}`}
                                                 onClick={() => selectTemplate(tmpl.template_id)}
+                                                aria-pressed={isSelected}
+                                                aria-label={`${tmpl.name} template`}
                                                 className={`relative p-1.5 rounded-xl border-2 text-left transition-all ${isSelected
                                                     ? 'border-[#5c52d2] bg-purple-50/50 dark:bg-purple-900/30 shadow-md'
                                                     : 'border-gray-100 dark:border-slate-700 hover:border-gray-200 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50'
@@ -967,6 +1007,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                 <div key={cat} className="mb-1">
                                     <button
                                         onClick={() => toggleCategory(cat)}
+                                        aria-expanded={isExpanded}
                                         className="sticky top-0 z-10 w-full flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm"
                                     >
                                         <span className="text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -994,6 +1035,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                                                 whileHover={{ scale: 1.05 }}
                                                                 whileTap={{ scale: 0.95 }}
                                                                 onClick={() => selectTemplate(tmpl.template_id)}
+                                                                aria-pressed={isSelected}
+                                                                aria-label={`${tmpl.name} template, ATS ${tmpl.ats_priority}`}
                                                                 className={`relative p-1.5 rounded-xl border-2 text-left transition-all ${isSelected
                                                                     ? 'border-[#5c52d2] bg-purple-50/50 dark:bg-purple-900/30 shadow-md'
                                                                     : 'border-gray-100 dark:border-slate-700 hover:border-gray-200 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50'
@@ -1031,11 +1074,14 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {rightPanelOpen && (
                         <motion.div
                             key="mobile-template-drawer"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Template picker"
                             initial={{ x: '100%' }}
                             animate={{ x: 0 }}
                             exit={{ x: '100%' }}
                             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-                            className="md:hidden fixed right-0 top-0 h-full w-[320px] z-50 bg-white dark:bg-slate-900 shadow-2xl border-l border-gray-200 dark:border-slate-700 flex flex-col"
+                            className="md:hidden fixed right-0 top-0 h-full w-[320px] max-w-[calc(100vw-2rem)] z-50 bg-white dark:bg-slate-900 shadow-2xl border-l border-gray-200 dark:border-slate-700 flex flex-col"
                         >
                             {/* Drawer Header */}
                             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700 flex-shrink-0">
@@ -1043,7 +1089,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                     <Layers className="w-4 h-4 text-[#5c52d2]" />
                                     <h3 className="text-xs font-black text-gray-700 dark:text-gray-200 uppercase tracking-wider">Templates</h3>
                                 </div>
-                                <button onClick={() => setRightPanelOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-gray-500">
+                                <button onClick={() => setRightPanelOpen(false)} aria-label="Close template picker" className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-gray-500">
                                     <X className="w-4 h-4" />
                                 </button>
                             </div>
@@ -1054,6 +1100,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                     <input
                                         type="text"
                                         placeholder="Search templates..."
+                                        aria-label="Search templates"
                                         value={searchQuery}
                                         onChange={e => setSearchQuery(e.target.value)}
                                         className="w-full pl-7 pr-3 py-2 text-[11px] border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-[#5c52d2] bg-gray-50/50 dark:bg-slate-800/50"
@@ -1070,6 +1117,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                         <div key={cat} className="mb-1">
                                             <button
                                                 onClick={() => toggleCategory(cat)}
+                                                aria-expanded={isExpanded}
                                                 className="w-full flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800"
                                             >
                                                 <span className="text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1086,6 +1134,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                                             <button
                                                                 key={tmpl.template_id}
                                                                 onClick={() => { selectTemplate(tmpl.template_id); setRightPanelOpen(false); }}
+                                                                aria-pressed={isSelected}
+                                                                aria-label={`${tmpl.name} template`}
                                                                 className={`relative p-1.5 rounded-xl border-2 text-left transition-all ${isSelected
                                                                     ? 'border-[#5c52d2] bg-purple-50/50 shadow-md'
                                                                     : 'border-gray-100 hover:border-gray-200 bg-white'
@@ -1118,6 +1168,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {rightPanelOpen && (
                         <motion.div
                             key="mobile-backdrop"
+                            aria-hidden="true"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -1138,6 +1189,8 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         drag
                         dragMomentum={false}
                         dragElastic={0}
+                        role="dialog"
+                        aria-label="Resume section editor"
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
@@ -1145,9 +1198,9 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         className="fixed z-50"
                         style={{
                             right: '16px',
-                            top: 'calc(50% - 260px)',
-                            width: '340px',
-                            height: '520px',
+                            top: 'max(16px, calc(50% - 260px))',
+                            width: 'min(340px, calc(100vw - 24px))',
+                            height: 'min(520px, calc(100vh - 32px))',
                         }}
                     >
                         <div className="w-full h-full bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden"
@@ -1164,6 +1217,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                 </div>
                                 <button
                                     onClick={() => setShowPanel(false)}
+                                    aria-label="Minimize section editor"
                                     className="w-6 h-6 flex items-center justify-center rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
                                     title="Minimize Editor"
                                 >
@@ -1208,6 +1262,9 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {showFullPreview && (
                         <motion.div
                             key="fullscreen-preview"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Full-screen resume preview"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -1220,6 +1277,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                 whileHover={{ scale: 1.15, rotate: 90 }}
                                 whileTap={{ scale: 0.9 }}
                                 onClick={() => setShowFullPreview(false)}
+                                aria-label="Close preview"
                                 className="absolute top-4 right-4 z-[110] w-10 h-10 flex items-center justify-center rounded-full bg-white/15 hover:bg-red-500/80 text-white/80 hover:text-white transition-all duration-200 shadow-lg backdrop-blur-sm border border-white/10 hover:border-red-400/50"
                                 title="Close Preview (ESC)"
                             >
@@ -1336,6 +1394,9 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {showNameModal && (
                         <motion.div
                             key="name-modal"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="resume-name-modal-title"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -1352,7 +1413,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                 onClick={e => e.stopPropagation()}
                             >
                                 <div className="bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] px-8 py-6">
-                                    <h3 className="text-xl font-black text-white">Name Your Resume</h3>
+                                    <h3 id="resume-name-modal-title" className="text-xl font-black text-white">Name Your Resume</h3>
                                     <p className="text-white/70 text-sm font-medium mt-1">Give it a memorable name so you can find it later</p>
                                 </div>
                                 <div className="p-8 space-y-6">
@@ -1362,8 +1423,9 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                         </div>
                                     )}
                                     <div className="space-y-2">
-                                        <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Resume Name</label>
+                                        <label htmlFor="resume-name-input" className="text-xs font-black text-gray-500 uppercase tracking-widest">Resume Name</label>
                                         <input
+                                            id="resume-name-input"
                                             type="text"
                                             value={resumeNameInput}
                                             onChange={e => setResumeNameInput(e.target.value)}
@@ -1405,6 +1467,9 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                     {showSaveModeModal && (
                         <motion.div
                             key="save-mode-modal"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="save-mode-modal-title"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -1421,7 +1486,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                                 onClick={e => e.stopPropagation()}
                             >
                                 <div className="bg-gradient-to-r from-[#5c52d2] to-[#7c3aed] px-8 py-6">
-                                    <h3 className="text-xl font-black text-white">Save Changes</h3>
+                                    <h3 id="save-mode-modal-title" className="text-xl font-black text-white">Save Changes</h3>
                                     <p className="text-white/70 text-sm font-medium mt-1">
                                         How would you like to save "<span className="text-white font-bold">{editMeta?.originalName}</span>"?
                                     </p>

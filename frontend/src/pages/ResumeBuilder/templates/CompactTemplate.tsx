@@ -26,7 +26,7 @@ export function CompactTemplate({ data, accentColor = '#334155' }: TemplateProps
                         <h2 className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: accentColor }}>Experience</h2>
                         {data.experience.filter(e => e.title).map((exp, i) => (
                             <div key={i} className="mb-1.5">
-                                <div className="flex justify-between"><span className="text-[10px] font-bold">{exp.title} — {exp.organization}</span><span className="text-[8.5px] text-gray-400">{exp.duration}</span></div>
+                                <div className="flex justify-between gap-2"><span className="text-[10px] font-bold min-w-0">{exp.title} — {exp.organization}</span><span className="text-[8.5px] text-gray-400 whitespace-nowrap flex-shrink-0">{exp.duration}</span></div>
                                 {exp.bullets?.length ? <ul className="pl-3 mt-0.5">{exp.bullets.map((b, bi) => <li key={bi} className="text-[9.5px] text-gray-600 leading-[1.4] list-disc">{b}</li>)}</ul> : exp.description && <p className="text-[9.5px] text-gray-600">{exp.description}</p>}
                             </div>
                         ))}
@@ -42,7 +42,7 @@ export function CompactTemplate({ data, accentColor = '#334155' }: TemplateProps
                     <div key={id} className="mb-2">
                         <h2 className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: accentColor }}>Education</h2>
                         {data.education.filter(e => e.degree).map((ed, i) => (
-                            <div key={i} className="flex justify-between"><span className="text-[10px] font-bold">{ed.degree} — {ed.institution}</span><span className="text-[8.5px] text-gray-400">{ed.duration}</span></div>
+                            <div key={i} className="flex justify-between gap-2"><span className="text-[10px] font-bold min-w-0">{ed.degree} — {ed.institution}</span><span className="text-[8.5px] text-gray-400 whitespace-nowrap flex-shrink-0">{ed.duration}</span></div>
                         ))}
                     </div>
                 );

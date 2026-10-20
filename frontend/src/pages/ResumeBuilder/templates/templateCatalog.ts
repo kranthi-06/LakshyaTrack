@@ -114,6 +114,29 @@ export const TEMPLATE_CATALOG: CatalogTemplate[] = [
     { template_id: 'min-two-col', name: 'Minimal Two-Col', category: 'Minimal / One-page', base: 'two-column', layout_type: 'two-column', ats_priority: 'medium', recommended_for_roles: ['Balanced Layout'], default_color: '#475569' },
 ];
 
+const BASE_TEMPLATES: readonly BaseTemplate[] = [
+    'modern', 'classic', 'creative', 'developer',
+    'minimal-ats', 'academic', 'executive', 'two-column', 'portfolio',
+    'compact', 'timeline', 'elegant', 'bold-header', 'infographic', 'corporate', 'fresh',
+];
+
+/**
+ * Resolve a stored `template_id` to the base engine that renders it.
+ *
+ * Saved resumes store the catalog id (for example `ats-modern`), while older
+ * records may contain the base engine name (`modern`). Both forms are accepted
+ * so profile previews and downloads keep using the same layout as the editor.
+ */
+export function resolveBaseTemplate(templateId: string | null | undefined): BaseTemplate {
+    if (!templateId) return 'modern';
+    const catalog = TEMPLATE_CATALOG.find(template => template.template_id === templateId);
+    if (catalog) return catalog.base;
+    if ((BASE_TEMPLATES as readonly string[]).includes(templateId)) {
+        return templateId as BaseTemplate;
+    }
+    return 'modern';
+}
+
 /** All available categories, ordered */
 export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
     'ATS / Recruiter',

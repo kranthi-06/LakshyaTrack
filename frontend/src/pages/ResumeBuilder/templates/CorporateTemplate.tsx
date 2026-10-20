@@ -34,7 +34,7 @@ export function CorporateTemplate({ data, accentColor = '#1e3a5f' }: TemplatePro
                                 <h2 className="text-xs font-bold uppercase pb-1 mb-3" style={{ color: accentColor, borderBottom: `2px solid ${accentColor}` }}>Professional Experience</h2>
                                 {data.experience.filter(e => e.title).map((exp, i) => (
                                     <div key={i} className="mb-4">
-                                        <div className="flex justify-between"><div><span className="text-xs font-bold">{exp.title}</span><span className="text-[10px] text-gray-500 ml-2">| {exp.organization}</span></div><span className="text-[10px] font-bold" style={{ color: accentColor }}>{exp.duration}</span></div>
+                                        <div className="flex justify-between gap-3"><div className="min-w-0"><span className="text-xs font-bold">{exp.title}</span><span className="text-[10px] text-gray-500 ml-2">| {exp.organization}</span></div><span className="text-[10px] font-bold whitespace-nowrap flex-shrink-0" style={{ color: accentColor }}>{exp.duration}</span></div>
                                         {exp.bullets?.length ? <ul className="mt-1.5 pl-4 space-y-0.5">{exp.bullets.map((b, bi) => <li key={bi} className="text-[11px] text-gray-600 leading-[1.6] list-disc">{b}</li>)}</ul> : exp.description && <p className="text-[11px] text-gray-600 mt-1">{exp.description}</p>}
                                     </div>
                                 ))}
