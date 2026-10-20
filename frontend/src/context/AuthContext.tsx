@@ -63,6 +63,11 @@ const USER_CACHE_KEY = 'auth:user-cache';
 const SUB_CACHE_KEY = 'sub:status-cache';
 const USAGE_CACHE_KEY = 'usage:status-cache';
 
+// Retry configuration for transient network errors
+const MAX_RETRY_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 10000;
+
 function getGoogleOAuthRedirectUrl(): string {
     const envOrigin =
         import.meta.env.VITE_PUBLIC_APP_URL ||
@@ -71,6 +76,40 @@ function getGoogleOAuthRedirectUrl(): string {
 
     const baseOrigin = (envOrigin || window.location.origin).replace(/\/$/, '');
     return `${baseOrigin}/auth/callback`;
+}
+
+/**
+ * Calculate retry delay with exponential backoff and jitter.
+ * Prevents thundering herd when multiple clients retry simultaneously.
+ */
+function getRetryDelay(attempt: number): number {
+    const exponentialDelay = Math.min(BASE_RETRY_DELAY_MS * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);
+    const jitter = Math.random() * 0.3 * exponentialDelay; // ±15% jitter
+    return exponentialDelay + jitter;
+}
+
+/**
+ * Determine if an error is retryable (transient network error, timeout, 5xx server error).
+ */
+function isRetryableError(err: any): boolean {
+    if (!err) return false;
+    
+    // Network errors (no response)
+    if (!err.response && !err.request) return true;
+    
+    // Timeout errors
+    if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout')) {
+        return true;
+    }
+    
+    // 5xx server errors (temporary outages)
+    const status = err.response?.status;
+    if (status && status >= 500 && status < 600) return true;
+    
+    // Network errors
+    if (err.code === 'ERR_NETWORK' || err.code === 'ECONNREFUSED') return true;
+    
+    return false;
 }
 
 /** Check whether a non-empty auth token lives in localStorage */
@@ -149,8 +188,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      * Safely attempt to fetch the current user from the backend.  A non-401
      * failure keeps the token only for an explicit recovery attempt; it never
      * treats a cached browser profile as verified account data.
+     * 
+     * Now includes retry logic with exponential backoff for transient errors.
      */
-    const fetchCurrentUser = useCallback(async (withTimeout = false, bypassCache = false): Promise<User | null> => {
+    const fetchCurrentUser = useCallback(async (withTimeout = false, bypassCache = false, retryCount = 0): Promise<User | null> => {
         const token = localStorage.getItem(TOKEN_KEY);
         if (!token || token === 'undefined' || token === 'null') {
             setAuthUnavailable(false);
@@ -185,10 +226,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setAuthUnavailable(false);
                 return null;
             }
+            
+            // For retryable errors (network, timeout, 5xx), attempt retry with backoff
+            if (isRetryableError(err) && retryCount < MAX_RETRY_ATTEMPTS) {
+                const delay = getRetryDelay(retryCount);
+                console.warn(`AuthContext: Current-user lookup failed (retryable), attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS} after ${Math.round(delay)}ms`, err?.message || err);
+                
+                // Wait for delay then retry
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return fetchCurrentUser(withTimeout, bypassCache, retryCount + 1);
+            }
+            
             // A token or cached browser snapshot is not authoritative account
             // data.  Do not render either as a confirmed user after /users/me
             // fails; retain the token so the recovery screen can safely retry.
-            console.warn('AuthContext: Current-user lookup failed', err?.message || err);
+            console.warn('AuthContext: Current-user lookup failed (non-retryable or max retries reached)', err?.message || err);
             setAuthUnavailable(true);
             return null;
         }

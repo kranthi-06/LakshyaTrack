@@ -6,16 +6,33 @@ export default function AuthRecoveryScreen({ reloadOnRetry = false }: { reloadOn
     const { refreshUser, logout } = useAuth();
     const [pending, setPending] = useState(false);
     const [retryError, setRetryError] = useState('');
+    const [retryCount, setRetryCount] = useState(0);
 
     const handleTryAgain = async () => {
         if (pending) return;
 
         setPending(true);
         setRetryError('');
+        setRetryCount(prev => prev + 1);
+        
         try {
             await refreshUser();
-        } catch {
-            setRetryError("We couldn't restore your session. Please try again.");
+            // Success - the auth context will handle navigation
+        } catch (err: any) {
+            // Provide more specific error messages based on the error type
+            const isNetworkError = !err.response && !err.request;
+            const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout');
+            const isServerError = err.response?.status >= 500 && err.response?.status < 600;
+            
+            if (isNetworkError) {
+                setRetryError("Network connection issue. Please check your internet connection and try again.");
+            } else if (isTimeout) {
+                setRetryError("Request timed out. The server may be slow. Please try again.");
+            } else if (isServerError) {
+                setRetryError("Server temporarily unavailable. Please try again in a moment.");
+            } else {
+                setRetryError("We couldn't restore your session. Please try again.");
+            }
         } finally {
             if (reloadOnRetry) {
                 window.location.reload();
@@ -35,6 +52,11 @@ export default function AuthRecoveryScreen({ reloadOnRetry = false }: { reloadOn
                     We couldn&apos;t reach LakshyaTrack to restore your session. Check your connection and try again.
                 </p>
                 {retryError && <p className="auth-recovery-error" role="alert">{retryError}</p>}
+                {retryCount > 1 && (
+                    <p className="auth-recovery-info">
+                        This is attempt {retryCount}. The system is automatically retrying with increasing delays.
+                    </p>
+                )}
                 <div className="auth-recovery-actions">
                     <button type="button" onClick={handleTryAgain} disabled={pending}>
                         {pending ? 'Trying again...' : 'Try again'}
@@ -111,6 +133,12 @@ export default function AuthRecoveryScreen({ reloadOnRetry = false }: { reloadOn
 
                 .auth-recovery-card .auth-recovery-error {
                     color: #fecaca;
+                }
+
+                .auth-recovery-card .auth-recovery-info {
+                    color: rgba(255, 255, 255, 0.7);
+                    font-size: 14px;
+                    line-height: 1.5;
                 }
 
                 .auth-recovery-actions {
