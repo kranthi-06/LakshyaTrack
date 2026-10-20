@@ -750,6 +750,29 @@ function getProgressStreamUrl(): string {
   return `${baseUrl}${PE_BASE}/stream`;
 }
 
+let _streamSupportPromise: Promise<boolean> | null = null;
+
+/**
+ * Ask the backend whether this deployment can serve the SSE stream.
+ *
+ * Serverless runtimes cannot hold a long-lived connection open and decline it
+ * with 501.  Opening the socket anyway only produces a failed request in the
+ * console, so callers skip the stream and rely on interval polling instead.
+ */
+export function isProgressStreamSupported(): Promise<boolean> {
+  if (!_streamSupportPromise) {
+    _streamSupportPromise = api
+      .get(`${PE_BASE}/health`)
+      .then(({ data }) => data?.streaming_supported === true)
+      .catch(() => {
+        // A transient probe failure must not permanently disable streaming.
+        _streamSupportPromise = null;
+        return false;
+      });
+  }
+  return _streamSupportPromise;
+}
+
 function parseSseChunk(
   chunk: string,
   onMessage?: (message: ProgressStreamMessage) => void,
@@ -863,7 +886,16 @@ export function subscribeToProgressUpdates(options: ProgressStreamOptions = {}):
     }
   };
 
-  void connect();
+  void (async () => {
+    // Skip the socket entirely when the runtime cannot serve it; the store's
+    // interval poller keeps the dashboard fresh while isLive stays false.
+    if (!(await isProgressStreamSupported())) {
+      return;
+    }
+    if (!disposed) {
+      await connect();
+    }
+  })();
 
   return () => {
     disposed = true;

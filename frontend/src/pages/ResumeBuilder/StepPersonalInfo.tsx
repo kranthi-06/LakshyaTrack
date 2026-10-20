@@ -15,7 +15,7 @@ export function StepPersonalInfo({ data, onChange }: { data: ResumeData; onChang
         try {
             const result = await enhancePersonalInfo({ ...p, target_role: data.target_role });
             if (!result.error) {
-                onChange({ personal: { full_name: result.full_name || p.full_name, email: result.email || p.email, phone: result.phone || p.phone, location: result.location || p.location, professional_summary: result.professional_summary || p.professional_summary } });
+                onChange({ personal: { ...p, full_name: result.full_name || p.full_name, email: result.email || p.email, phone: result.phone || p.phone, location: result.location || p.location, professional_summary: result.professional_summary || p.professional_summary } });
                 setEnhanced(true);
             }
         } catch (e) { console.error(e); }
@@ -38,6 +38,13 @@ export function StepPersonalInfo({ data, onChange }: { data: ResumeData; onChang
                 <FieldInput label="Email" value={p.email} onChange={v => set('email', v)} placeholder="john@example.com" type="email" />
                 <FieldInput label="Phone" value={p.phone} onChange={v => set('phone', v)} placeholder="+1 (555) 123-4567" />
                 <FieldInput label="Location" value={p.location} onChange={v => set('location', v)} placeholder="City, State, Country" />
+                <FieldInput label="Professional Headline" value={p.headline || ''} onChange={v => set('headline', v)} placeholder="Senior Full-Stack Engineer" />
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+                <FieldInput label="LinkedIn URL" value={p.linkedin_url || ''} onChange={v => set('linkedin_url', v)} placeholder="linkedin.com/in/username" />
+                <FieldInput label="GitHub URL" value={p.github_url || ''} onChange={v => set('github_url', v)} placeholder="github.com/username" />
+                <FieldInput label="Portfolio URL" value={p.portfolio_url || ''} onChange={v => set('portfolio_url', v)} placeholder="yourname.dev" />
+                <FieldInput label="Website URL" value={p.website_url || ''} onChange={v => set('website_url', v)} placeholder="example.com" />
             </div>
             <FieldTextarea label="Professional Summary (raw text - AI will improve it)" value={p.professional_summary} onChange={v => set('professional_summary', v)} placeholder="Write a rough summary of your background... AI will transform it into a professional statement." rows={4} />
             <div className="flex items-center justify-between">

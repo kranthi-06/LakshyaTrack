@@ -5,7 +5,8 @@ import {
     Palette, Download, FileText, FileType2, Eye, Sparkles,
     CheckCircle2, Loader2, Wand2, PanelRightOpen, PanelRightClose,
     ChevronDown, ChevronRight, Search, Filter, GripVertical, Save,
-    Maximize2, X, AlertTriangle, FileStack, ArrowLeft, Layers, Lock
+    Maximize2, X, AlertTriangle, FileStack, ArrowLeft, Layers, Lock,
+    PanelLeftOpen, PanelLeftClose,
 } from 'lucide-react';
 import {
     ModernTemplate, ClassicTemplate, CreativeTemplate, DeveloperTemplate,
@@ -21,6 +22,7 @@ import { optimizeResumeContent } from '../../services/resumeBuilder';
 import { authorizeResumeDownload, saveResumeToProfile, updateSavedResume } from '../../services/resumeStorage';
 import { extractLimitExceededError } from '../../services/api';
 import { SidePanelEditor } from './SidePanelEditor';
+import { SectionPalettePanel } from './SectionPalettePanel';
 import { useFeatureGate } from '../../hooks/useFeatureGate';
 import { UsageBadge } from '../../components/FeatureLockButton';
 import PremiumGate from '../../components/PremiumGate';
@@ -140,6 +142,7 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
     const [pageCount, setPageCount] = useState(1);
     const [fsScale, setFsScale] = useState(0.7); // Fullscreen preview dynamic scale
     const [rightPanelOpen, setRightPanelOpen] = useState(true);
+    const [leftPanelOpen, setLeftPanelOpen] = useState(true);
     const [recentTemplates, setRecentTemplates] = useState<string[]>([]);
     const previewRef = useRef<HTMLDivElement>(null);
     const inlinePaperRef = useRef<HTMLDivElement>(null);
@@ -634,6 +637,22 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
                         </span>
                     </div>
 
+                    {/* Sections Panel Toggle */}
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setLeftPanelOpen(prev => !prev)}
+                        className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                            leftPanelOpen
+                                ? 'bg-purple-100 dark:bg-purple-900/40 text-[#5c52d2] dark:text-purple-300'
+                                : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400 hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                        }`}
+                        title={leftPanelOpen ? 'Close Sections' : 'Open Sections'}
+                    >
+                        {leftPanelOpen ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
+                        <span className="hidden lg:inline">Sections</span>
+                    </motion.button>
+
                     {/* Preview Button */}
                     <motion.button
                         whileHover={{ scale: 1.05 }}
@@ -664,6 +683,25 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
 
             {/* ── MAIN 3-PANEL BODY ── */}
             <div className="flex flex-1 overflow-hidden relative">
+
+                {/* ═══════════════════════════════════════════════ */}
+                {/* LEFT SECTION PALETTE PANEL (toggleable)         */}
+                {/* ═══════════════════════════════════════════════ */}
+                <div
+                    className="hidden md:flex flex-col border-r border-gray-200/60 dark:border-slate-700/60 bg-white/98 dark:bg-slate-900/98 backdrop-blur-md flex-shrink-0 overflow-hidden"
+                    style={{
+                        width: leftPanelOpen ? '260px' : '0px',
+                        opacity: leftPanelOpen ? 1 : 0,
+                        transition: 'all 0.25s ease',
+                    }}
+                >
+                    <SectionPalettePanel
+                        data={data}
+                        onChange={onChange}
+                        base={selected.base}
+                        onClose={() => setLeftPanelOpen(false)}
+                    />
+                </div>
 
                 {/* ═══════════════════════════════════════════════ */}
                 {/* CENTER EDITOR AREA                              */}

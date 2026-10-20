@@ -11,9 +11,10 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -40,8 +41,35 @@ class BatchIngestRequest(BaseModel):
     events: list[EventIngestRequest] = Field(..., max_length=100)
 
 
+def _streaming_supported() -> bool:
+    """Whether this runtime can hold a long-lived SSE connection open.
+
+    Vercel functions have a finite execution window.  Holding an SSE response
+    open guarantees a runtime timeout, which was observed in the production
+    logs after five minutes.  Dashboard reads and event ingestion stay
+    available; only this optional live-update transport is declined until it
+    is hosted on a runtime that supports long-lived connections.
+    """
+    return os.getenv("VERCEL") != "1"
+
+
 def _format_sse(event_name: str, payload: dict) -> str:
     return f"event: {event_name}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
+def _json_response(data: Any, cache_control: str) -> JSONResponse:
+    """Encode analytics payloads the way FastAPI encodes plain dict returns.
+
+    JSONResponse calls json.dumps() directly, without jsonable_encoder, so any
+    non-native value raises TypeError and surfaces as a 500.  Analytics
+    legitimately produces those: PostgreSQL AVG() returns Decimal, and Mongo
+    returns BSON dates as datetime.  Routing through jsonable_encoder keeps the
+    custom Cache-Control headers while restoring safe serialization.
+    """
+    return JSONResponse(
+        content=jsonable_encoder(data),
+        headers={"Cache-Control": cache_control},
+    )
 
 
 @router.post("/events/ingest")
@@ -97,8 +125,9 @@ async def stream_updates(
     # production logs after five minutes.  Keep dashboard reads and event
     # ingestion available, but explicitly decline this optional live-update
     # transport until it is hosted on a runtime that supports long-lived
-    # connections.
-    if os.getenv("VERCEL") == "1":
+    # connections.  Clients should read `streaming_supported` from /health and
+    # avoid opening the stream at all when it is false.
+    if not _streaming_supported():
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Live progress streaming is unavailable in this serverless runtime",
@@ -164,12 +193,7 @@ async def get_dashboard(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_full_dashboard(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={
-            "Cache-Control": "private, max-age=10, stale-while-revalidate=300",
-        },
-    )
+    return _json_response(data, "private, max-age=10, stale-while-revalidate=300")
 
 
 @router.get("/contributions")
@@ -180,10 +204,7 @@ async def get_contributions(
     if year is None:
         year = datetime.now(timezone.utc).year
     data = analytics.get_contributions(str(current_user.id), year)
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
-    )
+    return _json_response(data, "private, max-age=30, stale-while-revalidate=600")
 
 
 @router.get("/problems")
@@ -191,10 +212,7 @@ async def get_problems(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_problem_stats(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=15, stale-while-revalidate=300"},
-    )
+    return _json_response(data, "private, max-age=15, stale-while-revalidate=300")
 
 
 @router.get("/activity")
@@ -202,10 +220,7 @@ async def get_activity(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_activity_summary(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=15, stale-while-revalidate=300"},
-    )
+    return _json_response(data, "private, max-age=15, stale-while-revalidate=300")
 
 
 @router.get("/time-analytics")
@@ -213,10 +228,7 @@ async def get_time_analytics(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_time_analytics(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=15, stale-while-revalidate=300"},
-    )
+    return _json_response(data, "private, max-age=15, stale-while-revalidate=300")
 
 
 @router.get("/topics")
@@ -224,10 +236,7 @@ async def get_topics(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_topic_map(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
-    )
+    return _json_response(data, "private, max-age=30, stale-while-revalidate=600")
 
 
 @router.get("/streak")
@@ -235,10 +244,7 @@ async def get_streak(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_streak_data(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=5, stale-while-revalidate=60"},
-    )
+    return _json_response(data, "private, max-age=5, stale-while-revalidate=60")
 
 
 @router.post("/streak/touch")
@@ -263,10 +269,7 @@ async def get_badges(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_badges(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
-    )
+    return _json_response(data, "private, max-age=30, stale-while-revalidate=600")
 
 
 @router.get("/timeline")
@@ -289,10 +292,7 @@ async def get_intelligence(
     current_user: User = Depends(get_current_user),
 ):
     data = analytics.get_intelligence(str(current_user.id))
-    return JSONResponse(
-        content=data,
-        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=600"},
-    )
+    return _json_response(data, "private, max-age=30, stale-while-revalidate=600")
 
 
 @router.post("/workers/flush")
@@ -333,5 +333,6 @@ async def engine_health():
         "status": "healthy",
         "event_buffer_size": redis_client.get_buffer_size(),
         "redis_available": redis_client._get_redis() is not None,
+        "streaming_supported": _streaming_supported(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

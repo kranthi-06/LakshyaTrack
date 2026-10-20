@@ -1,4 +1,8 @@
 import type { ResumeData } from '../types';
+import { ContactLinks } from './ContactLinks';
+import { buildContactItems } from './contactLinkUtils';
+import { CustomSectionBlock } from './CustomSectionBlock';
+import { parseCustomSectionId, resolveLayoutSections } from '../sectionModel';
 
 interface TemplateProps {
     data: ResumeData;
@@ -22,30 +26,30 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
                     </div>
                     <div className="text-white pb-1">
                         <h1 className="text-3xl font-black tracking-tight">{p.full_name || 'Your Name'}</h1>
-                        <p className="text-sm font-bold opacity-80">{data.target_role || 'Creative Professional'}</p>
+                        <p className="text-sm font-bold opacity-80">{p.headline || data.target_role || 'Creative Professional'}</p>
                     </div>
                 </div>
             </div>
 
             {/* Contact Strip */}
-            <div className="flex flex-wrap gap-6 px-10 py-3 text-[10px] font-bold text-gray-400 bg-gray-50 border-b border-gray-100">
-                {p.email && <span>✉ {p.email}</span>}
-                {p.phone && <span>📱 {p.phone}</span>}
-                {p.location && <span>📍 {p.location}</span>}
-            </div>
+            <ContactLinks items={buildContactItems(p)} showIcons gap="gap-x-6 gap-y-1" className="px-10 py-3 text-[10px] font-bold text-gray-400 bg-gray-50 border-b border-gray-100" />
 
             <div className="px-10 py-7 space-y-6">
-                {/* About */}
-                {p.professional_summary && (
-                    <div className="p-5 rounded-2xl border border-gray-100" style={{ background: `linear-gradient(135deg, ${accentColor}06, ${accentColor}12)` }}>
+                {(() => {
+                    const flow = resolveLayoutSections(data, 'portfolio');
+                    const skillsIdx = flow.indexOf('skills');
+                    const eduIdx = flow.indexOf('education');
+                    const gridPair = skillsIdx !== -1 && eduIdx !== -1 && Math.abs(skillsIdx - eduIdx) === 1;
+                    return flow.map(id => {
+                    if (id === 'summary' && p.professional_summary) return (
+                    <div key={id} className="p-5 rounded-2xl border border-gray-100" style={{ background: `linear-gradient(135deg, ${accentColor}06, ${accentColor}12)` }}>
                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-2" style={{ color: accentColor }}>About Me</h3>
                         <p className="text-xs text-gray-600 leading-[1.8]">{p.professional_summary}</p>
                     </div>
-                )}
+                );
 
-                {/* Projects as Cards — visual-heavy showcase */}
-                {data.projects.some(p => p.name) && (
-                    <div>
+                if (id === 'projects' && data.projects.some(p => p.name)) return (
+                    <div key={id}>
                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-4" style={{ color: accentColor }}>Featured Projects</h3>
                         <div className="grid grid-cols-2 gap-3">
                             {data.projects.filter(p => p.name).map((proj, i) => (
@@ -67,18 +71,17 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
                             ))}
                         </div>
                     </div>
-                )}
+                );
 
-                {/* Experience — compact */}
-                {data.experience.some(e => e.title) && (
-                    <div>
+                if (id === 'experience' && data.experience.some(e => e.title)) return (
+                    <div key={id}>
                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-3" style={{ color: accentColor }}>Experience</h3>
                         <div className="space-y-4">
-                            {data.experience.filter(e => e.title).map((exp, i) => (
+                            {data.experience.filter(e => e.title).map((exp, i, arr) => (
                                 <div key={i} className="flex gap-4">
                                     <div className="flex flex-col items-center">
                                         <div className="w-3 h-3 rounded-full border-2 flex-shrink-0" style={{ borderColor: accentColor, backgroundColor: i === 0 ? accentColor : 'white' }} />
-                                        {i < data.experience.filter(e => e.title).length - 1 && (
+                                        {i < arr.length - 1 && (
                                             <div className="w-0.5 flex-1 mt-1" style={{ backgroundColor: `${accentColor}30` }} />
                                         )}
                                     </div>
@@ -106,13 +109,36 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
                             ))}
                         </div>
                     </div>
-                )}
+                );
 
-                {/* Bottom Row: Skills + Education */}
-                <div className="grid grid-cols-2 gap-6">
-                    {/* Skills as chips */}
-                    {(data.skills.technical_skills.length > 0 || data.skills.tools.length > 0) && (
-                        <div>
+                if (id === 'skills') {
+                    if (gridPair && skillsIdx < eduIdx) return (
+                        <div key={id} className="grid grid-cols-2 gap-6">
+                            <div>
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-2" style={{ color: accentColor }}>Skills & Tools</h3>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {[...data.skills.technical_skills, ...data.skills.tools].map((s, i) => (
+                                        <span key={i} className="px-2 py-1 text-[9px] font-bold rounded-lg border" style={{ borderColor: `${accentColor}40`, color: accentColor, backgroundColor: `${accentColor}08` }}>{s}</span>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-2" style={{ color: accentColor }}>Education</h3>
+                                <div className="space-y-2">
+                                    {data.education.filter(e => e.degree).map((ed, i) => (
+                                        <div key={i}>
+                                            <p className="text-xs font-bold text-gray-900">{ed.degree}</p>
+                                            <p className="text-[10px] text-gray-500">{ed.institution}</p>
+                                            <p className="text-[9px] text-gray-400">{ed.duration}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                    if (gridPair) return null;
+                    if (data.skills.technical_skills.length > 0 || data.skills.tools.length > 0) return (
+                        <div key={id}>
                             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-2" style={{ color: accentColor }}>Skills & Tools</h3>
                             <div className="flex flex-wrap gap-1.5">
                                 {[...data.skills.technical_skills, ...data.skills.tools].map((s, i) => (
@@ -120,11 +146,37 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
                                 ))}
                             </div>
                         </div>
-                    )}
-
-                    {/* Education */}
-                    {data.education.some(e => e.degree) && (
-                        <div>
+                    );
+                    return null;
+                }
+                if (id === 'education') {
+                    if (gridPair && eduIdx < skillsIdx) return (
+                        <div key={id} className="grid grid-cols-2 gap-6">
+                            <div>
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-2" style={{ color: accentColor }}>Education</h3>
+                                <div className="space-y-2">
+                                    {data.education.filter(e => e.degree).map((ed, i) => (
+                                        <div key={i}>
+                                            <p className="text-xs font-bold text-gray-900">{ed.degree}</p>
+                                            <p className="text-[10px] text-gray-500">{ed.institution}</p>
+                                            <p className="text-[9px] text-gray-400">{ed.duration}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-2" style={{ color: accentColor }}>Skills & Tools</h3>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {[...data.skills.technical_skills, ...data.skills.tools].map((s, i) => (
+                                        <span key={i} className="px-2 py-1 text-[9px] font-bold rounded-lg border" style={{ borderColor: `${accentColor}40`, color: accentColor, backgroundColor: `${accentColor}08` }}>{s}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                    if (gridPair) return null;
+                    if (data.education.some(e => e.degree)) return (
+                        <div key={id}>
                             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-2" style={{ color: accentColor }}>Education</h3>
                             <div className="space-y-2">
                                 {data.education.filter(e => e.degree).map((ed, i) => (
@@ -136,8 +188,26 @@ export function PortfolioTemplate({ data, accentColor = '#8b5cf6' }: TemplatePro
                                 ))}
                             </div>
                         </div>
-                    )}
-                </div>
+                    );
+                    return null;
+                }
+                const customId = parseCustomSectionId(id);
+                if (customId) {
+                    const entry = data.custom_sections?.find(cs => cs.id === customId);
+                    if (entry && entry.title) return (
+                        <CustomSectionBlock
+                            key={id}
+                            entry={entry}
+                            wrapperClass="p-5 rounded-2xl border border-gray-100"
+                            headingClass="text-[10px] font-black uppercase tracking-[0.2em] mb-2"
+                            headingStyle={{ color: accentColor }}
+                        />
+                    );
+                    return null;
+                }
+                return null;
+                });
+            })()}
             </div>
         </div>
     );

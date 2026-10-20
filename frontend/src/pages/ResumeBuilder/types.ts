@@ -6,6 +6,16 @@ export interface PersonalInfo {
     phone: string;
     location: string;
     professional_summary: string;
+    /** Optional short professional headline shown under the name. */
+    headline?: string;
+    /**
+     * Optional professional links.  Left optional so resumes saved before these
+     * fields existed still load without migration.
+     */
+    linkedin_url?: string;
+    github_url?: string;
+    portfolio_url?: string;
+    website_url?: string;
 }
 
 export interface EducationItem {
@@ -44,6 +54,12 @@ export interface ATSResult {
     improvements: string[];
 }
 
+export interface CustomSectionItem {
+    id: string;
+    title: string;
+    content: string;
+}
+
 export interface ResumeData {
     target_role: string;
     personal: PersonalInfo;
@@ -52,16 +68,35 @@ export interface ResumeData {
     projects: ProjectItem[];
     skills: SkillsData;
     ats: ATSResult | null;
+    /** Stable section ids ('summary' | 'experience' | ... | 'custom:<id>'); empty means canonical order. */
+    section_order?: string[];
+    /** Section ids the user hid from the resume. */
+    hidden_sections?: string[];
+    custom_sections?: CustomSectionItem[];
 }
 
 export const defaultResumeData: ResumeData = {
     target_role: '',
-    personal: { full_name: '', email: '', phone: '', location: '', professional_summary: '' },
+    personal: {
+        full_name: '',
+        email: '',
+        phone: '',
+        location: '',
+        professional_summary: '',
+        headline: '',
+        linkedin_url: '',
+        github_url: '',
+        portfolio_url: '',
+        website_url: '',
+    },
     education: [{ degree: '', institution: '', duration: '', description: '' }],
     experience: [{ title: '', organization: '', duration: '', description: '', bullets: [] }],
     projects: [{ name: '', technologies: '', description: '' }],
     skills: { raw_skills: '', technical_skills: [], tools: [], soft_skills: [], suggested_skills: [] },
     ats: null,
+    section_order: [],
+    hidden_sections: [],
+    custom_sections: [],
 };
 
 export const STEP_CONFIG = [

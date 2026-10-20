@@ -47,6 +47,9 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
                 projects: rd.projects || defaultResumeData.projects,
                 skills: rd.skills || defaultResumeData.skills,
                 ats: rd.ats || null,
+                section_order: rd.section_order || [],
+                hidden_sections: rd.hidden_sections || [],
+                custom_sections: rd.custom_sections || [],
             };
         }
 
@@ -129,6 +132,9 @@ export default function AIBuilder({ onBack, editResume }: AIBuilderProps) {
                 experience: resume.experience,
                 projects: resume.projects,
                 skills: resume.skills,
+                section_order: resume.section_order,
+                hidden_sections: resume.hidden_sections,
+                custom_sections: resume.custom_sections,
             };
 
             try {
