@@ -226,10 +226,14 @@ function pdfContentStreams(doc: PDFDocument): string {
 }
 
 function docxRunIsShaded(xml: string, text: string): boolean {
-    const index = xml.indexOf(text);
+    // Chip labels keep words together with non-breaking spaces, so normalise
+    // them before locating the run. Replacing one character with one character
+    // keeps every index stable.
+    const normalized = xml.replace(/\u00A0/g, ' ');
+    const index = normalized.indexOf(text);
     if (index < 0) return false;
-    const start = xml.lastIndexOf('<w:r>', index);
-    return start >= 0 && xml.slice(start, index).includes('<w:shd');
+    const start = normalized.lastIndexOf('<w:r>', index);
+    return start >= 0 && normalized.slice(start, index).includes('<w:shd');
 }
 
 /** Return one balanced WordprocessingML element, including nested instances. */
@@ -513,7 +517,10 @@ describe('DOCX export', () => {
         const relationships = strFromU8(entries['word/_rels/document.xml.rels']);
         const contentTypes = strFromU8(entries['[Content_Types].xml']);
         expect(document).toContain('<w:pgSz w:w="11906" w:h="16838"/>');
-        expect(document).toContain('<w:pgMar w:top="1020"');
+        // The Executive header is a full-bleed band (paper-edge to paper-edge),
+        // mirroring the editor preview and the PDF export.
+        expect(document).toContain('<w:pgMar w:top="0" w:right="480" w:bottom="720" w:left="480"');
+        expect(document).toContain('<w:shd w:val="clear" w:color="auto" w:fill="0F172A"/><w:tcMar><w:top w:w="780"');
         expect(document).toContain('Aarav Krishnan');
         expect(document).toContain('Leadership Experience');
         expect(document).toContain('Awards &amp; Recognition');
@@ -523,11 +530,12 @@ describe('DOCX export', () => {
         expect(document.indexOf('Leadership Experience')).toBeLessThan(document.indexOf('Awards &amp; Recognition'));
 
         // Every contact carries an embedded raster glyph. Ten contacts means
-        // ten inline drawings and ten dark PNG parts on this light header.
+        // ten inline drawings and ten light PNG parts — the band background is
+        // the dark `0F172A` accent, so dark glyphs would be invisible on it.
         expect(document.match(/<wp:inline/g) ?? []).toHaveLength(10);
-        expect(Object.keys(entries).filter(name => /^word\/media\/contact-.+-dark\.png$/.test(name))).toHaveLength(10);
+        expect(Object.keys(entries).filter(name => /^word\/media\/contact-.+-light\.png$/.test(name))).toHaveLength(10);
         expect(contentTypes).toContain('Extension="png"');
-        expect(relationships).toContain('/image" Target="media/contact-email-dark.png"');
+        expect(relationships).toContain('/image" Target="media/contact-email-light.png"');
 
         expect(relationships).toContain('TargetMode="External"');
         expect(relationships).toContain('mailto:aarav.krishnan@example.com');
@@ -551,14 +559,14 @@ describe('DOCX export', () => {
         const relationships = strFromU8(entries['word/_rels/document.xml.rels']);
 
         expect(document).toContain('<w:tbl>');
-        expect(document).toContain('<w:tblInd w:w="-480"');
+        expect(document).toContain('<w:tblInd w:w="0"');
         expect(document).toContain('<w:tblLayout w:type="fixed"/>');
         expect(document).toContain('<w:gridCol w:w="3810"/>');
         expect(document).toContain('<w:gridCol w:w="8096"/>');
         expect(document).toMatch(/<w:shd w:val="clear" w:color="auto" w:fill="[0-9A-F]{6}"\/>/);
         expect(document.match(/Technical Skills/g) ?? []).toHaveLength(1);
         expect(document).toContain('Tools &amp; Frameworks');
-        expect(document).toContain('<w:trHeight w:val="12800" w:hRule="atLeast"/>');
+        expect(document, 'sidebar row should flow with its content').not.toContain('<w:trHeight w:val="12800"');
         expect(document.indexOf('Technical Skills')).toBeLessThan(document.indexOf('Professional Summary'));
         expect(document.indexOf('Languages')).toBeLessThan(document.indexOf('Professional Summary'));
         expect(document.match(/<wp:inline/g) ?? []).toHaveLength(10);
@@ -631,7 +639,9 @@ describe('DOCX export', () => {
         expect(creativeDoc).toContain('>Skills<');
         expect(creativeDoc).toContain('>Tools<');
         expect(creativeDoc).toContain('>Soft Skills<');
-        expect(creativeDoc).toContain('<w:trHeight w:val="12400" w:hRule="atLeast"/>');
+        // The sidebar background ends with the content in the browser, so the
+        // creative table must not force a full-page row height.
+        expect(creativeDoc).not.toContain('<w:trHeight w:val="12400"');
         // The red banner is full bleed: no top page margin, with the old
         // 18pt inset folded into the banner cell padding.
         expect(creativeDoc).toContain('<w:pgMar w:top="0" w:right="480" w:bottom="720" w:left="480"');

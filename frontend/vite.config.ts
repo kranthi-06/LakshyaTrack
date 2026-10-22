@@ -17,6 +17,21 @@ export default defineConfig({
         secure: false,
       },
     },
+    watch: {
+      // Generated export/verification output. Word writes and immediately
+      // deletes mso*.tmp files next to its PDF exports, which otherwise trips
+      // the file watcher with EBUSY and takes the dev server down.
+      ignored: [
+        '**/artifacts/**',
+        '**/comparisons/**',
+        '**/docx-shots/**',
+        '**/preview-shots/**',
+        '**/rendered/**',
+        '**/rendered2/**',
+        '**/word-pdf/**',
+        '**/word-text/**',
+      ],
+    },
   },
   // ── Production build optimizations ──
   esbuild: {

@@ -18,6 +18,15 @@ import type {
     ResumeDocumentSkillGroup,
 } from './resumeDocument';
 import { CONTACT_ICON_PNGS } from './contactIconPngs';
+import {
+    blendColor,
+    layoutRequires,
+    mainSkillLayoutFor,
+    skillCategory,
+    summaryBoxFor,
+    type MainSkillLayout,
+    type SkillCategory,
+} from './skillStyles';
 
 export const A4_WIDTH_PT = 595.28;
 export const A4_HEIGHT_PT = 841.89;
@@ -58,7 +67,10 @@ interface PdfTheme {
     headingColor: string;
     headingStyle: HeadingStyle;
     uppercaseName?: boolean;
+    uppercaseHeadline?: boolean;
+    headlineItalic?: boolean;
     uppercaseHeadings?: boolean;
+    showHeadline?: boolean;
     nameLetterSpacing?: number;
     headlineLetterSpacing?: number;
     headingLetterSpacing?: number;
@@ -80,7 +92,7 @@ interface PdfTheme {
     summaryItalic?: boolean;
     centerBody?: boolean;
     timeline?: boolean;
-    entryBar?: boolean;
+    entryBar?: 'bar' | 'dot';
     entryDivider?: boolean;
     projectBadges?: boolean;
     summaryBox?: boolean;
@@ -134,7 +146,8 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 8.9, smallSize: 8, headingSize: 8.4, lineHeight: 1.5,
                 text: '#1F2937', muted: '#4B5563', nameColor: INK, headlineColor: LIGHT_MUTED,
                 contactColor: '#4B5563', headingColor: INK, headingStyle: 'underline',
-                uppercaseName: true, uppercaseHeadings: true, nameLetterSpacing: 2, headingLetterSpacing: 1.4,
+                uppercaseName: true, uppercaseHeadline: true, uppercaseHeadings: true,
+                nameLetterSpacing: 2, headlineLetterSpacing: 1.2, headingLetterSpacing: 1.4,
                 margin: 46, bottomMargin: 42, sectionGap: 13, entryGap: 8, bulletGap: 2.5,
                 headerRule: 1.5, headerRuleColor: color, skills: 'inline',
             };
@@ -153,7 +166,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                     heading: color, chipBackground: tint(color, 0.85), chipText: color,
                     headerInSidebar: false, padding: 22,
                 },
-                skills: 'chips', chipBorder: color,
+                skills: 'chips', chipBorder: color, entryBar: 'bar',
             };
         case 'developer':
             return {
@@ -170,7 +183,8 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 8.7, smallSize: 7.8, headingSize: 8.2, lineHeight: 1.45,
                 text: '#1F2937', muted: MUTED, nameColor: color, headlineColor: MUTED,
                 contactColor: '#4B5563', headingColor: color, headingStyle: 'underline',
-                uppercaseName: true, uppercaseHeadings: true, nameLetterSpacing: 1.2, headingLetterSpacing: 1,
+                uppercaseName: true, uppercaseHeadings: true, showHeadline: false,
+                nameLetterSpacing: 1.2, headingLetterSpacing: 1,
                 margin: 45, bottomMargin: 42, sectionGap: 11, entryGap: 7, bulletGap: 2.2,
                 headerRule: 1.8, headerRuleColor: color, skills: 'inline',
             };
@@ -180,7 +194,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 8.8, smallSize: 8, headingSize: 8.5, lineHeight: 1.5,
                 text: '#1F2937', muted: MUTED, nameColor: color, headlineColor: LIGHT_MUTED,
                 contactColor: '#4B5563', headingColor: color, headingStyle: 'underline',
-                uppercaseHeadings: true, headingLetterSpacing: 1, margin: 45, bottomMargin: 42,
+                uppercaseHeadings: true, headlineItalic: true, headingLetterSpacing: 1, margin: 45, bottomMargin: 42,
                 sectionGap: 12, entryGap: 7, bulletGap: 2.4, headerRule: 1.2, headerRuleColor: color,
                 skills: 'inline', summaryItalic: true,
             };
@@ -190,7 +204,8 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 8.9, smallSize: 7.9, headingSize: 8.3, lineHeight: 1.55,
                 text: '#1E293B', muted: '#6B7280', nameColor: WHITE, headlineColor: WHITE,
                 contactColor: WHITE, headingColor: '#6B7280', headingStyle: 'plain',
-                uppercaseHeadings: true, headingLetterSpacing: 1.3, margin: 46, bottomMargin: 44,
+                uppercaseHeadline: true, uppercaseHeadings: true, headlineLetterSpacing: 1.1,
+                headingLetterSpacing: 1.3, margin: 46, bottomMargin: 44,
                 sectionGap: 14, entryGap: 9, bulletGap: 2.6, headerBandHeight: 108,
                 headerBandText: WHITE, headerBandMuted: WHITE, headerRule: 3,
                 headerRuleColor: '#B8860B', skills: 'chips', chipBorder: color,
@@ -202,7 +217,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 8.8, smallSize: 7.8, headingSize: 8, lineHeight: 1.45,
                 text: '#1F2937', muted: MUTED, nameColor: WHITE, headlineColor: WHITE,
                 contactColor: WHITE, headingColor: color, headingStyle: 'plain',
-                uppercaseHeadings: true, headingLetterSpacing: 1, margin: 24, bottomMargin: 30,
+                uppercaseHeadline: true, uppercaseHeadings: true, headlineLetterSpacing: 1, headingLetterSpacing: 1, margin: 24, bottomMargin: 30,
                 sectionGap: 11, entryGap: 7, bulletGap: 2.3, skills: 'bars',
                 sidebarSkills: 'two-column',
                 columns: {
@@ -222,7 +237,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 sectionGap: 13, entryGap: 8, bulletGap: 2.5, headerBandHeight: 104,
                 headerBandText: WHITE, headerBandMuted: WHITE, contactStrip: '#F9FAFB',
                 skills: 'chips', chipBorder: color, summaryBox: true, projectBadges: true,
-                avatar: true,
+                avatar: true, entryBar: 'dot',
             };
         case 'compact':
             return {
@@ -230,18 +245,18 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 7.8, smallSize: 6.9, headingSize: 7.3, lineHeight: 1.34,
                 text: '#1F2937', muted: MUTED, nameColor: color, headlineColor: MUTED,
                 contactColor: '#4B5563', headingColor: color, headingStyle: 'plain',
-                uppercaseHeadings: true, margin: 32, bottomMargin: 26, sectionGap: 4,
+                uppercaseHeadings: true, showHeadline: false, margin: 32, bottomMargin: 26, sectionGap: 4,
                 entryGap: 2.5, bulletGap: 1.2, headerRule: 1.2, headerRuleColor: color,
                 skills: 'inline',
             };
         case 'timeline':
             return {
-                font: 'sans', header: 'center', nameSize: 21, headlineSize: 9, contactSize: 8,
+                font: 'sans', header: 'left', nameSize: 21, headlineSize: 9, contactSize: 8,
                 bodySize: 8.6, smallSize: 7.7, headingSize: 8.4, lineHeight: 1.45,
-                text: '#374151', muted: MUTED, nameColor: INK, headlineColor: color,
+                text: '#374151', muted: MUTED, nameColor: color, headlineColor: '#6B7280',
                 contactColor: '#4B5563', headingColor: color, headingStyle: 'plain',
                 uppercaseHeadings: true, headingLetterSpacing: 1, margin: 42, bottomMargin: 38,
-                sectionGap: 13, entryGap: 8, bulletGap: 2.4, headerRule: 1, headerRuleColor: color,
+                sectionGap: 13, entryGap: 8, bulletGap: 2.4,
                 skills: 'chips', chipBorder: color, timeline: true,
             };
         case 'elegant':
@@ -250,7 +265,8 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 bodySize: 8.6, smallSize: 7.7, headingSize: 7.8, lineHeight: 1.65,
                 text: '#57534E', muted: '#78716C', nameColor: color, headlineColor: '#A8A29E',
                 contactColor: '#A8A29E', headingColor: color, headingStyle: 'center',
-                uppercaseName: true, uppercaseHeadings: true, nameLetterSpacing: 3.2,
+                uppercaseName: true, uppercaseHeadline: true, uppercaseHeadings: true,
+                nameLetterSpacing: 3.2, headlineLetterSpacing: 1.4,
                 headingLetterSpacing: 2.2, margin: 52, bottomMargin: 46, sectionGap: 16,
                 entryGap: 9, bulletGap: 2, skills: 'inline', summaryItalic: true,
                 centerBody: true,
@@ -263,7 +279,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 contactColor: '#6B7280', headingColor: color, headingStyle: 'plain',
                 uppercaseHeadings: true, margin: 42, bottomMargin: 38, sectionGap: 13,
                 entryGap: 8, bulletGap: 2.4, headerRule: 4, headerRuleColor: color,
-                headerShortRule: true, skills: 'chips', chipBorder: color, entryBar: true,
+                headerShortRule: true, skills: 'chips', chipBorder: color, entryBar: 'bar',
             };
         case 'infographic':
             return {
@@ -312,6 +328,7 @@ function themeFor(base: BaseTemplate, accent: string): PdfTheme {
                 uppercaseHeadings: true, headingLetterSpacing: 1.1, margin: 26, bottomMargin: 32,
                 sectionGap: 12, entryGap: 8, bulletGap: 2.4, headerRule: 2.2,
                 headerRuleColor: color, skills: 'chips', chipBorder: tint(color, 0.25),
+                entryBar: 'bar',
                 sidebarSkills: 'modern',
                 columns: {
                     widthPct: 0.32, background: tint(color, 0.035), text: '#374151',
@@ -401,6 +418,8 @@ export function slugifyFilename(name: string, fallback = 'resume'): string {
 
 class PdfWriter {
     readonly doc: PDFDocument;
+    readonly base: BaseTemplate;
+    readonly accent: string;
     readonly theme: PdfTheme;
     private readonly pages: PageState[] = [];
     private currentIndex = 0;
@@ -410,11 +429,15 @@ class PdfWriter {
 
     constructor(
         doc: PDFDocument,
+        base: BaseTemplate,
+        accent: string,
         theme: PdfTheme,
         fonts: PdfWriter['fonts'],
         contactImages: Map<string, PDFImage>,
     ) {
         this.doc = doc;
+        this.base = base;
+        this.accent = accent;
         this.theme = theme;
         this.fonts = fonts;
         this.contactImages = contactImages;
@@ -673,6 +696,46 @@ class PdfWriter {
         });
     }
 
+    /** Filled and/or outlined box with an optional left accent bar. */
+    box(
+        x: number,
+        yTop: number,
+        width: number,
+        height: number,
+        options: {
+            fill?: string;
+            border?: { color: string; width: number };
+            leftBar?: { color: string; width: number };
+        },
+    ): void {
+        const bottom = A4_HEIGHT_PT - yTop - height;
+        // Only emit the outer rectangle when it actually paints something.
+        // pdf-lib leaves the path current when a rectangle has neither fill nor
+        // border; that stale path would then be filled by the next `f` operator
+        // (e.g. the left accent bar), painting the whole box area by mistake.
+        if (options.fill || options.border) {
+            this.current.page.drawRectangle({
+                x,
+                y: bottom,
+                width,
+                height,
+                color: options.fill ? hexToRgb(options.fill) : undefined,
+                borderColor: options.border ? hexToRgb(options.border.color) : undefined,
+                borderWidth: options.border?.width ?? 0,
+            });
+        }
+        if (options.leftBar) {
+            this.current.page.drawRectangle({
+                x,
+                y: bottom,
+                width: options.leftBar.width,
+                height,
+                color: hexToRgb(options.leftBar.color),
+                borderWidth: 0,
+            });
+        }
+    }
+
     vline(x: number, yTopStart: number, yTopEnd: number, thickness: number, color: string): void {
         this.current.page.drawLine({
             start: { x, y: A4_HEIGHT_PT - yTopStart },
@@ -774,60 +837,237 @@ class PdfWriter {
         }
     }
 
-    chips(
-        area: Area,
+    private chipLayout(
         values: string[],
-        colors: { background: string; text: string; border?: string; opacity?: number },
-    ): void {
+        width: number,
+        options: { padX?: number; padY?: number; gap?: number },
+    ): {
+        rows: Array<Array<{ text: string; width: number }>>;
+        lineHeight: number;
+        padX: number;
+        padY: number;
+        gap: number;
+    } {
         const size = this.theme.smallSize;
         const font = this.font('bold');
-        const padX = 4.5;
-        const padY = 2.6;
+        const padX = options.padX ?? 4.5;
+        const padY = options.padY ?? 2.6;
+        const gap = options.gap ?? 4;
         const lineHeight = size + padY * 2 + 2;
-        let x = area.x;
-        let y = this.y(area.zone);
 
         // A single long skill must not draw past the column: split it into
         // additional chips rather than clipping or shrinking the text.
-        const chipValues = values.flatMap(value => {
-            const chunks = this.wrap(value, font, size, Math.max(24, area.width - padX * 2)).filter(Boolean);
-            return chunks.length > 0 ? chunks : [value];
-        });
+        const chipValues = values
+            .map(value => value.trim())
+            .filter(Boolean)
+            .flatMap(value => {
+                const chunks = this.wrap(value, font, size, Math.max(24, width - padX * 2)).filter(Boolean);
+                return chunks.length > 0 ? chunks : [value];
+            });
 
+        const rows: Array<Array<{ text: string; width: number }>> = [];
+        let row: Array<{ text: string; width: number }> = [];
+        let rowWidth = 0;
         for (const value of chipValues) {
             const text = sanitizePdfText(value);
-            const width = Math.min(area.width, font.widthOfTextAtSize(text, size) + padX * 2);
-            if (x + width > area.x + area.width && x > area.x) {
-                x = area.x;
-                y += lineHeight;
+            const chipWidth = Math.min(width, font.widthOfTextAtSize(text, size) + padX * 2);
+            if (row.length > 0 && rowWidth + chipWidth > width) {
+                rows.push(row);
+                row = [];
+                rowWidth = 0;
             }
-            const yBeforePageCheck = this.y(area.zone);
-            this.ensure(area.zone, lineHeight);
-            if (this.y(area.zone) !== yBeforePageCheck) {
-                // The chip wrapped onto a new page: restart at its top margin.
-                y = this.y(area.zone);
-                x = area.x;
-            }
-            this.current.page.drawRectangle({
-                x,
-                y: A4_HEIGHT_PT - y - lineHeight + 2,
-                width,
-                height: lineHeight - 2,
-                color: hexToRgb(colors.background),
-                opacity: colors.opacity ?? 1,
-                borderColor: colors.border ? hexToRgb(colors.border) : undefined,
-                borderWidth: colors.border ? 0.5 : 0,
-            });
-            this.current.page.drawText(text, {
-                x: x + padX,
-                y: A4_HEIGHT_PT - y - lineHeight + 2 + padY + 1,
-                font,
-                size,
-                color: hexToRgb(colors.text),
-            });
-            x += width + 4;
+            row.push({ text, width: chipWidth });
+            rowWidth += chipWidth + gap;
         }
-        this.setY(area.zone, y + lineHeight + 2);
+        if (row.length > 0) rows.push(row);
+        return { rows, lineHeight, padX, padY, gap };
+    }
+
+    chipsHeight(
+        values: string[],
+        width: number,
+        options: { padX?: number; padY?: number; gap?: number } = {},
+    ): number {
+        const { rows, lineHeight } = this.chipLayout(values, width, options);
+        return rows.length > 0 ? rows.length * lineHeight + 2 : 0;
+    }
+
+    chips(
+        area: Area,
+        values: string[],
+        colors: {
+            background: string;
+            text: string;
+            border?: string;
+            borderWidth?: number;
+            opacity?: number;
+            padX?: number;
+            padY?: number;
+            gap?: number;
+            /** Corner radius in PDF points; large values produce pill chips. */
+            radius?: number;
+        },
+    ): void {
+        const size = this.theme.smallSize;
+        const font = this.font('bold');
+        const layout = this.chipLayout(values, area.width, colors);
+        let y = this.y(area.zone);
+
+        for (const row of layout.rows) {
+            const yBeforePageCheck = this.y(area.zone);
+            this.ensure(area.zone, layout.lineHeight);
+            if (this.y(area.zone) !== yBeforePageCheck) {
+                // The chip row wrapped onto a new page: restart at its top.
+                y = this.y(area.zone);
+            }
+            let x = area.x;
+            for (const chip of row) {
+                const height = layout.lineHeight - 2;
+                const radius = Math.max(0, Math.min(
+                    colors.radius ?? 2.4,
+                    height / 2,
+                    chip.width / 2,
+                ));
+                const bottom = A4_HEIGHT_PT - y - height;
+                if (radius > 0.3) {
+                    const path = `M ${radius} 0 L ${chip.width - radius} 0 Q ${chip.width} 0 ${chip.width} ${radius} L ${chip.width} ${height - radius} Q ${chip.width} ${height} ${chip.width - radius} ${height} L ${radius} ${height} Q 0 ${height} 0 ${height - radius} L 0 ${radius} Q 0 0 ${radius} 0 Z`;
+                    this.current.page.drawSvgPath(path, {
+                        x,
+                        y: A4_HEIGHT_PT - y,
+                        color: hexToRgb(colors.background),
+                        opacity: colors.opacity ?? 1,
+                        borderColor: colors.border ? hexToRgb(colors.border) : undefined,
+                        borderWidth: colors.border ? colors.borderWidth ?? 0.5 : 0,
+                    });
+                } else {
+                    this.current.page.drawRectangle({
+                        x,
+                        y: bottom,
+                        width: chip.width,
+                        height,
+                        color: hexToRgb(colors.background),
+                        opacity: colors.opacity ?? 1,
+                        borderColor: colors.border ? hexToRgb(colors.border) : undefined,
+                        borderWidth: colors.border ? colors.borderWidth ?? 0.5 : 0,
+                    });
+                }
+                this.current.page.drawText(chip.text, {
+                    x: x + layout.padX,
+                    y: bottom + layout.padY + 1,
+                    font,
+                    size,
+                    color: hexToRgb(colors.text),
+                });
+                x += chip.width + layout.gap;
+            }
+            y += layout.lineHeight;
+        }
+        this.setY(area.zone, y + (layout.rows.length > 0 ? 2 : 0));
+    }
+
+    /** A bold run followed by normal-weight text on the same wrapped line. */
+    labeledParagraph(
+        area: Area,
+        label: string,
+        value: string,
+        options: { size?: number; color?: string; labelColor?: string; after?: number } = {},
+    ): void {
+        const size = options.size ?? this.theme.bodySize;
+        const font = this.font('bold');
+        const valueFont = this.font();
+        const color = options.color ?? this.theme.text;
+        const labelColor = options.labelColor ?? color;
+        const lineHeight = size * this.theme.lineHeight;
+        const labelText = `${sanitizePdfText(label)}:`;
+        const valueText = sanitizePdfText(value);
+        const labelWidth = font.widthOfTextAtSize(labelText, size) + size * 0.3;
+        const firstWidth = Math.max(size * 5, area.width - labelWidth);
+        const words = valueText.split(/\s+/).filter(Boolean);
+        const lines: string[] = [];
+        let line = '';
+        let available = firstWidth;
+
+        const pushWord = (word: string) => {
+            const candidate = line ? `${line} ${word}` : word;
+            if (valueFont.widthOfTextAtSize(candidate, size) <= available) {
+                line = candidate;
+                return;
+            }
+            if (line) {
+                lines.push(line);
+                line = '';
+                available = area.width;
+            }
+            if (valueFont.widthOfTextAtSize(word, size) <= available) {
+                line = word;
+                return;
+            }
+            let chunk = '';
+            for (const char of word) {
+                if (valueFont.widthOfTextAtSize(chunk + char, size) > available && chunk) {
+                    lines.push(chunk);
+                    chunk = char;
+                    available = area.width;
+                } else {
+                    chunk += char;
+                }
+            }
+            line = chunk;
+        };
+
+        for (const word of words) pushWord(word);
+        if (line) lines.push(line);
+        if (lines.length === 0) lines.push('');
+
+        if (lines.length > 1) this.ensure(area.zone, lineHeight * 2);
+        lines.forEach((textLine, index) => {
+            this.ensure(area.zone, lineHeight);
+            const y = this.y(area.zone);
+            const x = index === 0 ? area.x + labelWidth : area.x;
+            if (index === 0) {
+                this.drawText(labelText, area.x, y, font, size, labelColor);
+            }
+            if (textLine) this.drawText(textLine, x, y, valueFont, size, color);
+            this.setY(area.zone, y + lineHeight);
+        });
+        this.setY(area.zone, this.y(area.zone) + (options.after ?? 1.5));
+    }
+
+    /** The academic template's three-column bullet list. */
+    bulletGrid(
+        area: Area,
+        values: string[],
+        columns: number,
+        bulletColor: string,
+        options: { color?: string; size?: number } = {},
+    ): void {
+        const size = options.size ?? this.theme.bodySize;
+        const color = options.color ?? this.theme.text;
+        const font = this.font();
+        const gap = 8;
+        const columnWidth = (area.width - gap * (columns - 1)) / columns;
+        const lineHeight = size * this.theme.lineHeight;
+        const textWidth = Math.max(18, columnWidth - 8);
+        const rows: string[][] = [];
+        for (let index = 0; index < values.length; index += columns) {
+            rows.push(values.slice(index, index + columns));
+        }
+
+        for (const row of rows) {
+            const wrapped = row.map(value => this.wrap(value, font, size, textWidth));
+            const rowLines = Math.max(1, ...wrapped.map(lines => lines.length));
+            const rowHeight = rowLines * lineHeight + 1.5;
+            this.ensure(area.zone, rowHeight);
+            const top = this.y(area.zone);
+            row.forEach((_value, column) => {
+                const x = area.x + column * (columnWidth + gap);
+                this.circle(x + 1.6, top + size * 0.62, 1.4, bulletColor);
+                wrapped[column].forEach((line, lineIndex) => {
+                    this.drawText(line, x + 7, top + lineIndex * lineHeight, font, size, color);
+                });
+            });
+            this.setY(area.zone, top + rowHeight);
+        }
     }
 
     private contactIconSize(size: number): number {
@@ -1073,14 +1313,20 @@ class PdfWriter {
 function drawHeader(writer: PdfWriter, model: ResumeDocumentModel): number {
     const theme = writer.theme;
     const page = writer.activePage;
+    // A band/hero header always paints the template accent. `headerRuleColor`
+    // only describes the thin rule below the band and must never become the
+    // band fill, otherwise e.g. the Executive navy header renders gold.
     const accent = theme.columns?.background && theme.header === 'sidebar'
         ? theme.columns.background
-        : theme.headerRuleColor || model.accentColor;
+        : model.accentColor;
+    const nameText = theme.uppercaseName ? model.name.toUpperCase() : model.name;
+    const headlineText = theme.uppercaseHeadline ? model.headline.toUpperCase() : model.headline;
+    const headlineFont = writer.font(theme.headlineItalic ? 'italic' : 'regular');
     const contacts = model.contacts;
     const top = theme.margin;
 
     const drawName = (x: number, y: number, color: string, width: number, align?: 'left' | 'center' | 'right') => {
-        const lines = writer.wrap(model.name, writer.font('bold'), theme.nameSize, width);
+        const lines = writer.wrap(nameText, writer.font('bold'), theme.nameSize, width);
         lines.forEach((line, index) => {
             writer.drawText(line, x, y + index * theme.nameSize * 1.15, writer.font('bold'), theme.nameSize, color, {
                 letterSpacing: theme.nameLetterSpacing ?? 0,
@@ -1098,12 +1344,13 @@ function drawHeader(writer: PdfWriter, model: ResumeDocumentModel): number {
         color: string,
         align?: 'left' | 'center' | 'right',
         letterSpacing = 0,
-        text: string = model.headline,
+        text: string = theme.showHeadline === false ? '' : headlineText,
     ) => {
         if (!text) return y;
-        const lines = writer.wrap(text, writer.font(), theme.headlineSize, width);
+        const font = writer.font(theme.headlineItalic ? 'italic' : 'regular');
+        const lines = writer.wrap(text, font, theme.headlineSize, width);
         lines.forEach((line, index) => {
-            writer.drawText(line, x, y + index * theme.headlineSize * 1.4, writer.font(), theme.headlineSize, color, {
+            writer.drawText(line, x, y + index * theme.headlineSize * 1.4, font, theme.headlineSize, color, {
                 letterSpacing,
                 align,
                 width,
@@ -1143,12 +1390,12 @@ function drawHeader(writer: PdfWriter, model: ResumeDocumentModel): number {
         const stripHeight = theme.contactStrip ? Math.max(26, stripContactHeight + 12) : 0;
         const nameLineCount = Math.max(
             1,
-            writer.wrap(model.name || ' ', writer.font('bold'), theme.nameSize, textWidth).length,
+            writer.wrap(nameText || ' ', writer.font('bold'), theme.nameSize, textWidth).length,
         );
-        const headlineLineCount = model.headline
-            ? writer.wrap(model.headline, writer.font(), theme.headlineSize, textWidth).length
+        const headlineLineCount = headlineText && theme.showHeadline !== false
+            ? writer.wrap(headlineText, headlineFont, theme.headlineSize, textWidth).length
             : 0;
-        const headlineBlock = model.headline ? 1 + headlineLineCount * theme.headlineSize * 1.4 : 0;
+        const headlineBlock = headlineLineCount > 0 ? 1 + headlineLineCount * theme.headlineSize * 1.4 : 0;
         const contentHeight = top + 2 + nameLineCount * theme.nameSize * 1.15 + headlineBlock + 7
             + (contactsInBand ? bandContactHeight + 4 : 0);
         const height = Math.max(theme.headerBandHeight ?? 106, contentHeight);
@@ -1251,13 +1498,13 @@ function drawHeader(writer: PdfWriter, model: ResumeDocumentModel): number {
         const leftWidth = rightX - theme.margin - 16;
         const nameLineCount = Math.max(
             1,
-            writer.wrap(model.name || ' ', writer.font('bold'), theme.nameSize, leftWidth).length,
+            writer.wrap(nameText || ' ', writer.font('bold'), theme.nameSize, leftWidth).length,
         );
-        const headlineLineCount = model.headline
-            ? writer.wrap(model.headline, writer.font(), theme.headlineSize, leftWidth).length
+        const headlineLineCount = headlineText && theme.showHeadline !== false
+            ? writer.wrap(headlineText, headlineFont, theme.headlineSize, leftWidth).length
             : 0;
         const leftHeight = top + nameLineCount * theme.nameSize * 1.15
-            + (model.headline ? 1 + headlineLineCount * theme.headlineSize * 1.4 : 0);
+            + (headlineLineCount > 0 ? 1 + headlineLineCount * theme.headlineSize * 1.4 : 0);
         const contactHeight = writer.contactsStackHeight(contacts, {
             width: rightWidth,
             size: theme.contactSize,
@@ -1363,7 +1610,7 @@ function drawHeader(writer: PdfWriter, model: ResumeDocumentModel): number {
         });
         const nameLineCount = Math.max(
             1,
-            writer.wrap(model.name || ' ', writer.font('bold'), theme.nameSize, nameWidth).length,
+            writer.wrap(nameText || ' ', writer.font('bold'), theme.nameSize, nameWidth).length,
         );
         const headlineLineCount = headline
             ? writer.wrap(headline, writer.font(), theme.headlineSize, nameWidth).length
@@ -1541,10 +1788,17 @@ function headingText(section: ResumeDocumentSection, theme: PdfTheme): string {
     return theme.uppercaseHeadings ? section.heading.toUpperCase() : section.heading;
 }
 
-function drawSectionHeading(writer: PdfWriter, section: ResumeDocumentSection, area: Area): boolean {
+function drawSectionHeading(
+    writer: PdfWriter,
+    section: ResumeDocumentSection,
+    area: Area,
+    override?: string,
+): boolean {
     const theme = writer.theme;
-    if (!section.heading) return false;
-    const text = headingText(section, theme);
+    if (!section.heading && !override) return false;
+    const text = override
+        ? (theme.uppercaseHeadings ? override.toUpperCase() : override)
+        : headingText(section, theme);
     if (!text) return false;
     const size = theme.headingSize;
     const height = size * 1.7 + 8;
@@ -1589,30 +1843,57 @@ function drawSummary(writer: PdfWriter, section: ResumeDocumentSection, area: Ar
     const theme = writer.theme;
     const columns = area.zone === 'sidebar' ? theme.columns : undefined;
     const bodyColor = columns?.text ?? theme.text;
-    if (theme.summaryBox) {
-        const lines = writer.wrap(section.paragraphs?.join(' ') ?? '', writer.font(), theme.bodySize, area.width - 18);
-        const boxHeight = lines.length * theme.bodySize * theme.lineHeight + 14;
-        writer.ensure(area.zone, boxHeight);
-        const boxY = writer.currentYFor(area.zone);
-        writer.rect(area.x, boxY, area.width, boxHeight, tint(theme.headingColor, 0.05));
-        writer.rect(area.x, boxY, 3, boxHeight, theme.headingColor);
-        writer.paragraph(area, section.paragraphs?.join('\n\n') ?? '', {
+    const text = section.paragraphs?.join('\n\n') ?? '';
+    const box = summaryBoxFor(writer.base, writer.accent);
+    const visibleBox = box && (box.background || box.border || box.leftBar);
+
+    if (!visibleBox) {
+        writer.paragraph(area, text, {
             size: theme.bodySize,
             color: bodyColor,
             weight: theme.summaryItalic ? 'italic' : 'regular',
-            xOffset: 10,
-            width: area.width - 20,
+            align: theme.centerBody ? 'center' : 'left',
+            lineHeight: theme.centerBody ? 1.7 : theme.lineHeight,
         });
-        writer.advance(area.zone, 4);
         return;
     }
-    writer.paragraph(area, section.paragraphs?.join('\n\n') ?? '', {
+
+    const innerWidth = Math.max(24, area.width - box.paddingX * 2);
+    const heading = box.headingInside && section.heading
+        ? theme.uppercaseHeadings ? section.heading.toUpperCase() : section.heading
+        : '';
+    const headingSize = theme.smallSize + 0.6;
+    const headingHeight = heading ? headingSize * 1.8 + 3 : 0;
+    const lines = writer.wrap(text, writer.font(), theme.bodySize, innerWidth);
+    const bodyHeight = lines.length * theme.bodySize * theme.lineHeight;
+    const boxHeight = box.paddingY * 2 + headingHeight + bodyHeight + 1;
+
+    writer.ensure(area.zone, boxHeight);
+    const top = writer.currentYFor(area.zone);
+    writer.box(area.x, top, area.width, boxHeight, {
+        fill: box.background,
+        border: box.border,
+        leftBar: box.leftBar,
+    });
+    writer.advance(area.zone, box.paddingY);
+    if (heading) {
+        writer.drawText(
+            heading,
+            area.x + box.paddingX,
+            writer.currentYFor(area.zone),
+            writer.font('bold'),
+            headingSize,
+            box.headingColor,
+            { letterSpacing: 0.8 },
+        );
+        writer.advance(area.zone, headingHeight);
+    }
+    writer.paragraph({ ...area, x: area.x + box.paddingX, width: innerWidth }, text, {
         size: theme.bodySize,
         color: bodyColor,
         weight: theme.summaryItalic ? 'italic' : 'regular',
-        align: theme.centerBody ? 'center' : 'left',
-        lineHeight: theme.centerBody ? 1.7 : theme.lineHeight,
     });
+    writer.advance(area.zone, box.paddingY);
 }
 
 function drawEntry(
@@ -1634,6 +1915,9 @@ function drawEntry(
     const fullTitleWidth = titleFont.widthOfTextAtSize(sanitizePdfText(entry.title), titleSize);
 
     let indent = 0;
+    const entryBar = !options.badge && !options.timeline && !theme.centerBody ? theme.entryBar : undefined;
+    if (entryBar === 'bar') indent += 10;
+    if (entryBar === 'dot') indent += 12;
     if (options.badge !== undefined) indent += 18;
     if (options.timeline) indent += 16;
     const contentX = area.x + indent;
@@ -1657,6 +1941,7 @@ function drawEntry(
         + 8 + subtitleReserve + separateDateReserve + descriptionReserve,
     );
     let y = writer.currentYFor(area.zone);
+    const entryTop = y;
 
     if (options.badge !== undefined) {
         const badge = 13;
@@ -1747,6 +2032,20 @@ function drawEntry(
         writer.advance(area.zone, theme.bulletGap);
     }
 
+    if (entryBar) {
+        const barX = contentX - (entryBar === 'bar' ? 7 : 8);
+        const bottom = writer.currentYFor(area.zone) - 2;
+        if (entryBar === 'bar') {
+            const color = writer.base === 'creative' ? accentColor : tint(accentColor, 0.22);
+            writer.vline(barX, entryTop + 1, bottom, writer.base === 'creative' ? 2.5 : 1.5, color);
+        } else {
+            writer.circle(barX, entryTop + 4, 2.3, accentColor, {
+                borderColor: WHITE,
+                borderWidth: 0.8,
+            });
+        }
+    }
+
     if (theme.entryDivider) {
         const lineY = writer.currentYFor(area.zone);
         writer.line(area.x, lineY, area.x + area.width, 0.5, BORDER);
@@ -1771,7 +2070,9 @@ function drawSkillGroup(
     const labelColor = sidebar
         ? sidebarVariant === 'modern' || sidebarVariant === 'creative'
             ? columns?.heading ?? theme.headingColor
-            : columns?.muted ?? theme.muted
+            : columns?.background
+                ? blendColor('#FFFFFF', columns.background, 0.72)
+                : columns?.muted ?? theme.muted
         : theme.muted;
     const valueColor = sidebar ? columns?.text ?? theme.text : theme.text;
     // The templates rename and merge the shared skill groups in their sidebars:
@@ -1798,6 +2099,37 @@ function drawSkillGroup(
         letterSpacing: 1,
     });
 
+    if (sidebarVariant === 'two-column' && !isTools && !isSoftSkills) {
+        // Two-column keeps the compact 64px proficiency rails from the
+        // preview. Percentages are intentionally omitted there.
+        group.values.forEach((value, index) => {
+            writer.ensure(area.zone, 12.5);
+            const y = writer.currentYFor(area.zone);
+            writer.drawText(value, area.x, y, writer.font('bold'), theme.smallSize, valueColor);
+            const barWidth = 44;
+            const barHeight = 1.8;
+            const barX = area.x + area.width - barWidth;
+            const barTop = y + theme.smallSize * 0.5 - barHeight / 2;
+            const pct = 80 + ((index * 7 + 11) % 21);
+            writer.rect(
+                barX,
+                barTop,
+                barWidth,
+                barHeight,
+                blendColor('#FFFFFF', columns?.background ?? theme.headingColor, 0.22),
+            );
+            writer.rect(
+                barX,
+                barTop,
+                barWidth * pct / 100,
+                barHeight,
+                blendColor('#FFFFFF', columns?.background ?? theme.headingColor, 0.82),
+            );
+            writer.advance(area.zone, 12.5);
+        });
+        return;
+    }
+
     const translucentChips = sidebarVariant === 'two-column' || sidebarVariant === 'infographic';
     const chipsHere = (sidebar ? sidebarVariant === 'modern' : theme.skills === 'chips')
         || (sidebarVariant === 'two-column' && isTools)
@@ -1814,9 +2146,12 @@ function drawSkillGroup(
                 ? WHITE
                 : sidebar ? columns?.chipText ?? valueColor : theme.chipBorder ? theme.text : valueColor,
             border: sidebar
-                ? sidebarVariant === 'modern' ? theme.chipBorder : undefined
+                ? sidebarVariant === 'modern'
+                    ? isSoftSkills ? tint(columns?.heading ?? theme.headingColor, 0.15) : theme.chipBorder
+                    : undefined
                 : theme.chipBorder,
             opacity: creativeTools ? 0.8 : translucentChips ? 0.22 : 1,
+            radius: sidebarVariant === 'modern' ? 2.5 : sidebarVariant === 'two-column' ? 2 : 4,
         });
     } else if (sidebarVariant === 'creative') {
         // Creative uses accent bullets for technical skills and plain lines for
@@ -1842,8 +2177,14 @@ function drawSkillGroup(
                 align: 'right',
                 width: area.width,
             });
-            writer.rect(area.x, y + theme.smallSize + 3, area.width, 3, '#FFFFFF33');
-            writer.rect(area.x, y + theme.smallSize + 3, area.width * pct / 100, 3, '#FFFFFFCC');
+            const track = columns?.background
+                ? blendColor('#FFFFFF', columns.background, 0.22)
+                : '#E5E7EB';
+            const fill = columns?.background
+                ? blendColor('#FFFFFF', columns.background, 0.82)
+                : '#6B7280';
+            writer.rect(area.x, y + theme.smallSize + 3, area.width, 3, track);
+            writer.rect(area.x, y + theme.smallSize + 3, area.width * pct / 100, 3, fill);
             writer.advance(area.zone, 15);
         });
     } else if (sidebar) {
@@ -1861,6 +2202,193 @@ function drawSkillGroup(
         });
     }
     writer.advance(area.zone, 6);
+}
+
+function includedSkillGroups(
+    section: ResumeDocumentSection,
+    layout: MainSkillLayout,
+): ResumeDocumentSkillGroup[] {
+    return (section.skillGroups ?? []).filter(group =>
+        layout.include.includes(skillCategory(group.label)),
+    );
+}
+
+function drawSkillBox(
+    writer: PdfWriter,
+    section: ResumeDocumentSection,
+    area: Area,
+    layout: Extract<MainSkillLayout, { kind: 'chips' }>,
+    values: string[],
+): void {
+    const theme = writer.theme;
+    const box = layout.box!;
+    const heading = layout.showHeading
+        ? layout.heading ?? section.heading
+        : '';
+    const headingText = heading && theme.uppercaseHeadings ? heading.toUpperCase() : heading;
+    const headingSize = theme.headingSize;
+    const headingHeight = headingText ? headingSize * 1.7 + 3 : 0;
+    const innerWidth = Math.max(24, area.width - box.paddingX * 2);
+    const chipsHeight = writer.chipsHeight(values, innerWidth, layout.chip);
+    const boxHeight = box.paddingY * 2 + headingHeight + chipsHeight + 2;
+
+    writer.ensure(area.zone, boxHeight);
+    const top = writer.currentYFor(area.zone);
+    writer.box(area.x, top, area.width, boxHeight, {
+        fill: box.background,
+        border: box.border,
+        leftBar: box.leftBar,
+    });
+    writer.advance(area.zone, box.paddingY);
+    if (headingText) {
+        writer.drawText(
+            headingText,
+            area.x + box.paddingX,
+            writer.currentYFor(area.zone),
+            writer.font('bold'),
+            headingSize,
+            box.headingColor,
+            { letterSpacing: theme.headingLetterSpacing ?? 1 },
+        );
+        writer.advance(area.zone, headingHeight);
+    }
+    writer.chips(
+        { ...area, x: area.x + box.paddingX, width: innerWidth },
+        values,
+        layout.chip,
+    );
+    writer.advance(area.zone, box.paddingY);
+}
+
+function drawCodeSkills(
+    writer: PdfWriter,
+    area: Area,
+    groups: ResumeDocumentSkillGroup[],
+): void {
+    const theme = writer.theme;
+    const size = theme.bodySize;
+    const lineHeight = size * theme.lineHeight;
+    const keyColor = '#60A5FA';
+    const valueColor = '#FCD34D';
+    const keyNames: Record<SkillCategory, string> = {
+        technical: 'languages',
+        tools: 'tools',
+        soft: 'softSkills',
+    };
+
+    for (const group of groups) {
+        const key = `${keyNames[skillCategory(group.label)]}: [`;
+        const values = group.values.map(value => `"${sanitizePdfText(value)}"`).join(', ');
+        const closing = '],';
+        const keyWidth = writer.font('bold').widthOfTextAtSize(key, size) + size * 0.35;
+        const closingWidth = writer.font().widthOfTextAtSize(closing, size);
+        const valueWidth = Math.max(36, area.width - keyWidth - closingWidth);
+        const lines = writer.wrap(values, writer.font(), size, valueWidth);
+
+        writer.ensure(area.zone, lineHeight * Math.max(1, lines.length));
+        const top = writer.currentYFor(area.zone);
+        writer.drawText(key, area.x, top, writer.font('bold'), size, keyColor);
+        lines.forEach((line, index) => {
+            writer.drawText(
+                line,
+                area.x + (index === 0 ? keyWidth : size * 2),
+                top + index * lineHeight,
+                writer.font(),
+                size,
+                valueColor,
+            );
+        });
+        const lastLine = lines[lines.length - 1] ?? '';
+        const lastWidth = writer.font().widthOfTextAtSize(lastLine, size);
+        const lastX = area.x + (lines.length > 1 ? size * 2 : keyWidth);
+        if (lastX + lastWidth + closingWidth <= area.x + area.width) {
+            writer.drawText(
+                closing,
+                lastX + lastWidth + 2,
+                top + (lines.length - 1) * lineHeight,
+                writer.font(),
+                size,
+                theme.text,
+            );
+        } else {
+            writer.drawText(
+                closing,
+                area.x + size * 2,
+                top + lines.length * lineHeight,
+                writer.font(),
+                size,
+                theme.text,
+            );
+            writer.advance(area.zone, lineHeight);
+        }
+        writer.advance(area.zone, lineHeight + 3);
+    }
+}
+
+function drawMainSkills(
+    writer: PdfWriter,
+    section: ResumeDocumentSection,
+    area: Area,
+): void {
+    const theme = writer.theme;
+    const groups = section.skillGroups ?? [];
+    const layout = mainSkillLayoutFor(writer.base, writer.accent);
+    if (!layoutRequires(layout, groups)) return;
+    const included = includedSkillGroups(section, layout);
+    if (included.length === 0) return;
+
+    if (layout.kind === 'inline-labeled') {
+        drawSectionHeading(writer, section, area);
+        for (const group of included) {
+            const category = skillCategory(group.label);
+            writer.labeledParagraph(
+                area,
+                layout.labels[category] ?? group.label,
+                group.values.join(layout.separator),
+                { color: theme.text, labelColor: theme.text },
+            );
+        }
+        return;
+    }
+
+    if (layout.kind === 'inline') {
+        drawSectionHeading(writer, section, area);
+        writer.paragraph(area, included.flatMap(group => group.values).join(layout.separator), {
+            size: theme.bodySize,
+            color: theme.text,
+            align: layout.center ? 'center' : 'left',
+            lineHeight: layout.center ? 1.7 : theme.lineHeight,
+        });
+        return;
+    }
+
+    if (layout.kind === 'bullet-grid') {
+        drawSectionHeading(writer, section, area);
+        writer.bulletGrid(
+            area,
+            included.flatMap(group => group.values),
+            layout.columns,
+            theme.headingColor,
+            { color: theme.text },
+        );
+        return;
+    }
+
+    if (layout.kind === 'code') {
+        drawSectionHeading(writer, section, area);
+        drawCodeSkills(writer, area, included);
+        writer.drawText('};', area.x, writer.currentYFor(area.zone), writer.font(), theme.bodySize, theme.text);
+        writer.advance(area.zone, theme.bodySize * 1.9);
+        return;
+    }
+
+    const values = included.flatMap(group => group.values);
+    if (layout.box) {
+        drawSkillBox(writer, section, area, layout, values);
+    } else {
+        if (layout.showHeading) drawSectionHeading(writer, section, area, layout.heading);
+        writer.chips(area, values, layout.chip);
+    }
 }
 
 function drawSection(writer: PdfWriter, section: ResumeDocumentSection, area: Area): void {
@@ -1890,35 +2418,27 @@ function drawSection(writer: PdfWriter, section: ResumeDocumentSection, area: Ar
         }
     }
 
-    const groupedSkills = isSkills
-        && (theme.skills === 'lines' || theme.skills === 'bars' || area.zone === 'sidebar');
+    // Skills in the sidebar keep their template-specific grouped treatment;
+    // skills in the main column are described by the shared presentation spec
+    // so PDF and DOCX render exactly what the editor preview shows.
+    const sidebarSkills = isSkills && area.zone === 'sidebar';
+    const summaryBox = section.kind === 'summary' ? summaryBoxFor(writer.base, writer.accent) : null;
+    const headingInsideSummary = Boolean(summaryBox?.headingInside);
+    const headingHidden = Boolean(summaryBox?.hideHeading);
 
-    // Inline skill lists are short. Keep the heading and the whole list
-    // together so a single trailing skill never becomes a widow.
-    if (isSkills && !groupedSkills) {
-        const values = (section.skillGroups ?? []).flatMap(group => group.values);
-        if (values.length > 0) {
-            const lines = writer.wrap(values.join('  ·  '), writer.font(), theme.bodySize, area.width);
-            const headingHeight = section.heading ? theme.headingSize * 1.7 + 8 : 0;
-            const blockHeight = lines.length * theme.bodySize * theme.lineHeight;
-            const availableHeight = A4_HEIGHT_PT - theme.margin - theme.bottomMargin;
-            if (blockHeight + headingHeight <= availableHeight) {
-                writer.ensure(area.zone, blockHeight + headingHeight + 2);
-            }
-        }
-    }
-
-    const hadHeading = groupedSkills ? false : drawSectionHeading(writer, section, area);
-    if (!hadHeading && section.kind === 'summary') {
+    const hadHeading = sidebarSkills || isSkills || headingInsideSummary || headingHidden
+        ? false
+        : drawSectionHeading(writer, section, area);
+    if (!hadHeading && section.kind === 'summary' && !headingHidden) {
         writer.advance(area.zone, 2);
     }
 
     if (section.kind === 'summary') {
         drawSummary(writer, section, area);
     } else if (isSkills) {
-        if (groupedSkills) {
+        if (sidebarSkills) {
             const groups = section.skillGroups ?? [];
-            if (area.zone === 'sidebar' && theme.sidebarSkills === 'infographic') {
+            if (theme.sidebarSkills === 'infographic') {
                 const softGroups = groups.filter(group => group.label.toLowerCase().includes('soft'));
                 const combined = groups
                     .filter(group => !group.label.toLowerCase().includes('soft'))
@@ -1932,25 +2452,11 @@ function drawSection(writer: PdfWriter, section: ResumeDocumentSection, area: Ar
                 }
             } else {
                 for (const group of groups) {
-                    drawSkillGroup(writer, group, area, { sidebar: area.zone === 'sidebar' });
+                    drawSkillGroup(writer, group, area, { sidebar: true });
                 }
             }
         } else {
-            const values = (section.skillGroups ?? []).flatMap(group => group.values);
-            if (values.length > 0) {
-                if (theme.skills === 'chips') {
-                    writer.chips(area, values, {
-                        background: theme.chipBorder ? tint(theme.headingColor, 0.07) : '#F3F4F6',
-                        text: theme.chipBorder ? theme.text : theme.text,
-                        border: theme.chipBorder,
-                    });
-                } else {
-                    writer.paragraph(area, values.join('  ·  '), {
-                        size: theme.bodySize,
-                        color: theme.text,
-                    });
-                }
-            }
+            drawMainSkills(writer, section, area);
         }
     } else if (section.kind === 'custom') {
         const columns = area.zone === 'sidebar' ? theme.columns : undefined;
@@ -2063,7 +2569,7 @@ export async function buildResumePdf(model: ResumeDocumentModel): Promise<BuiltR
         ),
     );
 
-    const writer = new PdfWriter(doc, theme, fonts, contactImages);
+    const writer = new PdfWriter(doc, model.base, model.accentColor, theme, fonts, contactImages);
     const headerBottom = drawHeader(writer, model);
 
     if (theme.columns) {

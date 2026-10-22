@@ -734,8 +734,11 @@ const MAX_PROGRESS_STREAM_RECONNECT_ATTEMPTS = 3;
 const NON_RETRYABLE_STREAM_STATUS_CODES = new Set([401, 403, 501]);
 
 class ProgressStreamHttpError extends Error {
-  constructor(public readonly status: number) {
+  readonly status: number;
+
+  constructor(status: number) {
     super(`Progress stream failed with status ${status}`);
+    this.status = status;
     this.name = 'ProgressStreamHttpError';
   }
 }

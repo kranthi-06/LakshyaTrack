@@ -108,16 +108,16 @@ const BASE_SECTION_LABELS: Record<BaseTemplate, Partial<Record<StandardSectionId
     },
     academic: {
         summary: 'Career Objective',
-        experience: 'Teaching & Research Experience',
+        experience: 'Experience / Internships',
         education: 'Education',
-        projects: 'Research & Projects',
+        projects: 'Academic Projects',
         skills: 'Skills & Competencies',
     },
     executive: {
         summary: 'Executive Summary',
         experience: 'Leadership Experience',
         education: 'Education',
-        projects: 'Selected Projects',
+        projects: 'Notable Projects',
         skills: 'Core Competencies',
     },
     'two-column': {
@@ -164,7 +164,7 @@ const BASE_SECTION_LABELS: Record<BaseTemplate, Partial<Record<StandardSectionId
         skills: 'Skills',
     },
     infographic: {
-        summary: 'Profile',
+        summary: 'About',
         experience: 'Experience',
         education: 'Education',
         projects: 'Projects',
