@@ -70,6 +70,18 @@ export interface ResumeDocumentModel {
     accentColor: string;
 }
 
+function displayText(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+        return value
+            .filter((item): item is string => typeof item === 'string')
+            .map(item => item.trim())
+            .filter(Boolean)
+            .join(', ');
+    }
+    return '';
+}
+
 const BASE_SECTION_LABELS: Record<BaseTemplate, Partial<Record<StandardSectionId, string>>> = {
     modern: {
         summary: 'Professional Summary',
@@ -264,11 +276,11 @@ function buildSection(
 
     if (id === 'projects') {
         const entries = data.projects
-            .filter(project => project.name?.trim())
+            .filter(project => displayText(project?.name).trim())
             .map((project): ResumeDocumentEntry => ({
-                title: project.name.trim(),
-                subtitle: project.technologies?.trim() || undefined,
-                description: project.description?.trim() || undefined,
+                title: displayText(project?.name).trim(),
+                subtitle: displayText(project?.technologies).trim() || undefined,
+                description: displayText(project?.description).trim() || undefined,
             }));
         if (entries.length === 0) return null;
         return { id, kind: 'projects', zone, heading: sectionLabelFor(base, id), entries };

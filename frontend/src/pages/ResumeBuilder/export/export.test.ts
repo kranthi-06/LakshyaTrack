@@ -331,6 +331,27 @@ describe('resume document model', () => {
         expect(ids).not.toContain('custom:untitled');
     });
 
+    it('normalizes legacy array project fields before building entries', () => {
+        const data = {
+            ...sampleData,
+            projects: [{
+                name: 'Legacy Project',
+                technologies: ['React', 'Node.js'],
+                description: ['Built the API', 'Handled auth'],
+            }],
+            section_order: ['projects'],
+            hidden_sections: [],
+        } as unknown as ResumeData;
+
+        const model = buildResumeDocument(data, 'modern', '#5c52d2');
+        const projects = model.sections.find(section => section.id === 'projects');
+        expect(projects?.entries?.[0]).toEqual({
+            title: 'Legacy Project',
+            subtitle: 'React, Node.js',
+            description: 'Built the API, Handled auth',
+        });
+    });
+
     it('resolves all 52 catalog templates to a base engine', () => {
         expect(TEMPLATE_CATALOG).toHaveLength(52);
         const bases = new Set<BaseTemplate>();
