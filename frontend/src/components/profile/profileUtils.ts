@@ -47,9 +47,22 @@ export function resumeTimestamp(resume: SavedResumeRecord): number {
     return Number.isNaN(value) ? 0 : value;
 }
 
+function resumeText(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+        return value
+            .filter((item): item is string => typeof item === 'string')
+            .map(item => item.trim())
+            .filter(Boolean)
+            .join(', ');
+    }
+    return '';
+}
+
 export function asResumeData(raw: unknown): ResumeData {
     if (!raw || typeof raw !== 'object') return { ...defaultResumeData };
     const rd = raw as Partial<ResumeData> & { personal?: Partial<ResumeData['personal']> };
+    const projects = Array.isArray(rd.projects) && rd.projects.length ? rd.projects : defaultResumeData.projects;
     return {
         target_role: rd.target_role || '',
         personal: {
@@ -58,7 +71,12 @@ export function asResumeData(raw: unknown): ResumeData {
         },
         education: rd.education?.length ? rd.education : defaultResumeData.education,
         experience: rd.experience?.length ? rd.experience : defaultResumeData.experience,
-        projects: rd.projects?.length ? rd.projects : defaultResumeData.projects,
+        projects: projects.map(project => ({
+            ...project,
+            name: resumeText(project?.name),
+            technologies: resumeText(project?.technologies),
+            description: resumeText(project?.description),
+        })),
         skills: rd.skills || defaultResumeData.skills,
         ats: rd.ats || null,
         section_order: rd.section_order || [],

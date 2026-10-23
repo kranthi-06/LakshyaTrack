@@ -98,4 +98,25 @@ describe('resume helpers', () => {
         expect(data.personal.email).toBe('kasa@example.com');
         expect(data.skills.technical_skills).toEqual([]);
     });
+
+    it('normalizes legacy array fields on saved projects', () => {
+        const legacy = {
+            projects: [{
+                name: 'Campus Portal',
+                technologies: ['React', 'Node.js'],
+                description: ['Built the portal', 'Handled auth'],
+            }],
+        };
+
+        const data = asResumeData(legacy);
+        expect(data.projects[0]).toMatchObject({
+            name: 'Campus Portal',
+            technologies: 'React, Node.js',
+            description: 'Built the portal, Handled auth',
+        });
+
+        const projects = extractProjectsFromResumes([resume({ resume_data: legacy })]);
+        expect(projects[0].technologies).toBe('React, Node.js');
+        expect(projects[0].description).toBe('Built the portal, Handled auth');
+    });
 });
