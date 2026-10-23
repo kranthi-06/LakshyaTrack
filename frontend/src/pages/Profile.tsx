@@ -16,11 +16,15 @@ import {
 import { extractLimitExceededError } from '../services/api';
 import UpgradeModal from '../components/UpgradeModal';
 import { ProfileHeader, type ProfileFormState } from '../components/profile/ProfileHeader';
-import { ProfileTabBar } from '../components/profile/ProfileTabBar';
+import { ProfileHeroPremium } from '../components/profile/ProfileHeroPremium';
+import { ProfileTabBarPremium } from '../components/profile/ProfileTabBarPremium';
 import { OverviewTab } from '../components/profile/OverviewTab';
+import { OverviewTabPremium } from '../components/profile/OverviewTabPremium';
 import { ProjectsTab } from '../components/profile/ProjectsTab';
 import { AchievementsTab } from '../components/profile/AchievementsTab';
+import { AchievementGalleryPremium } from '../components/profile/AchievementGalleryPremium';
 import { SkillsTab } from '../components/profile/SkillsTab';
+import { SkillsTabPremium } from '../components/profile/SkillsTabPremium';
 import { ActivityTab } from '../components/profile/ActivityTab';
 import { ResumesTab } from '../components/profile/ResumesTab';
 import {
@@ -482,10 +486,10 @@ export default function Profile() {
         || activeTab === 'activity';
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] pb-20 font-sans dark:bg-slate-950">
+        <div className="min-h-screen bg-[#0a0a1a] pb-20 font-sans">
             <main className="mx-auto max-w-6xl space-y-6 px-3 pt-6 sm:px-6 sm:pt-10">
                 {profileHydrated ? (
-                    <ProfileHeader
+                    <ProfileHeroPremium
                         displayName={displayName}
                         displayEmail={displayEmail}
                         displayInitial={displayInitial}
@@ -502,18 +506,18 @@ export default function Profile() {
                         onImageUpload={handleImageUpload}
                     />
                 ) : (
-                    <div className="h-[420px] animate-pulse rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950" aria-label="Loading profile" />
+                    <div className="h-[520px] animate-pulse rounded-3xl border border-slate-800/50 bg-slate-950/50" aria-label="Loading profile" />
                 )}
 
                 {saveError && (
-                    <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                         <span className="flex-1">{saveError}</span>
                         <button type="button" onClick={() => setSaveError(null)} className="font-semibold hover:underline">Dismiss</button>
                     </div>
                 )}
 
-                <ProfileTabBar active={activeTab} onChange={handleTabChange} resumeCount={resumesLoading ? undefined : savedResumes.length} />
+                <ProfileTabBarPremium active={activeTab} onChange={handleTabChange} resumeCount={resumesLoading ? undefined : savedResumes.length} />
 
                 <div
                     role="tabpanel"
@@ -523,18 +527,18 @@ export default function Profile() {
                     className="focus:outline-none"
                 >
                     {progressTabActive && progressError && (
-                        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
                             <span>
                                 Progress data could not be refreshed. Badge, streak, and activity figures may be unavailable or stale.
                             </span>
-                            <button type="button" onClick={retryProgress} className="font-bold text-amber-900 underline">
+                            <button type="button" onClick={retryProgress} className="font-bold text-amber-300 underline">
                                 Retry
                             </button>
                         </div>
                     )}
 
                     {resumeActionError && (
-                        <div role="alert" className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        <div role="alert" className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                             <span className="flex-1">{resumeActionError}</span>
                             <button type="button" onClick={() => setResumeActionError(null)} className="font-semibold hover:underline">Dismiss</button>
@@ -542,7 +546,7 @@ export default function Profile() {
                     )}
 
                     {activeTab === 'overview' && (
-                        <OverviewTab
+                        <OverviewTabPremium
                             bio={profile.bio}
                             projects={projects}
                             recentBadges={badges.recentlyUnlocked}
@@ -559,7 +563,7 @@ export default function Profile() {
                     )}
 
                     {activeTab === 'achievements' && (
-                        <AchievementsTab
+                        <AchievementGalleryPremium
                             data={badges}
                             loading={progressLoading}
                             error={progressError}
@@ -568,7 +572,7 @@ export default function Profile() {
                     )}
 
                     {activeTab === 'skills' && (
-                        <SkillsTab
+                        <SkillsTabPremium
                             skills={profile.skills}
                             isEditing={isEditing}
                             newSkill={newSkill}
