@@ -232,7 +232,7 @@
 
 /* ── Root HTML dark ── */
 html.dark {
-  background-color: #0a0a1a;
+  background-color: #050510;
   color-scheme: dark;
 }
 
@@ -340,7 +340,7 @@ html.dark {
 .dark .bg-slate-200\/80,
 .dark .bg-slate-200\/90,
 .dark .bg-slate-200\/95 { background-color: rgba(30, 41, 59, 0.55) !important; }
-.dark .bg-\[\#f8fafc\] { background-color: #0a0a1a !important; }
+.dark .bg-\[\#f8fafc\] { background-color: #050510 !important; }
 .dark .bg-\[\#fafafa\] { background-color: rgba(15, 23, 42, 0.5) !important; }
 
 /* ── Cards get visible outline border in dark ── */
