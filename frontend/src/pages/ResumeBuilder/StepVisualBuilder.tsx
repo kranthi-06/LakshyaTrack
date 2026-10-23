@@ -446,7 +446,10 @@ export function StepVisualBuilder({ data, onChange, editMeta, onBack, onExplicit
             education: data.education,
             experience: data.experience,
             projects: data.projects,
-            skills: data.skills
+            skills: data.skills,
+            section_order: data.section_order,
+            hidden_sections: data.hidden_sections,
+            custom_sections: data.custom_sections,
         },
         template_id: selectedId,
         theme: accentColor || 'default',

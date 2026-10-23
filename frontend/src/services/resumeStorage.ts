@@ -3,6 +3,25 @@ import { cachedRequest, invalidateCache } from './cache';
 
 const SAVED_RESUMES_CACHE_KEY = 'resumes:saved';
 
+export interface SavedResumeRecord {
+    id: string;
+    user_id?: string;
+    resume_name: string;
+    resume_url?: string | null;
+    resume_data: unknown;
+    template_id: string;
+    theme: string;
+    target_role?: string | null;
+    ats_score?: number | null;
+    is_primary?: boolean;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+export interface SavedResumesResponse {
+    resumes: SavedResumeRecord[];
+}
+
 export const saveResumeToProfile = async (payload: {
     resume_name: string;
     resume_data: unknown;
@@ -31,12 +50,12 @@ export const updateSavedResume = async (resumeId: string, payload: {
     return res.data;
 };
 
-export const getSavedResumes = async () =>
+export const getSavedResumes = async (): Promise<SavedResumesResponse> =>
     cachedRequest(
         SAVED_RESUMES_CACHE_KEY,
         async () => {
             const res = await api.get('/saved-resumes/');
-            return res.data;
+            return res.data as SavedResumesResponse;
         },
         { ttlMs: 60_000, persist: true },
     );

@@ -152,3 +152,16 @@ export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
 export function getTemplatesByCategory(category: TemplateCategory): CatalogTemplate[] {
     return TEMPLATE_CATALOG.filter(t => t.category === category);
 }
+
+/**
+ * Resolve a stored template id (catalog id or legacy base engine name) to a
+ * catalog entry so previews, cards, and downloads share the Studio engine.
+ */
+export function resolveCatalogTemplate(templateId?: string | null): CatalogTemplate {
+    if (!templateId) return TEMPLATE_CATALOG[0];
+    const byId = TEMPLATE_CATALOG.find(t => t.template_id === templateId);
+    if (byId) return byId;
+    const byBase = TEMPLATE_CATALOG.find(t => t.base === templateId);
+    if (byBase) return byBase;
+    return TEMPLATE_CATALOG[0];
+}

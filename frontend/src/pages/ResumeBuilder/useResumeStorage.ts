@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { ResumeData } from './types';
+import type { CustomSectionItem, ResumeData } from './types';
 import { defaultResumeData } from './types';
 
 export const RESUME_DRAFT_STORAGE_KEY = 'vidhyamitra_resume_draft';
@@ -24,7 +24,8 @@ function coerceStringArray(val: unknown): string[] {
         .filter((v): v is string => v !== null);
 }
 
-function coerceResumeData(input: unknown): ResumeData {
+/** Coerce unknown persisted JSON into ResumeData (local draft + legacy saves). */
+export function coerceResumeData(input: unknown): ResumeData {
     // Start from defaults and selectively coerce fields.
     const base: ResumeData = {
         ...defaultResumeData,
@@ -47,7 +48,37 @@ function coerceResumeData(input: unknown): ResumeData {
             phone: coerceString(personal.phone, base.personal.phone),
             location: coerceString(personal.location, base.personal.location),
             professional_summary: coerceString(personal.professional_summary, base.personal.professional_summary),
+            headline: coerceString(personal.headline, base.personal.headline ?? ''),
+            linkedin_url: coerceString(personal.linkedin_url, base.personal.linkedin_url ?? ''),
+            github_url: coerceString(personal.github_url, base.personal.github_url ?? ''),
+            portfolio_url: coerceString(personal.portfolio_url, base.personal.portfolio_url ?? ''),
+            website_url: coerceString(personal.website_url, base.personal.website_url ?? ''),
+            leetcode_url: coerceString(personal.leetcode_url, base.personal.leetcode_url ?? ''),
+            hackerrank_url: coerceString(personal.hackerrank_url, base.personal.hackerrank_url ?? ''),
+            kaggle_url: coerceString(personal.kaggle_url, base.personal.kaggle_url ?? ''),
         };
+    }
+
+    base.section_order = coerceStringArray(input.section_order);
+    base.hidden_sections = coerceStringArray(input.hidden_sections);
+
+    const customSections = input.custom_sections;
+    if (Array.isArray(customSections)) {
+        base.custom_sections = customSections
+            .map((item: unknown): CustomSectionItem | null => {
+                if (!isPlainObject(item)) return null;
+                const id = coerceString(item.id, '');
+                if (!id) return null;
+                const zoneRaw = item.zone;
+                const zone = zoneRaw === 'sidebar' ? 'sidebar' : zoneRaw === 'main' ? 'main' : undefined;
+                return {
+                    id,
+                    title: coerceString(item.title, ''),
+                    content: coerceString(item.content, ''),
+                    ...(zone ? { zone } : {}),
+                };
+            })
+            .filter((x): x is CustomSectionItem => x !== null);
     }
 
     const target_role = input.target_role;

@@ -1,219 +1,94 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useUsage } from '../context/UsageContext';
 import { updateProfile as updateProfileApi } from '../services/auth';
 import { uploadUserMedia } from '../services/media';
-import { User, Mail, Phone, MapPin, Briefcase, Calendar, Linkedin, Github, Globe, FileText, Award, Edit2, Camera, Save, X, Plus, Trash2, Download, Loader2, Lock } from 'lucide-react';
-import { authorizeResumeDownload, getSavedResumes, deleteSavedResume } from '../services/resumeStorage';
+import {
+    authorizeResumeDownload,
+    deleteSavedResume,
+    getSavedResumes,
+    saveResumeToProfile,
+    updateSavedResume,
+    type SavedResumeRecord,
+} from '../services/resumeStorage';
 import { extractLimitExceededError } from '../services/api';
 import UpgradeModal from '../components/UpgradeModal';
-import { UsageBadge } from '../components/FeatureLockButton';
-import { useUsage } from '../context/UsageContext';
+import { ProfileHeader, type ProfileFormState } from '../components/profile/ProfileHeader';
+import { ProfileTabBar } from '../components/profile/ProfileTabBar';
+import { OverviewTab } from '../components/profile/OverviewTab';
+import { ProjectsTab } from '../components/profile/ProjectsTab';
+import { AchievementsTab } from '../components/profile/AchievementsTab';
+import { SkillsTab } from '../components/profile/SkillsTab';
+import { ActivityTab } from '../components/profile/ActivityTab';
+import { ResumesTab } from '../components/profile/ResumesTab';
 import {
-    ModernTemplate, ClassicTemplate, CreativeTemplate, DeveloperTemplate,
-    MinimalATSTemplate, AcademicTemplate, ExecutiveTemplate, TwoColumnTemplate,
-    PortfolioTemplate, CompactTemplate, TimelineTemplate, ElegantTemplate,
-    BoldHeaderTemplate, InfographicTemplate, CorporateTemplate, FreshTemplate,
-    resolveBaseTemplate
-} from './ResumeBuilder/templates';
+    asResumeData,
+    duplicateResumeName,
+    extractProjectsFromResumes,
+    formatJoinDate,
+    normalizeProfileUrl,
+    parseProfileTab,
+    type ProfileTab,
+} from '../components/profile/profileUtils';
+import {
+    useProgressDashboardRuntime,
+    useProgressDashboardStore,
+} from '../progress-system/store/useProgressDashboardStore';
+import { resolveCatalogTemplate } from './ResumeBuilder/templates';
 import { buildResumeDocument } from './ResumeBuilder/export/resumeDocument';
 import { exportToPDF } from './ResumeBuilder/export/pdfExport';
-import type { BaseTemplate } from './ResumeBuilder/templates';
-import type { ResumeData } from './ResumeBuilder/types';
+import { exportToDOCX } from './ResumeBuilder/export/docxExport';
 
-function RenderTemplate({ base, data, color }: { base: BaseTemplate; data: ResumeData; color: string }) {
-    const p = { data, accentColor: color };
-    switch (base) {
-        case 'modern': return <ModernTemplate {...p} />;
-        case 'classic': return <ClassicTemplate {...p} />;
-        case 'creative': return <CreativeTemplate {...p} />;
-        case 'developer': return <DeveloperTemplate {...p} />;
-        case 'minimal-ats': return <MinimalATSTemplate {...p} />;
-        case 'academic': return <AcademicTemplate {...p} />;
-        case 'executive': return <ExecutiveTemplate {...p} />;
-        case 'two-column': return <TwoColumnTemplate {...p} />;
-        case 'portfolio': return <PortfolioTemplate {...p} />;
-        case 'compact': return <CompactTemplate {...p} />;
-        case 'timeline': return <TimelineTemplate {...p} />;
-        case 'elegant': return <ElegantTemplate {...p} />;
-        case 'bold-header': return <BoldHeaderTemplate {...p} />;
-        case 'infographic': return <InfographicTemplate {...p} />;
-        case 'corporate': return <CorporateTemplate {...p} />;
-        case 'fresh': return <FreshTemplate {...p} />;
-        default: return <ModernTemplate {...p} />;
-    }
-}
+const EMPTY_PROFILE: ProfileFormState = {
+    role: '',
+    location: '',
+    joined: '',
+    phone: '',
+    bio: '',
+    skills: [],
+    socials: { linkedin: '', github: '', portfolio: '' },
+    image: null,
+};
 
-/* Lazy-rendered resume card — only renders the heavy template when visible */
-function LazyResumePreview({ resume, onDelete, onDownload, onEdit, downloadLocked = false }: {
-    resume: any;
-    onDelete: (id: string) => void;
-    onDownload: (resume: any) => void;
-    onEdit: (resume: any) => void;
-    downloadLocked?: boolean;
-}) {
-    const [isVisible, setIsVisible] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                if (entry.isIntersecting) {
-                    setIsVisible(true);
-                    observer.disconnect(); // only need to trigger once
-                }
-            },
-            { rootMargin: '200px' } // start rendering 200px before it enters viewport
-        );
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, []);
-
-    return (
-        <div ref={containerRef} className="bg-white rounded-3xl shadow-lg border border-slate-100 overflow-hidden group cv-auto">
-            {/* Action Bar */}
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                    <h4 className="font-bold text-slate-800 text-lg">{resume.resume_name}</h4>
-                    <p className="text-xs font-semibold text-slate-400">Template: <span className="uppercase text-[#5c52d2]">{resume.template_id}</span> • {new Date(resume.created_at).toLocaleDateString()}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 shadow-sm text-[#5c52d2] hover:text-[#4a42b8] hover:bg-purple-50 border-purple-200"
-                        onClick={() => onEdit(resume)}
-                    >
-                        <Edit2 className="w-4 h-4 mr-1.5" /> Edit
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className={`h-8 shadow-sm text-slate-600 hover:text-[#5c52d2] hover:bg-purple-50 ${downloadLocked ? 'opacity-80' : ''}`}
-                        onClick={() => onDownload(resume)}
-                        title={downloadLocked ? 'Monthly download limit reached' : 'Download PDF'}
-                    >
-                        <Download className="w-4 h-4 mr-1.5" /> PDF
-                        {downloadLocked && <Lock className="w-3.5 h-3.5 text-rose-500" />}
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50"
-                        onClick={() => onDelete(resume.id)}
-                        title="Delete Resume"
-                    >
-                        <Trash2 className="w-4 h-4" />
-                    </Button>
-                </div>
-            </div>
-
-            {/* Visual Render — only render template when visible */}
-            <div className="bg-gray-200 p-6 flex flex-col items-center justify-center relative overscroll-contain overflow-hidden" style={{ minHeight: '600px' }}>
-                {isVisible ? (
-                    <div
-                        className="bg-white shadow-2xl overflow-hidden pointer-events-none transform origin-top"
-                        style={{ width: '794px', height: '1123px', transform: 'scale(0.5)', marginBottom: '-550px' }}
-                    >
-                        <div id={`resume-preview-${resume.id}`} className="w-full h-full">
-                            <RenderTemplate
-                                base={resolveBaseTemplate(resume.template_id)}
-                                data={resume.resume_data}
-                                color={resume.theme || '#5c52d2'}
-                            />
-                        </div>
-                    </div>
-                ) : (
-                    /* Lightweight skeleton placeholder */
-                    <div className="bg-white shadow-lg rounded-lg overflow-hidden" style={{ width: '397px', height: '280px' }}>
-                        <div className="p-6 space-y-4 animate-pulse">
-                            <div className="h-4 bg-slate-200 rounded w-2/3" />
-                            <div className="h-3 bg-slate-100 rounded w-1/2" />
-                            <div className="space-y-2 mt-6">
-                                <div className="h-2 bg-slate-100 rounded w-full" />
-                                <div className="h-2 bg-slate-100 rounded w-5/6" />
-                                <div className="h-2 bg-slate-100 rounded w-4/6" />
-                            </div>
-                            <div className="space-y-2 mt-4">
-                                <div className="h-2 bg-slate-100 rounded w-full" />
-                                <div className="h-2 bg-slate-100 rounded w-3/4" />
-                            </div>
-                            <div className="flex gap-2 mt-4">
-                                <div className="h-5 w-16 bg-purple-100 rounded" />
-                                <div className="h-5 w-14 bg-blue-100 rounded" />
-                                <div className="h-5 w-18 bg-emerald-100 rounded" />
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Hover Overlay */}
-                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-4">
-                    <Button size="lg" className="bg-[#5c52d2] text-white hover:bg-[#4a42b8] font-bold px-8 shadow-xl" onClick={() => onEdit(resume)}>
-                        <Edit2 className="w-5 h-5 mr-2" /> Edit Resume
-                    </Button>
-                    <Button
-                        size="lg"
-                        className={`bg-white text-slate-900 hover:bg-slate-50 font-bold px-8 shadow-xl ${downloadLocked ? 'opacity-85' : ''}`}
-                        onClick={() => onDownload(resume)}
-                    >
-                        <Download className="w-5 h-5 mr-2" /> Download Document
-                        {downloadLocked && <Lock className="w-4 h-4 text-rose-500" />}
-                    </Button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-/** Helper: Format a date string to "MonthName Year" */
-function formatJoinDate(dateStr?: string | null): string {
-    if (!dateStr) return 'Recently joined';
-    try {
-        const d = new Date(dateStr);
-        return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    } catch {
-        return 'Recently joined';
-    }
+function safeResumeFilename(name: string): string {
+    const cleaned = name.replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    return cleaned || 'resume';
 }
 
 export default function Profile() {
     const { user, refreshUser } = useAuth();
     const { usage, refreshUsage, isLimitExceeded, getCounter, resolved } = useUsage();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const activeTab = parseProfileTab(searchParams.get('tab'));
+
+    useProgressDashboardRuntime();
+    const badges = useProgressDashboardStore(state => state.data.badges);
+    const streak = useProgressDashboardStore(state => state.data.streak);
+    const activity = useProgressDashboardStore(state => state.data.activity);
+    const topics = useProgressDashboardStore(state => state.data.topicMap.topics);
+    const progressError = useProgressDashboardStore(state => state.error);
+    const progressHydrated = useProgressDashboardStore(state => state.hasHydrated);
+    const progressLoading = useProgressDashboardStore(state => state.isLoading);
+    const refreshDashboard = useProgressDashboardStore(state => state.refreshDashboard);
+
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const pendingImageUrlRef = useRef<string | null>(null);
-
-    // Editable name — initialised from backend and updated locally
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [profile, setProfile] = useState<ProfileFormState>(EMPTY_PROFILE);
+    const [profileHydrated, setProfileHydrated] = useState(false);
     const [editName, setEditName] = useState('');
     const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+    const [newSkill, setNewSkill] = useState('');
+    const pendingImageUrlRef = useRef<string | null>(null);
 
-    // Profile state — populated from backend user data
-    const [profile, setProfile] = useState({
-        role: "",
-        location: "",
-        joined: "",
-        phone: "",
-        bio: "",
-        skills: [] as string[],
-        socials: {
-            linkedin: "",
-            github: "",
-            portfolio: ""
-        },
-        image: null as string | null
-    });
-
-    const [savedResumes, setSavedResumes] = useState<any[]>([]);
-    const [loadingResumes, setLoadingResumes] = useState(false);
+    const [savedResumes, setSavedResumes] = useState<SavedResumeRecord[]>([]);
+    const [resumesLoading, setResumesLoading] = useState(true);
+    const [resumesError, setResumesError] = useState<string | null>(null);
+    const [previewResume, setPreviewResume] = useState<SavedResumeRecord | null>(null);
+    const [resumeActionError, setResumeActionError] = useState<string | null>(null);
     const [limitModal, setLimitModal] = useState<{
         isOpen: boolean;
         counter?: 'resume_count' | 'resume_edit_monthly';
@@ -222,10 +97,9 @@ export default function Profile() {
         message?: string;
     }>({ isOpen: false });
 
-    const storageCounter = getCounter('resume_count');
-    const downloadCounter = getCounter('resume_edit_monthly');
     const storageLimitReached = isLimitExceeded('resume_count');
     const downloadLimitReached = isLimitExceeded('resume_edit_monthly');
+    const downloadLocked = resolved && downloadLimitReached;
 
     const openUsageLimitModal = useCallback(
         (counter: 'resume_count' | 'resume_edit_monthly', message?: string) => {
@@ -241,10 +115,52 @@ export default function Profile() {
         [getCounter],
     );
 
-    // Refresh user data from backend on page load to guarantee latest data
+    const hydrateForm = useCallback(() => {
+        if (!user?.email) return;
+
+        const backendProfile = user.profile;
+        const backendLinks = (backendProfile?.links || {}) as Record<string, string | undefined>;
+        const backendHeadline = typeof backendLinks.profile_career_headline === 'string' ? backendLinks.profile_career_headline : '';
+        const backendLocation = typeof backendLinks.profile_location === 'string' ? backendLinks.profile_location : '';
+
+        let localProfile: (Partial<ProfileFormState> & { socials?: Partial<ProfileFormState['socials']> }) | null = null;
+        try {
+            const raw = localStorage.getItem(`user_profile_${user.email}`);
+            localProfile = raw ? JSON.parse(raw) : null;
+        } catch {
+            localProfile = null;
+        }
+
+        setProfile({
+            role: backendHeadline || localProfile?.role || '',
+            location: backendLocation || localProfile?.location || '',
+            joined: formatJoinDate(user.created_at),
+            phone: backendProfile?.phone_number || localProfile?.phone || '',
+            bio: backendProfile?.bio || localProfile?.bio || '',
+            skills: backendProfile?.skills?.length ? backendProfile.skills : (localProfile?.skills || []),
+            socials: {
+                linkedin: backendLinks.linkedin || localProfile?.socials?.linkedin || '',
+                github: backendLinks.github || localProfile?.socials?.github || '',
+                portfolio: backendLinks.portfolio || localProfile?.socials?.portfolio || '',
+            },
+            image: backendProfile?.profile_image_url || backendProfile?.profile_photo_url || localProfile?.image || null,
+        });
+        setEditName(backendProfile?.full_name || user.full_name || user.email.split('@')[0] || '');
+        setProfileHydrated(true);
+    }, [user]);
+
+    const bootRefreshRef = useRef(false);
     useEffect(() => {
-        refreshUser();
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        if (bootRefreshRef.current) return;
+        bootRefreshRef.current = true;
+        void refreshUser().catch(() => {
+            // Cached auth data still renders the profile; the save path surfaces real failures.
+        });
+    }, [refreshUser]);
+
+    useEffect(() => {
+        if (!isEditing) hydrateForm();
+    }, [hydrateForm, isEditing]);
 
     useEffect(() => () => {
         if (pendingImageUrlRef.current) {
@@ -253,94 +169,265 @@ export default function Profile() {
         }
     }, []);
 
-    // Hydrate profile from backend user data + localStorage overrides
-    useEffect(() => {
-        if (!user?.email) return;
-
-        // Start with backend data
-        const backendProfile = user.profile;
-        const backendLinks = backendProfile?.links || {};
-
-        // Check for localStorage profile data (for fields not yet in backend)
-        let localProfile: any = null;
+    const loadResumes = useCallback(async (showLoading = true) => {
+        if (showLoading) setResumesLoading(true);
+        setResumesError(null);
         try {
-            const saved = localStorage.getItem(`user_profile_${user.email}`);
-            if (saved) localProfile = JSON.parse(saved);
-        } catch {
-            // ignore parse errors
+            const response = await getSavedResumes();
+            setSavedResumes(Array.isArray(response?.resumes) ? response.resumes : []);
+        } catch (error) {
+            console.error('Error fetching saved resumes:', error);
+            setResumesError('We could not load your saved resumes.');
+        } finally {
+            if (showLoading) setResumesLoading(false);
         }
-
-        // Initialise the editable name
-        setEditName(backendProfile?.full_name || user?.full_name || user.email.split('@')[0] || '');
-
-        setProfile({
-            role: localProfile?.role || "",
-            location: localProfile?.location || "",
-            joined: formatJoinDate(user.created_at),
-            phone: backendProfile?.phone_number || localProfile?.phone || "",
-            bio: backendProfile?.bio || localProfile?.bio || "",
-            skills: backendProfile?.skills?.length ? backendProfile.skills : (localProfile?.skills || []),
-            socials: {
-                linkedin: backendLinks.linkedin || localProfile?.socials?.linkedin || "",
-                github: backendLinks.github || localProfile?.socials?.github || "",
-                portfolio: backendLinks.portfolio || localProfile?.socials?.portfolio || ""
-            },
-            image: backendProfile?.profile_image_url || backendProfile?.profile_photo_url || localProfile?.image || null
-        });
-    }, [
-        user?.email,
-        user?.profile?.skills,
-        user?.profile?.full_name,
-        user?.profile?.bio,
-        user?.profile?.phone_number,
-        user?.profile?.profile_image_url,
-        user?.profile?.profile_photo_url,
-        user?.created_at,
-    ]);
-
-    useEffect(() => {
-        const fetchSavedResumes = async () => {
-            setLoadingResumes(true);
-            try {
-                const res = await getSavedResumes();
-                if (res?.resumes) {
-                    setSavedResumes(res.resumes);
-                }
-            } catch (err) {
-                console.error("Error fetching resumes:", err);
-            }
-            setLoadingResumes(false);
-        };
-        fetchSavedResumes();
     }, []);
 
-    const handleDeleteResume = async (id: string) => {
+    useEffect(() => {
+        void loadResumes();
+    }, [loadResumes]);
+
+    const retryResumes = () => {
+        void loadResumes();
+    };
+
+    useEffect(() => {
+        setPreviewResume(current => (
+            current && !savedResumes.some(resume => resume.id === current.id) ? null : current
+        ));
+    }, [savedResumes]);
+
+    const handleTabChange = (tab: ProfileTab) => {
+        const next = new URLSearchParams(searchParams);
+        if (tab === 'overview') next.delete('tab');
+        else next.set('tab', tab);
+        setSearchParams(next);
+    };
+
+    const handleStartEdit = () => {
+        setSaveError(null);
+        setIsEditing(true);
+    };
+
+    const handleCancel = () => {
+        setIsEditing(false);
+        setSaveError(null);
+        setPendingImageFile(null);
+        setNewSkill('');
+        if (pendingImageUrlRef.current) {
+            URL.revokeObjectURL(pendingImageUrlRef.current);
+            pendingImageUrlRef.current = null;
+        }
+        hydrateForm();
+    };
+
+    const handleSave = async () => {
+        if (!user?.email) return;
+
+        const phone = profile.phone.trim();
+        if (phone && !/^[\d+\-() ]+$/.test(phone)) {
+            setSaveError('Phone number can only contain digits, spaces, and + - ( ) characters.');
+            return;
+        }
+
+        const socialInputs = [
+            { label: 'LinkedIn', raw: profile.socials.linkedin },
+            { label: 'GitHub', raw: profile.socials.github },
+            { label: 'Portfolio', raw: profile.socials.portfolio },
+        ];
+        const normalizedSocials = { linkedin: '', github: '', portfolio: '' };
+        for (const item of socialInputs) {
+            const raw = item.raw.trim();
+            if (!raw) continue;
+            const normalized = normalizeProfileUrl(raw);
+            if (!normalized) {
+                setSaveError(`${item.label} must be a valid web address, for example https://${item.label.toLowerCase()}.com/your-name.`);
+                return;
+            }
+            if (item.label === 'LinkedIn') normalizedSocials.linkedin = normalized;
+            if (item.label === 'GitHub') normalizedSocials.github = normalized;
+            if (item.label === 'Portfolio') normalizedSocials.portfolio = normalized;
+        }
+
+        setIsSaving(true);
+        setSaveError(null);
         try {
-            await deleteSavedResume(id);
-            setSavedResumes(prev => prev.filter(r => r.id !== id));
-            await refreshUsage();
-        } catch (err) {
-            console.error("Error deleting resume:", err);
+            let profileImageUrl = profile.image;
+            if (pendingImageFile) {
+                const uploadResult = await uploadUserMedia(pendingImageFile, 'profile_image');
+                profileImageUrl = uploadResult.secure_url;
+            }
+
+            await updateProfileApi({
+                full_name: editName.trim() || undefined,
+                phone_number: phone,
+                bio: profile.bio,
+                skills: profile.skills,
+                links: {
+                    ...normalizedSocials,
+                    profile_career_headline: profile.role.trim(),
+                    profile_location: profile.location.trim(),
+                },
+                profile_image_url: profileImageUrl || undefined,
+            });
+
+            const nextProfile: ProfileFormState = {
+                ...profile,
+                phone,
+                socials: normalizedSocials,
+                image: profileImageUrl || null,
+            };
+
+            if (pendingImageUrlRef.current) {
+                URL.revokeObjectURL(pendingImageUrlRef.current);
+                pendingImageUrlRef.current = null;
+            }
+            setPendingImageFile(null);
+            setProfile(nextProfile);
+            localStorage.setItem(`user_profile_${user.email}`, JSON.stringify(nextProfile));
+
+            try {
+                await refreshUser();
+            } catch {
+                setSaveError('Your changes were saved, but your session could not be refreshed. Reload the page to see them everywhere.');
+            }
+            setIsEditing(false);
+        } catch (error) {
+            console.error('Failed to save profile:', error);
+            setSaveError('We could not save your profile changes. Please try again.');
+        } finally {
+            setIsSaving(false);
         }
     };
 
-    const handleDownloadPDF = async (resume: any) => {
-        if (resolved && downloadLimitReached) {
+    const handleImageUpload = (file: File) => {
+        if (pendingImageUrlRef.current) {
+            URL.revokeObjectURL(pendingImageUrlRef.current);
+        }
+        const objectUrl = URL.createObjectURL(file);
+        pendingImageUrlRef.current = objectUrl;
+        setPendingImageFile(file);
+        setProfile(current => ({ ...current, image: objectUrl }));
+    };
+
+    const handleAddSkill = () => {
+        const value = newSkill.trim();
+        if (!value || profile.skills.includes(value)) return;
+        setProfile(current => ({ ...current, skills: [...current.skills, value] }));
+        setNewSkill('');
+    };
+
+    const handleRemoveSkill = (skillToRemove: string) => {
+        setProfile(current => ({
+            ...current,
+            skills: current.skills.filter(skill => skill !== skillToRemove),
+        }));
+    };
+
+    const handleEditResume = (resume: SavedResumeRecord) => {
+        navigate('/resume-builder', { state: { editResume: resume } });
+    };
+
+    const handleOpenProjectResume = (resumeId: string) => {
+        const resume = savedResumes.find(item => item.id === resumeId);
+        if (resume) handleEditResume(resume);
+    };
+
+    const handleResumeError = (error: unknown, action: string) => {
+        const limitInfo = extractLimitExceededError(error);
+        if (limitInfo) {
+            setLimitModal({
+                isOpen: true,
+                counter: limitInfo.counter === 'resume_count' ? 'resume_count' : 'resume_edit_monthly',
+                current: limitInfo.current,
+                limit: limitInfo.limit,
+                message: limitInfo.message,
+            });
+            return;
+        }
+        console.error(`Error trying to ${action}:`, error);
+        setResumeActionError(`We could not ${action}. Please try again.`);
+    };
+
+    const authorizeDownload = async (resume: SavedResumeRecord): Promise<boolean> => {
+        if (downloadLocked) {
             openUsageLimitModal(
                 'resume_edit_monthly',
                 'You have used all resume downloads for this month. You can still edit your saved resumes, but downloading another file requires the next monthly reset or a higher plan.',
             );
+            return false;
+        }
+        await authorizeResumeDownload(resume.id);
+        await refreshUsage();
+        return true;
+    };
+
+    const handleDownloadPdf = async (resume: SavedResumeRecord) => {
+        setResumeActionError(null);
+        try {
+            if (!(await authorizeDownload(resume))) return;
+            const template = resolveCatalogTemplate(resume.template_id);
+            const documentModel = buildResumeDocument(
+                asResumeData(resume.resume_data),
+                template.base,
+                resume.theme || '#5c52d2',
+            );
+            await exportToPDF(documentModel, `${safeResumeFilename(resume.resume_name)}.pdf`);
+        } catch (error) {
+            handleResumeError(error, 'export this resume as PDF');
+        }
+    };
+
+    const handleDownloadDocx = async (resume: SavedResumeRecord) => {
+        setResumeActionError(null);
+        try {
+            if (!(await authorizeDownload(resume))) return;
+            const template = resolveCatalogTemplate(resume.template_id);
+            const documentModel = buildResumeDocument(
+                asResumeData(resume.resume_data),
+                template.base,
+                resume.theme || '#5c52d2',
+            );
+            await exportToDOCX(documentModel, `${safeResumeFilename(resume.resume_name)}.docx`);
+        } catch (error) {
+            handleResumeError(error, 'export this resume as DOCX');
+        }
+    };
+
+    const handleRenameResume = async (resume: SavedResumeRecord, name: string) => {
+        setResumeActionError(null);
+        try {
+            await updateSavedResume(resume.id, { resume_name: name });
+            setSavedResumes(current => current.map(item => (
+                item.id === resume.id ? { ...item, resume_name: name } : item
+            )));
+        } catch (error) {
+            console.error('Error renaming resume:', error);
+            throw new Error('Could not rename this resume. Please try again.');
+        }
+    };
+
+    const handleDuplicateResume = async (resume: SavedResumeRecord) => {
+        setResumeActionError(null);
+        if (resolved && storageLimitReached) {
+            openUsageLimitModal(
+                'resume_count',
+                'You have reached the saved-resume limit for your plan. Delete a resume or upgrade to save another copy.',
+            );
             return;
         }
-
         try {
-            await authorizeResumeDownload(resume.id);
+            await saveResumeToProfile({
+                resume_name: duplicateResumeName(resume.resume_name),
+                resume_data: resume.resume_data,
+                template_id: resume.template_id,
+                theme: resume.theme,
+                target_role: resume.target_role || undefined,
+                ats_score: resume.ats_score ?? undefined,
+                is_primary: false,
+            });
             await refreshUsage();
-            const base = resolveBaseTemplate(resume.template_id);
-            await exportToPDF(
-                buildResumeDocument(resume.resume_data, base, resume.theme || '#5c52d2'),
-                `${(resume.resume_name || resume.resume_data?.personal?.full_name || 'Resume').replace(/\s+/g, '_')}_Resume.pdf`,
-            );
+            await loadResumes(false);
         } catch (error) {
             const limitInfo = extractLimitExceededError(error);
             if (limitInfo) {
@@ -351,478 +438,185 @@ export default function Profile() {
                     limit: limitInfo.limit,
                     message: limitInfo.message,
                 });
-            } else {
-                console.error("Error downloading resume:", error);
-                alert("Unable to download this resume right now. Please try again.");
+                return;
             }
+            console.error('Error duplicating resume:', error);
+            throw new Error('Could not duplicate this resume. Please try again.');
         }
     };
 
-    const handleEditResume = (resume: any) => {
-        navigate('/resume-builder', {
-            state: { editResume: resume }
-        });
-    };
-
-    const handleSave = async () => {
-        if (!user?.email) return;
-        setIsSaving(true);
+    const handleDeleteResume = async (resume: SavedResumeRecord) => {
+        setResumeActionError(null);
         try {
-            let profileImageUrl = profile.image;
-            if (pendingImageFile) {
-                const uploadResult = await uploadUserMedia(pendingImageFile, 'profile_image');
-                profileImageUrl = uploadResult.secure_url;
-            }
-
-            // 1. Save to backend (name, phone, bio, skills, links)
-            await updateProfileApi({
-                full_name: editName.trim() || undefined,
-                phone_number: profile.phone || undefined,
-                bio: profile.bio || undefined,
-                skills: profile.skills.length > 0 ? profile.skills : undefined,
-                links: {
-                    linkedin: profile.socials.linkedin,
-                    github: profile.socials.github,
-                    portfolio: profile.socials.portfolio,
-                },
-                profile_image_url: profileImageUrl || undefined,
-            });
-
-            const nextProfile = {
-                ...profile,
-                image: profileImageUrl || null,
-            };
-
-            if (pendingImageUrlRef.current) {
-                URL.revokeObjectURL(pendingImageUrlRef.current);
-                pendingImageUrlRef.current = null;
-            }
-            setPendingImageFile(null);
-            setProfile(nextProfile);
-
-            // 2. Save local-only fields (role, location, Cloudinary image URL) to localStorage
-            localStorage.setItem(`user_profile_${user.email}`, JSON.stringify(nextProfile));
-
-            // 3. Refresh user from backend so every component sees the new name
-            await refreshUser();
-
-            setIsEditing(false);
+            await deleteSavedResume(resume.id);
+            setSavedResumes(current => current.filter(item => item.id !== resume.id));
+            setPreviewResume(current => (current?.id === resume.id ? null : current));
+            await refreshUsage();
         } catch (error) {
-            console.error("Failed to save profile:", error);
-            alert("Failed to save changes. Please try again.");
-        } finally {
-            setIsSaving(false);
+            console.error('Error deleting resume:', error);
+            throw new Error('Could not delete this resume. Please try again.');
         }
     };
 
-    const [newSkill, setNewSkill] = useState("");
-
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            if (pendingImageUrlRef.current) {
-                URL.revokeObjectURL(pendingImageUrlRef.current);
-            }
-
-            const objectUrl = URL.createObjectURL(file);
-            pendingImageUrlRef.current = objectUrl;
-            setPendingImageFile(file);
-            setProfile(prev => ({ ...prev, image: objectUrl }));
-        }
-    };
-
-    const handleAddSkill = () => {
-        if (newSkill.trim() && !profile.skills.includes(newSkill.trim())) {
-            setProfile(prev => ({
-                ...prev,
-                skills: [...prev.skills, newSkill.trim()]
-            }));
-            setNewSkill("");
-        }
-    };
-
-    const handleRemoveSkill = (skillToRemove: string) => {
-        setProfile(prev => ({
-            ...prev,
-            skills: prev.skills.filter(skill => skill !== skillToRemove)
-        }));
-    };
-
-    // Derived display values
     const displayName = isEditing
         ? (editName || user?.email?.split('@')[0] || 'Your Profile')
         : (user?.profile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'Your Profile');
     const displayEmail = user?.email || '';
     const displayInitial = (displayName && displayName !== 'Your Profile' ? displayName[0] : displayEmail[0] || 'U').toUpperCase();
 
+    const projects = useMemo(() => extractProjectsFromResumes(savedResumes), [savedResumes]);
+    const stats = useMemo(() => ({
+        resumes: resumesLoading ? null : savedResumes.length,
+        badges: progressHydrated ? badges.totalUnlocked : null,
+        streak: progressHydrated ? streak.currentStreak : null,
+        skills: profile.skills.length,
+    }), [resumesLoading, savedResumes.length, progressHydrated, badges.totalUnlocked, streak.currentStreak, profile.skills.length]);
+
+    const retryProgress = () => {
+        void refreshDashboard({ forceRefresh: true, showLoading: false });
+    };
+
+    const progressTabActive = activeTab === 'overview'
+        || activeTab === 'achievements'
+        || activeTab === 'skills'
+        || activeTab === 'activity';
+
     return (
-        <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
-<main className="max-w-5xl mx-auto px-3 sm:px-6 pt-6 sm:pt-10">
-                <div className="bg-white rounded-2xl sm:rounded-[2.5rem] shadow-xl overflow-hidden border border-slate-100 relative">
-                    {/* Header Banner */}
-                    <div className="h-32 sm:h-48 bg-gradient-to-r from-[#5c52d2] to-[#7c66dc] relative">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-[80px]"></div>
-                        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full -ml-24 -mb-24 blur-[60px]"></div>
+        <div className="min-h-screen bg-[#f8fafc] pb-20 font-sans dark:bg-slate-950">
+            <main className="mx-auto max-w-6xl space-y-6 px-3 pt-6 sm:px-6 sm:pt-10">
+                {profileHydrated ? (
+                    <ProfileHeader
+                        displayName={displayName}
+                        displayEmail={displayEmail}
+                        displayInitial={displayInitial}
+                        profile={profile}
+                        editName={editName}
+                        isEditing={isEditing}
+                        isSaving={isSaving}
+                        stats={stats}
+                        onStartEdit={handleStartEdit}
+                        onCancel={handleCancel}
+                        onSave={handleSave}
+                        onEditName={setEditName}
+                        onProfileChange={setProfile}
+                        onImageUpload={handleImageUpload}
+                    />
+                ) : (
+                    <div className="h-[420px] animate-pulse rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950" aria-label="Loading profile" />
+                )}
 
-                        {/* Edit Button */}
-                        <div className="absolute top-6 right-6 z-10">
-                            {isEditing ? (
-                                <div className="flex gap-2">
-                                    <Button
-                                        onClick={() => setIsEditing(false)}
-                                        className="bg-white/20 hover:bg-white/30 text-white border-none backdrop-blur-md"
-                                        size="sm"
-                                    >
-                                        <X className="w-4 h-4 mr-2" /> Cancel
-                                    </Button>
-                                    <Button
-                                        onClick={handleSave}
-                                        className="bg-white text-[#5c52d2] hover:bg-gray-100 border-none shadow-lg"
-                                        size="sm"
-                                        disabled={isSaving}
-                                    >
-                                        {isSaving ? (
-                                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
-                                        ) : (
-                                            <><Save className="w-4 h-4 mr-2" /> Save Changes</>
-                                        )}
-                                    </Button>
-                                </div>
-                            ) : (
-                                <Button
-                                    onClick={() => setIsEditing(true)}
-                                    className="bg-white/20 hover:bg-white/30 text-white border-none backdrop-blur-md transition-all"
-                                    size="sm"
-                                >
-                                    <Edit2 className="w-4 h-4 mr-2" /> Edit Profile
-                                </Button>
-                            )}
-                        </div>
+                {saveError && (
+                    <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="flex-1">{saveError}</span>
+                        <button type="button" onClick={() => setSaveError(null)} className="font-semibold hover:underline">Dismiss</button>
                     </div>
+                )}
 
-                    <div className="px-4 sm:px-8 md:px-12 pb-8 sm:pb-12">
-                        {/* Profile Image & Basic Info */}
-                        <div className="relative -mt-14 sm:-mt-20 mb-6 sm:mb-8 flex flex-col md:flex-row items-center md:items-end gap-4 sm:gap-6 text-center md:text-left">
-                            <div className="relative group">
-                                <div className="w-28 h-28 sm:w-40 sm:h-40 bg-white p-1.5 sm:p-2 rounded-2xl sm:rounded-[2.5rem] shadow-lg relative z-10">
-                                    <div className="w-full h-full bg-slate-100 rounded-xl sm:rounded-[2rem] flex items-center justify-center overflow-hidden relative">
-                                        {profile.image ? (
-                                            <img src={profile.image} alt="Profile" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                                                <span className="text-4xl font-bold text-white">{displayInitial}</span>
-                                            </div>
-                                        )}
+                <ProfileTabBar active={activeTab} onChange={handleTabChange} resumeCount={resumesLoading ? undefined : savedResumes.length} />
 
-                                        {/* Image Upload Overlay */}
-                                        {isEditing && (
-                                            <div
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="absolute inset-0 bg-black/50 flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-                                            >
-                                                <Camera className="w-8 h-8 text-white" />
-                                            </div>
-                                        )}
-                                        <input
-                                            type="file"
-                                            ref={fileInputRef}
-                                            className="hidden"
-                                            accept="image/*"
-                                            onChange={handleImageUpload}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex-1 pb-2 space-y-2 w-full md:w-auto">
-                                {isEditing ? (
-                                    <Input
-                                        value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
-                                        className="max-w-sm mx-auto md:mx-0 font-black text-2xl sm:text-3xl md:text-4xl h-11 sm:h-14 border-slate-200 tracking-tight"
-                                        placeholder="Your Name"
-                                    />
-                                ) : (
-                                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-                                        {displayName}
-                                    </h1>
-                                )}
-
-                                {isEditing ? (
-                                    <Input
-                                        value={profile.role}
-                                        onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-                                        className="max-w-xs mx-auto md:mx-0 font-bold text-lg h-10 border-slate-200"
-                                        placeholder="Current Role / Title"
-                                    />
-                                ) : profile.role ? (
-                                    <p className="text-slate-500 font-bold text-lg flex items-center justify-center md:justify-start gap-2">
-                                        <Briefcase className="w-4 h-4" /> {profile.role}
-                                    </p>
-                                ) : null}
-                            </div>
-                        </div>
-
-                        <div className="grid md:grid-cols-3 gap-6 sm:gap-8 md:gap-12">
-                            {/* Left Column: Contact & Socials */}
-                            <div className="space-y-8">
-                                <div className="space-y-4">
-                                    <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
-                                        <User className="w-5 h-5 text-[#5c52d2]" /> Contact Info
-                                    </h3>
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-3 text-slate-500 font-medium text-sm">
-                                            <Mail className="w-4 h-4 shrink-0" />
-                                            <span className="truncate">{displayEmail}</span>
-                                        </div>
-
-                                        <div className="flex items-center gap-3 text-slate-500 font-medium text-sm">
-                                            <Phone className="w-4 h-4 shrink-0" />
-                                            {isEditing ? (
-                                                <Input
-                                                    value={profile.phone}
-                                                    onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                                                    className="h-8 text-sm"
-                                                    placeholder="Phone Number"
-                                                />
-                                            ) : (
-                                                <span>{profile.phone || 'Not set'}</span>
-                                            )}
-                                        </div>
-
-                                        <div className="flex items-center gap-3 text-slate-500 font-medium text-sm">
-                                            <MapPin className="w-4 h-4 shrink-0" />
-                                            {isEditing ? (
-                                                <Input
-                                                    value={profile.location}
-                                                    onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                                                    className="h-8 text-sm"
-                                                    placeholder="Location"
-                                                />
-                                            ) : (
-                                                <span>{profile.location || 'Not set'}</span>
-                                            )}
-                                        </div>
-
-                                        <div className="flex items-center gap-3 text-slate-500 font-medium text-sm">
-                                            <Calendar className="w-4 h-4 shrink-0" />
-                                            <span>Joined {profile.joined}</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
-                                        <Globe className="w-5 h-5 text-[#5c52d2]" /> Social Presence
-                                    </h3>
-                                    <div className="space-y-3">
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-3 text-slate-500 font-bold text-sm">
-                                                <Linkedin className="w-4 h-4 shrink-0" />
-                                                {isEditing ? (
-                                                    <Input
-                                                        value={profile.socials.linkedin}
-                                                        onChange={(e) => setProfile({
-                                                            ...profile,
-                                                            socials: { ...profile.socials, linkedin: e.target.value }
-                                                        })}
-                                                        className="h-8 text-sm"
-                                                        placeholder="LinkedIn URL"
-                                                    />
-                                                ) : profile.socials.linkedin ? (
-                                                    <a href={`https://${profile.socials.linkedin}`} target="_blank" rel="noreferrer" className="hover:text-[#0077b5] transition-colors hover:underline">
-                                                        LinkedIn
-                                                    </a>
-                                                ) : (
-                                                    <span className="text-slate-400">Not set</span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-3 text-slate-500 font-bold text-sm">
-                                                <Github className="w-4 h-4 shrink-0" />
-                                                {isEditing ? (
-                                                    <Input
-                                                        value={profile.socials.github}
-                                                        onChange={(e) => setProfile({
-                                                            ...profile,
-                                                            socials: { ...profile.socials, github: e.target.value }
-                                                        })}
-                                                        className="h-8 text-sm"
-                                                        placeholder="GitHub URL"
-                                                    />
-                                                ) : profile.socials.github ? (
-                                                    <a href={`https://${profile.socials.github}`} target="_blank" rel="noreferrer" className="hover:text-slate-900 transition-colors hover:underline">
-                                                        GitHub
-                                                    </a>
-                                                ) : (
-                                                    <span className="text-slate-400">Not set</span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-3 text-slate-500 font-bold text-sm">
-                                                <FileText className="w-4 h-4 shrink-0" />
-                                                {isEditing ? (
-                                                    <Input
-                                                        value={profile.socials.portfolio}
-                                                        onChange={(e) => setProfile({
-                                                            ...profile,
-                                                            socials: { ...profile.socials, portfolio: e.target.value }
-                                                        })}
-                                                        className="h-8 text-sm"
-                                                        placeholder="Portfolio URL"
-                                                    />
-                                                ) : profile.socials.portfolio ? (
-                                                    <a href={`https://${profile.socials.portfolio}`} target="_blank" rel="noreferrer" className="hover:text-emerald-500 transition-colors hover:underline">
-                                                        Portfolio
-                                                    </a>
-                                                ) : (
-                                                    <span className="text-slate-400">Not set</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Right Column: Bio & Skills */}
-                            <div className="md:col-span-2 space-y-6 sm:space-y-8 border-t md:border-t-0 md:border-l border-slate-100 pt-6 sm:pt-8 md:pt-0 md:pl-8 lg:pl-12">
-                                <div className="space-y-4">
-                                    <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
-                                        <FileText className="w-5 h-5 text-[#5c52d2]" /> About Me
-                                    </h3>
-                                    {isEditing ? (
-                                        <Textarea
-                                            value={profile.bio}
-                                            onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-                                            className="min-h-[120px] text-slate-600 font-medium"
-                                            placeholder="Write a short bio about yourself..."
-                                        />
-                                    ) : (
-                                        <p className="text-slate-500 leading-relaxed font-medium">
-                                            {profile.bio || 'No bio yet. Click "Edit Profile" to add one!'}
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div className="space-y-4">
-                                    <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
-                                        <Award className="w-5 h-5 text-[#5c52d2]" /> Core Skills
-                                    </h3>
-
-                                    <div className="flex flex-wrap gap-2">
-                                        {profile.skills.length > 0 ? (
-                                            profile.skills.map((skill, index) => (
-                                                <span
-                                                    key={index}
-                                                    className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-100 flex items-center gap-2 group cursor-default"
-                                                >
-                                                    {skill}
-                                                    {isEditing && (
-                                                        <button
-                                                            onClick={() => handleRemoveSkill(skill)}
-                                                            className="hover:text-red-500 transition-colors"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
-                                                    )}
-                                                </span>
-                                            ))
-                                        ) : !isEditing ? (
-                                            <p className="text-slate-400 text-sm">No skills added yet. Click "Edit Profile" to add some!</p>
-                                        ) : null}
-
-                                        {isEditing && (
-                                            <div className="flex items-center gap-2">
-                                                <Input
-                                                    value={newSkill}
-                                                    onChange={(e) => setNewSkill(e.target.value)}
-                                                    onKeyDown={(e) => e.key === 'Enter' && handleAddSkill()}
-                                                    className="h-8 w-32 text-xs"
-                                                    placeholder="Add skill..."
-                                                />
-                                                <Button
-                                                    onClick={handleAddSkill}
-                                                    size="icon"
-                                                    className="h-8 w-8 rounded-xl bg-[#5c52d2] hover:bg-[#4a42b8]"
-                                                >
-                                                    <Plus className="w-4 h-4 text-white" />
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ── SAVED RESUMES SECTION ── */}
-                <div className="mt-8 mb-16">
-                    <h3 className="font-black text-slate-900 text-2xl mb-6 flex items-center gap-3">
-                        <FileText className="w-6 h-6 text-[#5c52d2]" /> Saved Resumes
-                    </h3>
-                    <div className="mb-6 rounded-3xl border border-slate-200 bg-white/90 px-5 py-4 shadow-sm">
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                            <span className="inline-flex items-center rounded-full bg-[#5c52d2]/10 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-[#5c52d2]">
-                                {(usage?.plan || 'free').toUpperCase()} Plan
+                <div
+                    role="tabpanel"
+                    id={`profile-panel-${activeTab}`}
+                    aria-labelledby={`profile-tab-${activeTab}`}
+                    tabIndex={0}
+                    className="focus:outline-none"
+                >
+                    {progressTabActive && progressError && (
+                        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            <span>
+                                Progress data could not be refreshed. Badge, streak, and activity figures may be unavailable or stale.
                             </span>
-                            <span className="flex items-center gap-2">
-                                <span className="font-semibold text-slate-700">Saved Resumes</span>
-                                <UsageBadge counter="resume_count" showWhenUnlimited />
-                                {storageCounter?.limit === -1 && <span className="font-semibold text-emerald-600">Unlimited</span>}
-                            </span>
-                            <span className="flex items-center gap-2">
-                                <span className="font-semibold text-slate-700">Monthly Downloads</span>
-                                <UsageBadge counter="resume_edit_monthly" showWhenUnlimited />
-                                {downloadCounter?.limit === -1 && <span className="font-semibold text-emerald-600">Unlimited</span>}
-                            </span>
+                            <button type="button" onClick={retryProgress} className="font-bold text-amber-900 underline">
+                                Retry
+                            </button>
                         </div>
-                        {resolved && (storageLimitReached || downloadLimitReached) && (
-                            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-                                {storageLimitReached && (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 font-semibold text-amber-700">
-                                        <Lock className="w-3.5 h-3.5" />
-                                        Saved resume storage is full.
-                                    </span>
-                                )}
-                                {downloadLimitReached && (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1 font-semibold text-rose-700">
-                                        <Lock className="w-3.5 h-3.5" />
-                                        Monthly resume download limit reached.
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                    )}
 
-                    {loadingResumes ? (
-                        <div className="text-center text-slate-400 py-10">Loading your resumes...</div>
-                    ) : savedResumes.length === 0 ? (
-                        <div className="bg-white rounded-3xl p-10 text-center shadow-lg border border-slate-100">
-                            <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                            <h4 className="text-xl font-bold text-slate-700 mb-2">No Saved Resumes</h4>
-                            <p className="text-slate-500 max-w-sm mx-auto">Create and save your beautiful resumes from the builder to display them here.</p>
+                    {resumeActionError && (
+                        <div role="alert" className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span className="flex-1">{resumeActionError}</span>
+                            <button type="button" onClick={() => setResumeActionError(null)} className="font-semibold hover:underline">Dismiss</button>
                         </div>
-                    ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
-                            {savedResumes.map((resume: any) => (
-                                <LazyResumePreview
-                                    key={resume.id}
-                                    resume={resume}
-                                    onDelete={handleDeleteResume}
-                                    onDownload={handleDownloadPDF}
-                                    onEdit={handleEditResume}
-                                    downloadLocked={resolved && downloadLimitReached}
-                                />
-                            ))}
-                        </div>
+                    )}
+
+                    {activeTab === 'overview' && (
+                        <OverviewTab
+                            bio={profile.bio}
+                            projects={projects}
+                            recentBadges={badges.recentlyUnlocked}
+                            skills={profile.skills}
+                            resumes={savedResumes}
+                            loading={resumesLoading}
+                            badgesUnavailable={Boolean(progressError) && !progressHydrated}
+                            onOpenTab={handleTabChange}
+                        />
+                    )}
+
+                    {activeTab === 'projects' && (
+                        <ProjectsTab projects={projects} onOpenResume={handleOpenProjectResume} />
+                    )}
+
+                    {activeTab === 'achievements' && (
+                        <AchievementsTab
+                            data={badges}
+                            loading={progressLoading}
+                            error={progressError}
+                            onRetry={retryProgress}
+                        />
+                    )}
+
+                    {activeTab === 'skills' && (
+                        <SkillsTab
+                            skills={profile.skills}
+                            isEditing={isEditing}
+                            newSkill={newSkill}
+                            onNewSkillChange={setNewSkill}
+                            onAddSkill={handleAddSkill}
+                            onRemoveSkill={handleRemoveSkill}
+                            topics={topics}
+                        />
+                    )}
+
+                    {activeTab === 'activity' && (
+                        <ActivityTab
+                            summary={activity}
+                            loading={progressLoading || (!progressHydrated && !progressError)}
+                            unavailable={Boolean(progressError) && !progressHydrated}
+                            onRetry={retryProgress}
+                        />
+                    )}
+
+                    {activeTab === 'resumes' && (
+                        <ResumesTab
+                            resumes={savedResumes}
+                            loading={resumesLoading}
+                            error={resumesError}
+                            planLabel={(usage?.plan || 'free').toUpperCase()}
+                            downloadLocked={downloadLocked}
+                            storageLimitReached={resolved && storageLimitReached}
+                            downloadLimitReached={resolved && downloadLimitReached}
+                            previewResume={previewResume}
+                            onRetry={retryResumes}
+                            onEdit={handleEditResume}
+                            onPreview={setPreviewResume}
+                            onDownloadPdf={handleDownloadPdf}
+                            onDownloadDocx={handleDownloadDocx}
+                            onRename={handleRenameResume}
+                            onDuplicate={handleDuplicateResume}
+                            onDelete={handleDeleteResume}
+                        />
                     )}
                 </div>
             </main>
+
+            {isSaving && (
+                <div className="pointer-events-none fixed bottom-6 right-6 inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Saving profile
+                </div>
+            )}
+
             <UpgradeModal
                 isOpen={limitModal.isOpen}
                 onClose={() => setLimitModal({ isOpen: false })}
