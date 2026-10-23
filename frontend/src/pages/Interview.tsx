@@ -174,18 +174,28 @@ export default function Interview() {
             const resumes = data?.resumes || [];
             if (resumes.length > 0) {
                 const primary = resumes.find((r: any) => r.is_primary) || resumes[0];
-                const rd = primary.resume_data || {};
+                const rd = (primary.resume_data || {}) as {
+                    personalInfo?: { summary?: string };
+                    skills?: { categories?: Array<{ items?: Array<string | { name?: string }> }> };
+                    projects?: Array<{ title?: string; name?: string }>;
+                };
                 const pi = rd.personalInfo || {};
                 const summary = pi.summary || '';
                 const sk: string[] = [];
                 const pr: string[] = [];
                 if (rd.skills?.categories) {
-                    rd.skills.categories.forEach((c: any) => {
-                        (c.items || []).forEach((i: any) => sk.push(typeof i === 'string' ? i : i.name));
+                    rd.skills.categories.forEach((c) => {
+                        (c.items || []).forEach((i) => {
+                            if (typeof i === 'string') sk.push(i);
+                            else if (i.name) sk.push(i.name);
+                        });
                     });
                 }
                 if (rd.projects) {
-                    (rd.projects || []).forEach((p: any) => pr.push(p.title || p.name || ''));
+                    rd.projects.forEach((p) => {
+                        const name = p.title || p.name;
+                        if (name) pr.push(name);
+                    });
                 }
                 setResumeSummary(summary);
                 setSkills(sk);
