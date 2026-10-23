@@ -701,14 +701,10 @@ export async function fetchTimeline(
   page = 1,
   perPage = 20,
 ): Promise<TimelineResponse> {
-  try {
-    const { data } = await api.get(
-      `${PE_BASE}/timeline?filter=${filter}&page=${page}&per_page=${perPage}`,
-    );
-    return data;
-  } catch {
-    return { events: [], total: 0, page, per_page: perPage, has_more: false };
-  }
+  const { data } = await api.get(
+    `${PE_BASE}/timeline?filter=${filter}&page=${page}&per_page=${perPage}`,
+  );
+  return data;
 }
 
 export interface ProgressStreamMessage {
@@ -738,8 +734,8 @@ class ProgressStreamHttpError extends Error {
 
   constructor(status: number) {
     super(`Progress stream failed with status ${status}`);
-    this.status = status;
     this.name = 'ProgressStreamHttpError';
+    this.status = status;
   }
 }
 

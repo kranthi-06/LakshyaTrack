@@ -24,7 +24,6 @@ const pageImporters: Record<string, Importer> = {
     '/english': () => import('../pages/EnglishSpeaking'),
     '/reasoning': () => import('../pages/Reasoning'),
     '/admin/questions': () => import('../pages/AdminQuestionUpload'),
-    '/progress-dashboard': () => import('../pages/ProgressUnified'),
     '/progress-legacy': () => import('../pages/Progress'),
     '/progress-dashboard-legacy': () => import('../progress-system/ProgressDashboard'),
 };

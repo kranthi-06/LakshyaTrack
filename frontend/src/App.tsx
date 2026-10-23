@@ -49,7 +49,6 @@ const AdminSubscriptionPanel = lazyPage('/admin/subscriptions');
 const EnglishSpeaking = lazyPage('/english');
 const Reasoning = lazyPage('/reasoning');
 const AdminQuestionUpload = lazyPage('/admin/questions');
-const ProgressDashboardPage = lazyPage('/progress-dashboard');
 const ProgressLegacy = lazyPage('/progress-legacy');
 const ProgressDashboardLegacy = lazyPage('/progress-dashboard-legacy');
 
@@ -97,7 +96,7 @@ const AdminPage = memo(function AdminPage({ children, requireBlackAdmin }: { chi
 /** Prefetch commonly visited routes during idle time */
 function usePrefetchRoutes() {
   useEffect(() => {
-    const criticalRoutes = ['/dashboard', '/resume-builder', '/career', '/quiz', '/progress', '/progress-dashboard', '/profile'];
+    const criticalRoutes = ['/dashboard', '/resume-builder', '/career', '/quiz', '/progress', '/profile'];
     injectRoutePrefetchHints(criticalRoutes);
 
     const prefetch = () => {
@@ -171,7 +170,7 @@ function App() {
             <Route path="/plans" element={<ProtectedPage><Plans /></ProtectedPage>} />
             <Route path="/english" element={<ProtectedPage><EnglishSpeaking /></ProtectedPage>} />
             <Route path="/reasoning" element={<ProtectedPage><Reasoning /></ProtectedPage>} />
-            <Route path="/progress-dashboard" element={<ProtectedPage><ProgressDashboardPage /></ProtectedPage>} />
+            <Route path="/progress-dashboard" element={<Navigate to="/progress" replace />} />
             <Route path="/progress-legacy" element={<ProtectedPage><ProgressLegacy /></ProtectedPage>} />
             <Route path="/progress-dashboard-legacy" element={<ProtectedPage><ProgressDashboardLegacy /></ProtectedPage>} />
 

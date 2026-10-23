@@ -28,12 +28,11 @@ const PAGE_LABELS: Record<string, string> = {
     '/quiz': 'Quiz',
     '/interview': 'Interview',
     '/jobs': 'Jobs',
-    '/progress': 'Progress',
     '/profile': 'Profile',
     '/plans': 'Plans',
     '/english': 'English Speaking',
     '/reasoning': 'Reasoning',
-    '/progress-dashboard': 'Progress Dashboard',
+    '/progress': 'Progress Intelligence',
 };
 
 function getPageLabel(pathname: string): string {
