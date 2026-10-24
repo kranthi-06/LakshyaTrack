@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
     AlertCircle,
@@ -27,6 +28,29 @@ import {
     resumeAccentColor,
     type ResumeSortKey,
 } from './profileUtils';
+
+const RESUME_PAGE_WIDTH = 794;
+const RESUME_PAGE_HEIGHT = 1123;
+
+/** Scale an A4 resume page down to the width of its container. */
+function useFitToWidth(baseWidth: number) {
+    const ref = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(1);
+
+    useEffect(() => {
+        const element = ref.current;
+        if (!element || typeof ResizeObserver === 'undefined') return;
+
+        const observer = new ResizeObserver(() => {
+            const width = element.clientWidth;
+            if (width > 0) setScale(width < baseWidth ? width / baseWidth : 1);
+        });
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [baseWidth]);
+
+    return [ref, scale] as const;
+}
 
 interface Props {
     resumes: SavedResumeRecord[];
@@ -199,6 +223,7 @@ function SavedResumeCard({
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const confirmTitleId = useId();
     const containerRef = useRef<HTMLDivElement>(null);
+    const [thumbnailRef, thumbnailScale] = useFitToWidth(RESUME_PAGE_WIDTH);
     const catalog = resolveCatalogTemplate(resume.template_id);
     const data = asResumeData(resume.resume_data);
     const color = resumeAccentColor(resume);
@@ -258,10 +283,13 @@ function SavedResumeCard({
                 </div>
             </div>
 
-            <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-900" style={{ minHeight: 280 }}>
+            <div ref={thumbnailRef} className="relative h-[280px] overflow-hidden bg-slate-100 dark:bg-slate-900">
                 {visible ? (
-                    <div className="pointer-events-none origin-top" style={{ width: 794, height: 1123, transform: 'scale(0.46)', marginBottom: -600 }}>
-                        <div id={`resume-preview-${resume.id}`} className="h-full w-full bg-white">
+                    <div
+                        className="pointer-events-none absolute left-0 top-0 origin-top-left bg-white"
+                        style={{ width: RESUME_PAGE_WIDTH, height: RESUME_PAGE_HEIGHT, transform: `scale(${thumbnailScale})` }}
+                    >
+                        <div id={`resume-preview-${resume.id}`} className="h-full w-full">
                             <ResumeRenderer base={catalog.base} data={data} color={color} />
                         </div>
                     </div>
@@ -365,6 +393,7 @@ function ResumePreviewModal({
     const catalog = resolveCatalogTemplate(resume.template_id);
     const data = asResumeData(resume.resume_data);
     const color = resumeAccentColor(resume);
+    const [previewRef, previewScale] = useFitToWidth(RESUME_PAGE_WIDTH);
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -379,26 +408,37 @@ function ResumePreviewModal({
         };
     }, [onClose]);
 
-    return (
+    const modal = (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="resume-preview-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
             <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-950">
-                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-                    <h3 id="resume-preview-title" className="font-black text-slate-900 dark:text-white">{resume.resume_name}</h3>
-                    <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 id="resume-preview-title" className="min-w-0 truncate font-black text-slate-900 dark:text-white">{resume.resume_name}</h3>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
                         <Button size="sm" onClick={() => onEdit(resume)}>Edit</Button>
                         <Button size="sm" variant="outline" onClick={() => onDownloadPdf(resume)} title={downloadLocked ? 'Monthly download limit reached' : 'Download PDF'}>PDF</Button>
                         <Button size="sm" variant="outline" onClick={() => onDownloadDocx(resume)} title={downloadLocked ? 'Monthly download limit reached' : 'Download DOCX'}>DOCX</Button>
                         <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close preview" autoFocus><X className="h-4 w-4" /></Button>
                     </div>
                 </div>
-                <div className="overflow-auto bg-slate-100 p-4 dark:bg-slate-900">
-                    <div className="mx-auto origin-top bg-white shadow-xl" style={{ width: 794 }}>
-                        <div id={`resume-preview-modal-${resume.id}`}>
-                            <ResumeRenderer base={catalog.base} data={data} color={color} />
+                <div className="overflow-auto bg-slate-100 p-3 dark:bg-slate-900 sm:p-4">
+                    <div
+                        ref={previewRef}
+                        className="relative mx-auto w-full max-w-[794px] overflow-hidden bg-white shadow-xl"
+                        style={{ aspectRatio: `${RESUME_PAGE_WIDTH} / ${RESUME_PAGE_HEIGHT}` }}
+                    >
+                        <div
+                            className="origin-top-left"
+                            style={{ width: RESUME_PAGE_WIDTH, height: RESUME_PAGE_HEIGHT, transform: `scale(${previewScale})` }}
+                        >
+                            <div id={`resume-preview-modal-${resume.id}`}>
+                                <ResumeRenderer base={catalog.base} data={data} color={color} />
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     );
+
+    return typeof document === 'undefined' ? modal : createPortal(modal, document.body);
 }

@@ -198,8 +198,8 @@ export function AchievementGalleryPremium({ data, loading, error = null, onRetry
                                     ${isSelected 
                                         ? `w-48 h-56 ${rarityStyle.border} dark:${rarityStyle.border} bg-gradient-to-br ${rarityStyle.bgLight} dark:${rarityStyle.bg} shadow-2xl ${rarityStyle.glowLight} dark:${rarityStyle.glow} scale-100 z-10` 
                                         : offset === -1 || offset === 1
-                                            ? 'w-36 h-44 border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-900/50 scale-90 opacity-60 hover:opacity-80'
-                                            : 'w-28 h-32 border-slate-200 dark:border-slate-800/30 bg-slate-50 dark:bg-slate-900/30 scale-75 opacity-40'
+                                            ? 'hidden sm:block w-36 h-44 border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-900/50 scale-90 opacity-60 hover:opacity-80'
+                                            : 'hidden lg:block w-28 h-32 border-slate-200 dark:border-slate-800/30 bg-slate-50 dark:bg-slate-900/30 scale-75 opacity-40'
                                     }
                                 `}
                             >
@@ -280,8 +280,8 @@ function SelectedBadgePanel({
                                 <div className={`relative h-24 w-24 rounded-2xl bg-gradient-to-br ${rarityStyle?.bgLight} dark:${rarityStyle?.bg} flex items-center justify-center shadow-xl ${rarityStyle?.glowLight} dark:${rarityStyle?.glow}`}>
                                     <span className="text-6xl">{badge.icon}</span>
                                 </div>
-                                <div className="flex-1">
-                                    <h4 className="text-2xl font-black text-slate-900 dark:text-white">{badge.name}</h4>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="break-words text-2xl font-black text-slate-900 dark:text-white">{badge.name}</h4>
                                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{badge.description}</p>
                                 </div>
                             </div>

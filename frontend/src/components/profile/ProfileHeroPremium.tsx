@@ -180,9 +180,9 @@ export function ProfileHeroPremium({
             </div>
 
             <div className="px-4 pb-8 sm:px-8 md:px-12">
-                <div className="-mt-20 flex flex-col gap-6 sm:-mt-24 md:-mt-28 md:flex-row md:items-end">
+                <div className="flex flex-col gap-6 md:flex-row md:items-start">
                     {/* Premium Avatar with Glow */}
-                    <div className="relative mx-auto group md:mx-0">
+                    <div className="relative mx-auto -mt-20 group sm:-mt-24 md:mx-0 md:-mt-28">
                         <div className="relative">
                             {/* Glow effect */}
                             <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-violet-400 to-indigo-400 dark:from-violet-600 dark:to-indigo-600 blur opacity-50 group-hover:opacity-75 transition-opacity" />
@@ -219,7 +219,7 @@ export function ProfileHeroPremium({
                     </div>
 
                     {/* User Info */}
-                    <div className="min-w-0 flex-1 text-center md:pb-2 md:text-left">
+                    <div className="min-w-0 flex-1 text-center md:pb-2 md:pt-4 md:text-left">
                         {isEditing ? (
                             <Input
                                 value={editName}

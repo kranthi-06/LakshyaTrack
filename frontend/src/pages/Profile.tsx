@@ -487,7 +487,7 @@ export default function Profile() {
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-[#050510] pb-20 font-sans">
-            <main className="mx-auto max-w-6xl space-y-6 px-3 pt-6 sm:px-6 sm:pt-10">
+            <div className="mx-auto max-w-6xl space-y-6 px-3 pt-6 sm:px-6 sm:pt-10">
                 {profileHydrated ? (
                     <ProfileHeroPremium
                         displayName={displayName}
@@ -613,7 +613,7 @@ export default function Profile() {
                         />
                     )}
                 </div>
-            </main>
+            </div>
 
             {isSaving && (
                 <div className="pointer-events-none fixed bottom-6 right-6 inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg">
