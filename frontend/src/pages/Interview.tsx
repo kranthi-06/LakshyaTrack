@@ -14,7 +14,7 @@ import {
 } from '../services/careerPlatform';
 import { getSavedResumes } from '../services/resumeStorage';
 import CodingEnvironment from '../components/CodingEnvironment';
-import { Mic2, MessageSquare, Monitor, Send, StopCircle, CheckCircle2, Target, Zap, ArrowRight, BrainCircuit, Award, Loader2, FileText, Code2, UserCircle2, Play, ChevronRight, Lock, Trophy, Star, Heart, Lightbulb, Volume2, VolumeX, Pause, RotateCcw, Gauge } from 'lucide-react';
+import { Mic2, MessageSquare, Monitor, Send, StopCircle, CheckCircle2, Target, Zap, ArrowRight, BrainCircuit, Award, Loader2, FileText, Code2, UserCircle2, Play, ChevronRight, Lock, Trophy, Star, Heart, Lightbulb, Volume2, VolumeX, Pause, RotateCcw, Gauge, Video, VideoOff, Mic, MicOff, Signal, PhoneOff, Settings, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import PremiumGate from '../components/PremiumGate';
@@ -26,6 +26,7 @@ import {
     trackInterviewCompleted,
     trackProblemSolved,
 } from '../progress-system/services/eventTracker';
+import { useTheme } from '../context/ThemeContext';
 type InterviewStep = 'landing' | 'setup' | 'screening' | 'technical' | 'coding' | 'hr' | 'stage_result' | 'final_results';
 type InterviewMode = 'text' | 'voice';
 type InterviewPath = 'resume_screening' | 'direct_skill';
@@ -46,6 +47,7 @@ const STAGES = [
 ];
 
 export default function Interview() {
+    const { theme } = useTheme();
     // ── Subscription gate for interview feature ──
     const { isLocked, guardAction, gateProps } = useFeatureGate(
         'interview_start',
@@ -97,6 +99,31 @@ export default function Interview() {
     const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
     const lastSpokenQuestion = useRef<string>('');
     const solvedProblemTrackedRef = useRef(false);
+    
+    // Zero-cost webcam (browser-native MediaDevices API)
+    const [isCameraOn, setIsCameraOn] = useState(false);
+    const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+    const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>('');
+    const [isMirrored, setIsMirrored] = useState(true);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    
+    // Timer and status
+    const [elapsedTime, setElapsedTime] = useState(0);
+    const timerRef = useRef<NodeJS.Timeout>();
+    
+    // Live transcription (using existing speech recognition output)
+    const [transcript, setTranscript] = useState<Array<{ speaker: 'interviewer' | 'candidate'; text: string; timestamp: number }>>([]);
+    const [showTranscript, setShowTranscript] = useState(true);
+    
+    // TTS voice selection
+    const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+    const [selectedVoice, setSelectedVoice] = useState<string>('');
+    
+    // Mic level detection
+    const [micLevel, setMicLevel] = useState(0);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const analyserRef = useRef<AnalyserNode | null>(null);
 
     const currentStage = STAGES[currentStageIdx];
 
@@ -113,11 +140,15 @@ export default function Interview() {
         utterance.pitch = 1;
         utterance.volume = 1;
         utterance.lang = 'en-US';
+        if (selectedVoice) {
+            const voice = availableVoices.find(v => v.name === selectedVoice);
+            if (voice) utterance.voice = voice;
+        }
         utterance.onstart = () => { setIsSpeaking(true); setIsPaused(false); };
         utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); };
         utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); };
         speechSynthesis.speak(utterance);
-    }, [speechSupported]);
+    }, [speechSupported, selectedVoice, availableVoices]);
 
     const pauseSpeech = useCallback(() => {
         if (speechSupported && speechSynthesis.speaking) {
@@ -160,13 +191,145 @@ export default function Interview() {
 
     // Cancel speech when leaving interview or restarting
     useEffect(() => {
-        return () => { if (speechSupported) speechSynthesis.cancel(); };
+        return () => { 
+            if (speechSupported) speechSynthesis.cancel();
+            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
     }, [speechSupported]);
+
+    // Timer
+    useEffect(() => {
+        if (step === 'screening' || step === 'technical' || step === 'hr' || step === 'coding') {
+            timerRef.current = setInterval(() => setElapsedTime(prev => prev + 1), 1000);
+        } else {
+            if (timerRef.current) clearInterval(timerRef.current);
+        }
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [step]);
 
     // Load resume data on mount
     useEffect(() => {
         loadResumeData();
-    }, []);
+        // Get video devices for webcam
+        if (typeof window !== 'undefined' && navigator.mediaDevices) {
+            navigator.mediaDevices.enumerateDevices().then(devices => {
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                setVideoDevices(videoDevices);
+                if (videoDevices.length > 0) setSelectedVideoDevice(videoDevices[0].deviceId);
+            }).catch(() => {});
+        }
+        // Get available TTS voices
+        if (speechSupported) {
+            const loadVoices = () => {
+                const voices = speechSynthesis.getVoices();
+                const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+                setAvailableVoices(englishVoices);
+                if (englishVoices.length > 0 && !selectedVoice) {
+                    setSelectedVoice(englishVoices[0].name);
+                }
+            };
+            loadVoices();
+            speechSynthesis.onvoiceschanged = loadVoices;
+        }
+    }, [speechSupported, selectedVoice]);
+
+    // Webcam management (browser-native, zero-cost)
+    useEffect(() => {
+        if (!isCameraOn) {
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+                streamRef.current = null;
+            }
+            if (videoRef.current) videoRef.current.srcObject = null;
+            return;
+        }
+        const startCamera = async () => {
+            try {
+                const constraints: MediaStreamConstraints = selectedVideoDevice
+                    ? { video: { deviceId: { exact: selectedVideoDevice }, width: 1280, height: 720 } }
+                    : { video: { width: 1280, height: 720 } };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                streamRef.current = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    videoRef.current.muted = true;
+                }
+            } catch (err) {
+                console.error('Camera error:', err);
+                setIsCameraOn(false);
+            }
+        };
+        startCamera();
+        return () => {
+            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+        };
+    }, [isCameraOn, selectedVideoDevice]);
+
+    // Mic level detection
+    useEffect(() => {
+        if (!isListening) {
+            setMicLevel(0);
+            return;
+        }
+        const startMicLevelDetection = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const audioContext = new AudioContext();
+                audioContextRef.current = audioContext;
+                const analyser = audioContext.createAnalyser();
+                analyserRef.current = analyser;
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const updateLevel = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    setMicLevel(average / 255);
+                    if (isListening) requestAnimationFrame(updateLevel);
+                };
+                updateLevel();
+            } catch (err) {
+                console.error('Mic level error:', err);
+            }
+        };
+        startMicLevelDetection();
+        return () => {
+            if (audioContextRef.current) audioContextRef.current.close();
+        };
+    }, [isListening]);
+
+    // Timer
+    useEffect(() => {
+        if (step === 'screening' || step === 'technical' || step === 'hr' || step === 'coding') {
+            timerRef.current = setInterval(() => setElapsedTime(prev => prev + 1), 1000);
+        } else {
+            if (timerRef.current) clearInterval(timerRef.current);
+        }
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [step]);
+
+    // Add to transcript when question changes
+    useEffect(() => {
+        if (currentQuestion && (step === 'screening' || step === 'technical' || step === 'hr')) {
+            setTranscript(prev => [...prev, { speaker: 'interviewer', text: currentQuestion, timestamp: Date.now() }]);
+        }
+    }, [currentQuestion, step]);
+
+    // Add to transcript when user submits response
+    useEffect(() => {
+        if (userResponse && (step === 'screening' || step === 'technical' || step === 'hr')) {
+            const lastEntry = transcript[transcript.length - 1];
+            if (!lastEntry || lastEntry.speaker !== 'candidate' || lastEntry.text !== userResponse) {
+                setTranscript(prev => [...prev, { speaker: 'candidate', text: userResponse, timestamp: Date.now() }]);
+            }
+        }
+    }, [userResponse, step, transcript]);
 
     const loadResumeData = async () => {
         try {
@@ -580,7 +743,14 @@ export default function Interview() {
                                         <currentStage.icon className={`w-6 h-6 ${currentStage.color}`} />
                                     </div>
                                     <h2 className="text-2xl font-black text-slate-900 tracking-tight">{currentStage.label}</h2>
-                                    <span className="ml-auto text-sm font-black text-[#5c52d2] tracking-widest uppercase">Q {questionIndex + 1}/{currentStage.qs}</span>
+                                    <div className="ml-auto flex items-center gap-4">
+                                        <div className="flex items-center gap-2 text-sm font-black text-slate-600">
+                                            <Clock className="w-4 h-4" />
+                                            {Math.floor(elapsedTime / 60)}:{(elapsedTime % 60).toString().padStart(2, '0')}
+                                        </div>
+                                        <Signal className="w-4 h-4 text-emerald-500" />
+                                        <span className="text-sm font-black text-[#5c52d2] tracking-widest uppercase">Q {questionIndex + 1}/{currentStage.qs}</span>
+                                    </div>
                                 </div>
 
                                 {/* Question Card */}
@@ -705,9 +875,96 @@ export default function Interview() {
                                                                 {voiceMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
                                                                 {voiceMuted ? 'Muted' : 'Auto'}
                                                             </button>
+
+                                                            {/* Voice selection */}
+                                                            {availableVoices.length > 1 && (
+                                                                <select
+                                                                    value={selectedVoice}
+                                                                    onChange={(e) => setSelectedVoice(e.target.value)}
+                                                                    className="h-8 px-3 rounded-xl text-[11px] font-black bg-slate-50 border-2 border-slate-200 focus:border-[#5c52d2] focus:outline-none"
+                                                                >
+                                                                    {availableVoices.map(voice => (
+                                                                        <option key={voice.name} value={voice.name}>
+                                                                            {voice.name}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
+
+                                                {/* Zero-Cost Webcam Preview */}
+                                                <div className={`rounded-2xl overflow-hidden shadow-lg ${theme === 'dark' ? 'bg-[#0a0a1a]' : 'bg-slate-900'}`}>
+                                                    <div className="relative aspect-video">
+                                                        {isCameraOn ? (
+                                                            <video ref={videoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${isMirrored ? 'scale-x-[-1]' : ''}`} />
+                                                        ) : (
+                                                            <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+                                                                <div className="text-center space-y-3">
+                                                                    <VideoOff className="w-12 h-12 text-slate-500 mx-auto" />
+                                                                    <p className="text-sm font-bold text-slate-400">Camera Off</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {isCameraOn && (
+                                                            <div className="absolute top-3 left-3 flex items-center gap-2 bg-red-600 text-white px-3 py-1.5 rounded-full text-xs font-black">
+                                                                <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                                                                REC
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className={`p-3 flex items-center justify-between ${theme === 'dark' ? 'bg-[#0a0a1a]' : 'bg-slate-900'}`}>
+                                                        <Button onClick={() => setIsCameraOn(!isCameraOn)} variant={isCameraOn ? 'default' : 'outline'} className={`h-8 px-3 rounded-lg font-black text-xs transition-all ${isCameraOn ? 'bg-red-500 hover:bg-red-600 text-white' : theme === 'dark' ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-600 text-slate-300 hover:bg-slate-800'}`}>
+                                                            {isCameraOn ? <VideoOff className="w-3 h-3 mr-2" /> : <Video className="w-3 h-3 mr-2" />}
+                                                            {isCameraOn ? 'Stop' : 'Start'}
+                                                        </Button>
+                                                        {isCameraOn && videoDevices.length > 1 && (
+                                                            <select value={selectedVideoDevice} onChange={(e) => setSelectedVideoDevice(e.target.value)} className={`h-8 px-3 rounded-lg font-black text-xs bg-transparent border-2 transition-all focus:outline-none ${theme === 'dark' ? 'border-slate-700 text-white focus:border-[#5c52d2]' : 'border-slate-600 text-white focus:border-[#5c52d2]'}`}>
+                                                                {videoDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${videoDevices.indexOf(device) + 1}`}</option>))}
+                                                            </select>
+                                                        )}
+                                                        {isCameraOn && (
+                                                            <button onClick={() => setIsMirrored(!isMirrored)} className="h-8 px-3 rounded-lg font-black text-xs border-2 transition-all">
+                                                                {isMirrored ? 'Mirrored' : 'Normal'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Live Transcript Display */}
+                                                {showTranscript && (
+                                                    <div className={`rounded-2xl shadow-lg overflow-hidden ${theme === 'dark' ? 'bg-[#0a0a1a]' : 'bg-white'}`}>
+                                                        <div className={`p-3 border-b-2 flex items-center justify-between ${theme === 'dark' ? 'border-slate-800' : 'border-slate-100'}`}>
+                                                            <div className="flex items-center gap-2">
+                                                                <MessageSquare className={`w-4 h-4 ${theme === 'dark' ? 'text-[#5c52d2]' : 'text-[#5c52d2]'}`} />
+                                                                <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">Live Transcript</span>
+                                                            </div>
+                                                            <Button onClick={() => setShowTranscript(!showTranscript)} variant="ghost" size="sm" className={`h-6 px-2 rounded-lg ${theme === 'dark' ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}>
+                                                                <ChevronRight className="w-4 h-4" />
+                                                            </Button>
+                                                        </div>
+                                                        <div className="p-3 space-y-3 max-h-48 overflow-y-auto">
+                                                            {transcript.length === 0 ? (
+                                                                <div className="text-center py-4">
+                                                                    <MessageSquare className={`w-8 h-8 mx-auto mb-2 ${theme === 'dark' ? 'text-slate-700' : 'text-slate-300'}`} />
+                                                                    <p className={`text-xs font-bold ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>Transcript will appear here</p>
+                                                                </div>
+                                                            ) : (
+                                                                transcript.map((entry, i) => (
+                                                                    <div key={i} className={`flex gap-2 ${entry.speaker === 'candidate' ? 'flex-row-reverse' : ''}`}>
+                                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${entry.speaker === 'interviewer' ? 'bg-gradient-to-br from-[#5c52d2] to-[#7c3aed]' : 'bg-gradient-to-br from-emerald-400 to-emerald-600'}`}>
+                                                                            <span className="text-white text-[10px] font-black">{entry.speaker === 'interviewer' ? 'AI' : 'You'}</span>
+                                                                        </div>
+                                                                        <div className={`flex-1 max-w-[80%] ${entry.speaker === 'candidate' ? 'text-right' : ''}`}>
+                                                                            <div className={`inline-block px-3 py-2 rounded-xl text-xs font-bold leading-relaxed ${entry.speaker === 'interviewer' ? theme === 'dark' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900' : 'bg-[#5c52d2] text-white'}`}>{entry.text}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                                 <div className="flex-1" />
 
