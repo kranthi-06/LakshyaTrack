@@ -1,4 +1,4 @@
-from app.progress_system.models import ActivityLog
+from app.models.career import ActivityLog
 
 
 def test_activity_log_uses_non_reserved_python_attribute_name():

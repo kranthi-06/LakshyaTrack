@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, Volume2, SkipForward, RotateCcw, Send, Lightbulb, MessageSquare, Users, ChevronRight, CheckCircle2, AlertCircle, Sparkles, BookOpen, Square, RefreshCw, Loader2, FileText, Zap, Star, CircleAlert } from 'lucide-react';
 import { analyzeEnglishSpeaking, generateEnglishPassage, generateEnglishTopic } from '../services/englishSpeaking';
+import { trackEnglishExerciseCompleted } from '../progress-system/services/eventTracker';
 
 /* ═══════════════════════════════════════════════════════════════
    CONSTANTS
@@ -480,6 +481,14 @@ function ReadSpeakModule({ onNewTips }: { onNewTips: (tips: string[]) => void })
       });
       setAnalysis(data.analysis);
       if (data.analysis?.tips?.length) onNewTips(data.analysis.tips);
+      // Track progress only on successful analysis
+      if (data.analysis?.accuracy !== undefined) {
+        trackEnglishExerciseCompleted(
+          category,
+          data.analysis.accuracy,
+          data.analysis.fluency,
+        );
+      }
     } catch {
       setAnalysis({
         accuracy: 0, missing_words: [], incorrect_words: [],
@@ -654,6 +663,14 @@ function PracticeModule({ onNewTips }: { onNewTips: (tips: string[]) => void }) 
       });
       setAnalysis(data.analysis);
       if (data.analysis?.tips?.length) onNewTips(data.analysis.tips);
+      // Track progress only on successful analysis
+      if (data.analysis?.fluency !== undefined) {
+        trackEnglishExerciseCompleted(
+          'topic_practice',
+          data.analysis.fluency || 0,
+          data.analysis.grammar,
+        );
+      }
     } catch {
       setAnalysis({
         fluency: 'Error', vocabulary: 'Error', sentence_structure: 'Error',
@@ -744,6 +761,14 @@ function InterviewModule({ onNewTips }: { onNewTips: (tips: string[]) => void })
       });
       setAnalysis(data.analysis);
       if (data.analysis?.tips?.length) onNewTips(data.analysis.tips);
+      // Track progress only on successful analysis
+      if (data.analysis?.relevance !== undefined) {
+        trackEnglishExerciseCompleted(
+          'interview_simulation',
+          data.analysis.relevance || 0,
+          data.analysis.confidence,
+        );
+      }
     } catch {
       setAnalysis({
         fluency: 'Error', vocabulary: 'Error', sentence_structure: 'Error',

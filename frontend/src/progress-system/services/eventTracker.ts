@@ -13,7 +13,10 @@ export type ProgressEventType =
   | 'RESUME_ANALYZED'
   | 'INTERVIEW_COMPLETED'
   | 'ROADMAP_GENERATED'
-  | 'CODE_EXECUTED';
+  | 'CODE_EXECUTED'
+  | 'ENGLISH_EXERCISE_COMPLETED'
+  | 'REASONING_TEST_COMPLETED'
+  | 'ROADMAP_TASK_COMPLETED';
 
 export interface ProgressEvent {
   event_type: ProgressEventType;
@@ -45,6 +48,9 @@ const IMMEDIATE_FLUSH_EVENTS = new Set<ProgressEventType>([
   'ROADMAP_GENERATED',
   'RESUME_ANALYZED',
   'CODE_EXECUTED',
+  'ENGLISH_EXERCISE_COMPLETED',
+  'REASONING_TEST_COMPLETED',
+  'ROADMAP_TASK_COMPLETED',
   'SESSION_END',
 ]);
 
@@ -320,6 +326,44 @@ export function trackInterviewCompleted(position: string, score?: number): void 
 
 export function trackCodeExecuted(language: string): void {
   trackEvent('CODE_EXECUTED', { language });
+}
+
+export function trackEnglishExerciseCompleted(
+  category: string,
+  accuracy: number,
+  feedback?: string,
+): void {
+  trackEvent('ENGLISH_EXERCISE_COMPLETED', {
+    category,
+    accuracy,
+    feedback,
+  });
+}
+
+export function trackReasoningTestCompleted(
+  testType: string,
+  category: string,
+  score: number,
+  total: number,
+): void {
+  trackEvent('REASONING_TEST_COMPLETED', {
+    test_type: testType,
+    category,
+    score,
+    total,
+  });
+}
+
+export function trackRoadmapTaskCompleted(
+  roadmapId: string,
+  taskId: string,
+  taskTitle: string,
+): void {
+  trackEvent('ROADMAP_TASK_COMPLETED', {
+    roadmap_id: roadmapId,
+    task_id: taskId,
+    task_title: taskTitle,
+  });
 }
 
 export function initProgressTracking(): void {

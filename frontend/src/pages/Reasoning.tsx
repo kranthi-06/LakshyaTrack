@@ -9,6 +9,7 @@ import {
   getTopicQuestions,
   submitReasoningTest,
 } from '../services/reasoning';
+import { trackReasoningTestCompleted } from '../progress-system/services/eventTracker';
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES
@@ -611,6 +612,8 @@ function TopicDetailPage({ topic, topicLabel, onBack }: { topic: string; topicLa
     }).catch((error: unknown) => {
       console.error('Unable to save reasoning test result:', error);
     });
+    // Track progress
+    trackReasoningTestCompleted('topic_test', topic, score, testQuestions.length);
   };
 
   const tabs: { key: TopicTab; label: string; icon: typeof BookOpen; gradient: string }[] = [
@@ -783,6 +786,8 @@ function CompanyDetailPage({ company, companyLabel, onBack }: { company: string;
     }).catch((error: unknown) => {
       console.error('Unable to save company reasoning test result:', error);
     });
+    // Track progress
+    trackReasoningTestCompleted('company_test', company, score, testQuestions.length);
   };
 
   const tabs: { key: CompanyTab; label: string; icon: typeof FileText; gradient: string }[] = [

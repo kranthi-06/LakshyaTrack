@@ -14,7 +14,7 @@ import {
 import type { SkillQuizResult } from '../services/careerPlatform';
 import { generateQuizQuestions } from '../services/quiz';
 import type { QuizQuestion } from '../services/quiz';
-import { trackQuizCompleted } from '../progress-system/services/eventTracker';
+import { trackQuizCompleted, trackRoadmapTaskCompleted } from '../progress-system/services/eventTracker';
 import {
     BrainCircuit,
     Timer,
@@ -580,6 +580,10 @@ export default function Quiz() {
                 );
             setQuizResult(result);
             trackCompletedQuiz(isRoadmapQuiz && roadmapSkillName ? roadmapSkillName : topic, result, answers);
+            // Track roadmap task completion if this is a roadmap quiz and passed
+            if (isRoadmapQuiz && roadmapId && roadmapSkillId && result.passed) {
+                trackRoadmapTaskCompleted(roadmapId, roadmapSkillId, roadmapSkillName || 'Unknown Skill');
+            }
             try {
                 await saveProgressSnapshot(0);
             } catch (error) {

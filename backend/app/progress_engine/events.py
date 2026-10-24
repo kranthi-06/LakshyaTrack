@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 
 from app.db.mongodb import get_collection
 from app.db.session import SessionLocal
-from app.progress_system.models import ActivityLog
+from app.models.career import ActivityLog
 
 from . import realtime, redis_client
 
@@ -39,6 +39,9 @@ VALID_EVENT_TYPES = frozenset({
     "BADGE_UNLOCKED",
     "STREAK_EXTENDED",
     "CODE_EXECUTED",
+    "ENGLISH_EXERCISE_COMPLETED",
+    "REASONING_TEST_COMPLETED",
+    "ROADMAP_TASK_COMPLETED",
 })
 
 MAX_METADATA_SIZE = 4096
@@ -48,6 +51,9 @@ MEANINGFUL_EVENT_TYPES = frozenset({
     "PROBLEM_SOLVED",
     "QUIZ_COMPLETED",
     "INTERVIEW_COMPLETED",
+    "ENGLISH_EXERCISE_COMPLETED",
+    "REASONING_TEST_COMPLETED",
+    "ROADMAP_TASK_COMPLETED",
     "ROADMAP_GENERATED",
     "RESUME_ANALYZED",
     "CODE_EXECUTED",

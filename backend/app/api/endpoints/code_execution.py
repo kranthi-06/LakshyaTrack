@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from app.api import deps
 from app.services import code_execution_service
+from app.progress_engine.events import emit_event
 
 router = APIRouter()
 
@@ -44,6 +45,16 @@ async def run_code(
         test_cases=request.test_cases,
         include_hidden=False,
     )
+    # Track code execution for progress intelligence
+    try:
+        emit_event(
+            user_id=str(current_user.id),
+            event_type="CODE_EXECUTED",
+            metadata={"language": request.language},
+        )
+    except Exception:
+        # Don't fail code execution if event tracking fails
+        pass
     return result
 
 
@@ -62,4 +73,19 @@ async def submit_code(
         test_cases=request.test_cases,
         include_hidden=True,
     )
+    # Track problem solved if all tests pass
+    if result.get("all_tests_passed"):
+        try:
+            emit_event(
+                user_id=str(current_user.id),
+                event_type="PROBLEM_SOLVED",
+                metadata={
+                    "title": request.problem_title or "Unknown Problem",
+                    "language": request.language,
+                    "status": "accepted",
+                },
+            )
+        except Exception:
+            # Don't fail code submission if event tracking fails
+            pass
     return result

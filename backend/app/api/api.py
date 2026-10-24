@@ -72,10 +72,6 @@ api_router.include_router(usage.router, prefix="/usage", tags=["usage"])
 api_router.include_router(user_plan.router, prefix="/user", tags=["user-plan"])
 api_router.include_router(plan.router, prefix="/plan", tags=["plan"])
 
-# ── Progress Intelligence Dashboard (Isolated Module) ────
-from app.progress_system.router import router as progress_intelligence_router
-api_router.include_router(progress_intelligence_router, tags=["progress-intelligence"])
-
 # ── Progress Engine (Event-Driven Analytics) ─────────────
 from app.progress_engine.router import router as progress_engine_router
 api_router.include_router(progress_engine_router, tags=["progress-engine"])

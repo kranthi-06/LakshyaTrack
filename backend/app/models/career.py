@@ -260,3 +260,25 @@ class UserActivityDay(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'activity_date', name='uq_user_activity_day'),
     )
+
+
+class ActivityLog(Base):
+    """
+    Structured activity event logs for tracking.
+    SQL fallback for Progress Engine when MongoDB is unavailable.
+    """
+    __tablename__ = "activity_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False)  # login, logout, page_visit, feature_use, etc.
+    event_metadata = Column("metadata", JSON, default=dict)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    session_id = Column(String, nullable=True, index=True)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+    __table_args__ = (
+        Index('ix_activity_user_type', 'user_id', 'event_type'),
+        Index('ix_activity_user_time', 'user_id', 'timestamp'),
+    )

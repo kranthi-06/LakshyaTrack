@@ -43,6 +43,7 @@ import UpgradeModal from '../components/UpgradeModal';
 import { extractLimitExceededError } from '../services/api';
 import { getUsageStatus } from '../services/usage';
 import { useUsage } from '../context/UsageContext';
+import { trackRoadmapTaskCompleted } from '../progress-system/services/eventTracker';
 
 type Step = 'domains' | 'roles' | 'analysis' | 'roadmap';
 

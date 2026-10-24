@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Target, Search, BarChart3, FileSearch, Sparkles, ChevronRight, Zap, Upload, CheckCircle2, AlertCircle, BrainCircuit, Loader2, MinusCircle, FileCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeResume } from '../services/resume';
+import { trackFeatureUse } from '../progress-system/services/eventTracker';
 
 interface AnalysisResult {
     ats_score: number;
@@ -47,6 +48,8 @@ export default function Evaluate() {
         try {
             const data = await analyzeResume(file, jobDescription);
             setResult(data.analysis);
+            // Track resume evaluation as a feature use
+            trackFeatureUse('resume_evaluation');
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Analysis failed. Please try again.');
         } finally {

@@ -23,9 +23,8 @@ from app.db.mongodb import get_collection
 from app.db.session import SessionLocal
 from app.models.career import (
     QuizAttempt, InterviewSession, MultiStageInterview,
-    Roadmap, ProgressSnapshot, UserActivityDay,
+    Roadmap, ProgressSnapshot, UserActivityDay, ActivityLog,
 )
-from app.progress_system.models import ActivityLog
 from app.models.resume import SavedResume
 from app.models.user import User, Profile
 from app.services.streak_service import get_streak as legacy_get_streak
@@ -978,7 +977,7 @@ def _build_user_stats(user_id: str) -> Dict:
     return {
         "current_streak": streak.get("current_streak", 0),
         "longest_streak": streak.get("longest_streak", 0),
-        "problems_solved": quizzes_passed + interviews + ms_interviews,
+        "problems_solved": quizzes_passed,  # Only quizzes, not interviews
         "quizzes_total": quizzes,
         "quizzes_passed": quizzes_passed,
         "interviews_done": interviews + ms_interviews,
