@@ -4,6 +4,7 @@ import type { Badge } from '../../progress-system/types';
 import type { ProfileProject } from './profileUtils';
 import type { SavedResumeRecord } from '../../services/resumeStorage';
 import { formatResumeDate } from './profileUtils';
+import BadgeArtwork from '../../badges/BadgeArtwork';
 
 interface Props {
     bio: string;
@@ -51,7 +52,14 @@ export function OverviewTab({ bio, projects, recentBadges, skills, resumes, load
                     <ul className="mt-4 space-y-3">
                         {recentBadges.slice(0, 4).map((badge) => (
                             <li key={badge.id} className="flex items-center gap-3">
-                                <span className="text-2xl" aria-hidden>{badge.icon}</span>
+                                <BadgeArtwork
+                                    badgeId={badge.id}
+                                    name={badge.name}
+                                    rarity={badge.rarity}
+                                    isUnlocked
+                                    size={40}
+                                    decorative
+                                />
                                 <div className="min-w-0">
                                     <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{badge.name}</p>
                                     <p className="truncate text-xs text-slate-400">{badge.description}</p>

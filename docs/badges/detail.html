@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Badge detail QA — all 14 medals</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #070912; color: #e2e8f0; font: 14px Inter, ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1500px; margin: 0 auto; padding: 36px 28px 56px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -0.03em; }
+  .eyebrow { margin: 0 0 8px; color: #a78bfa; font-size: 11px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
+  .sub { margin: 6px 0 0; color: #94a3b8; font-size: 12px; max-width: 720px; line-height: 1.6; }
+  h2 { margin: 38px 0 16px; font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: #cbd5e1; }
+  .wrap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+  @media (max-width: 1400px) { .wrap { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 1060px) { .wrap { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .wrap { grid-template-columns: 1fr; } }
+  figure { margin: 0; background: #0b1020; border: 1px solid #1e293b; border-radius: 18px; padding: 16px; }
+  img { width: 100%; height: auto; aspect-ratio: 1; display: block; }
+  figcaption { text-align: center; padding-top: 10px; color: #94a3b8; letter-spacing: .12em; text-transform: uppercase; font-size: 10px; line-height: 1.5; }
+  figcaption strong { display: block; color: #e2e8f0; font-size: 11px; letter-spacing: .08em; }
+  .light { background: #f1f5f9; color: #0f172a; border-radius: 24px; padding: 26px; margin-top: 34px; }
+  .light h2 { color: #334155; }
+  .light figure { background: #fff; border-color: #e2e8f0; }
+  .light figcaption { color: #64748b; }
+  .light figcaption strong { color: #0f172a; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <p class="eyebrow">LakshyaTrack · Badge art QA</p>
+      <h1>All 14 medals at appreciation size</h1>
+      <p class="sub">Each source is 1024×1024. This page renders every registered asset at 336 CSS px in dark and light themes so emblems, rarity metal, rivets, tick rings and rim light can be inspected without UI chrome.</p>
+    </div>
+    <div class="sub" id="status">Loading assets…</div>
+  </header>
+
+  <h2>Dark theme</h2>
+  <div class="wrap" id="dark"></div>
+
+  <section class="light">
+    <h2>Light theme</h2>
+    <div class="wrap" id="light"></div>
+  </section>
+</main>
+<script>
+  const badges = [
+    ['first_flame', 'First Flame', 'common', 'flame brazier'],
+    ['week_warrior', 'Week Warrior', 'common', 'lightning bolt'],
+    ['fortnight_fighter', 'Fortnight Fighter', 'rare', 'orbital star'],
+    ['monthly_master', 'Monthly Master', 'epic', 'crescent moon'],
+    ['century_legend', 'Century Legend', 'legendary', 'laurel crown'],
+    ['quiz_starter', 'Quiz Starter', 'common', 'open book + quill'],
+    ['quiz_apprentice', 'Quiz Apprentice', 'common', 'dartboard + dart'],
+    ['quiz_master', 'Quiz Master', 'rare', 'crystal trophy'],
+    ['first_interview', 'Interview Ready', 'common', 'studio microphone'],
+    ['interview_pro', 'Interview Pro', 'rare', 'shield microphone'],
+    ['interview_expert', 'Interview Expert', 'epic', 'winged tablet'],
+    ['resume_builder', 'Resume Builder', 'common', 'resume + wax seal'],
+    ['roadmap_explorer', 'Roadmap Explorer', 'common', 'compass rose'],
+    ['career_strategist', 'Career Strategist', 'rare', 'laurel compass'],
+  ];
+  const src = (id) => `../../frontend/src/assets/badges/${id.replaceAll('_', '-')}.svg`;
+  const fig = ([id, name, rarity, motif]) => `
+    <figure>
+      <img src="${src(id)}" width="336" height="336" alt="${name} ${rarity} collectible medal — ${motif}">
+      <figcaption><strong>${name}</strong>${rarity} · ${motif}</figcaption>
+    </figure>`;
+  document.getElementById('dark').innerHTML = badges.map(fig).join('');
+  document.getElementById('light').innerHTML = badges.map(fig).join('');
+
+  const images = [...document.images];
+  Promise.all(images.map((image) => image.decode().catch(() => null))).then(() => {
+    const failed = images.filter((image) => image.complete && image.naturalWidth === 0);
+    document.getElementById('status').textContent =
+      failed.length === 0
+        ? `${images.length}/${images.length} rendered · 14 unique medals · ${badges.length * 2} instances`
+        : `${failed.length} failed: ${failed.map((image) => image.alt).join(', ')}`;
+  });
+</script>
+</body>
+</html>

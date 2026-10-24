@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>LakshyaTrack Badge Collection — Visual Verification</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #070912; color: #f8fafc; }
+  .page { max-width: 1440px; margin: 0 auto; padding: 40px 28px 72px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 30px; }
+  h1 { margin: 0; font-size: 30px; letter-spacing: -0.03em; }
+  .eyebrow { margin: 0 0 8px; color: #a78bfa; font-size: 11px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
+  .sub { margin: 8px 0 0; color: #94a3b8; font-size: 13px; }
+  .legend { color: #94a3b8; font-size: 12px; }
+  h2 { margin: 40px 0 16px; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: #cbd5e1; }
+  .grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 16px; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+  @media (max-width: 760px) { .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .card { border: 1px solid rgba(148,163,184,.22); border-radius: 20px; padding: 16px 14px; background: linear-gradient(150deg, rgba(255,255,255,.04), rgba(255,255,255,.01)); text-align: center; }
+  .card[data-rarity="rare"] { border-color: rgba(59,130,246,.36); box-shadow: 0 14px 36px rgba(59,130,246,.10); }
+  .card[data-rarity="epic"] { border-color: rgba(168,85,247,.38); box-shadow: 0 14px 36px rgba(168,85,247,.12); }
+  .card[data-rarity="legendary"] { border-color: rgba(245,158,11,.4); box-shadow: 0 14px 36px rgba(245,158,11,.13); }
+  .art { width: 100%; max-width: 210px; aspect-ratio: 1; margin: 0 auto; display: block; }
+  .name { margin: 12px 0 2px; font-size: 13px; font-weight: 700; }
+  .meta { margin: 0; color: #94a3b8; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .locked .art { filter: grayscale(.72) saturate(.55) brightness(.68); }
+  .small-row { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }
+  .small { text-align: center; }
+  .small img { width: 64px; height: 64px; display: block; margin: 0 auto 6px; }
+  .small span { color: #94a3b8; font-size: 10px; }
+  .light { background: #f1f5f9; color: #0f172a; border-radius: 24px; padding: 26px; margin-top: 34px; }
+  .light h2 { color: #334155; }
+  .light .card { background: #fff; border-color: #e2e8f0; }
+  .light .meta, .light .sub, .light .legend { color: #64748b; }
+</style>
+</head>
+<body>
+<main class="page">
+  <header>
+    <div>
+      <p class="eyebrow">LakshyaTrack · Badge Art System</p>
+      <h1>Collectible achievement medals</h1>
+      <p class="sub">14 original vector medals · 1024×1024 source · shared obsidian plaque, rarity metal, sculpted emblem</p>
+    </div>
+    <div class="legend">Unlocked row 1 · Locked row 2 · 64px row below</div>
+  </header>
+
+  <h2>Unlocked — dark theme</h2>
+  <div class="grid" id="unlocked"></div>
+
+  <h2>Locked treatment</h2>
+  <div class="grid" id="locked"></div>
+
+  <h2>Small-size legibility</h2>
+  <div class="small-row" id="small"></div>
+
+  <section class="light">
+    <h2>Unlocked — light theme</h2>
+    <div class="grid" id="light"></div>
+  </section>
+</main>
+<script>
+  const badges = [
+    ['first_flame','First Flame','streak','common'],
+    ['week_warrior','Week Warrior','streak','common'],
+    ['fortnight_fighter','Fortnight Fighter','streak','rare'],
+    ['monthly_master','Monthly Master','streak','epic'],
+    ['century_legend','Century Legend','streak','legendary'],
+    ['quiz_starter','Quiz Starter','quizzes','common'],
+    ['quiz_apprentice','Quiz Apprentice','quizzes','common'],
+    ['quiz_master','Quiz Master','quizzes','rare'],
+    ['first_interview','Interview Ready','interviews','common'],
+    ['interview_pro','Interview Pro','interviews','rare'],
+    ['interview_expert','Interview Expert','interviews','epic'],
+    ['resume_builder','Resume Builder','career','common'],
+    ['roadmap_explorer','Roadmap Explorer','career','common'],
+    ['career_strategist','Career Strategist','career','rare'],
+  ];
+  const src = (id) => `../../frontend/src/assets/badges/${id.replaceAll('_','-')}.svg`;
+  const card = ([id,name,category,rarity], locked=false) => `
+    <article class="card ${locked?'locked':''}" data-rarity="${rarity}">
+      <img class="art" src="${src(id)}" alt="${name} badge">
+      <p class="name">${name}</p>
+      <p class="meta">${rarity} · ${category}</p>
+    </article>`;
+  document.getElementById('unlocked').innerHTML = badges.map(b=>card(b)).join('');
+  document.getElementById('locked').innerHTML = badges.map(b=>card(b,true)).join('');
+  document.getElementById('light').innerHTML = badges.map(b=>card(b)).join('');
+  document.getElementById('small').innerHTML = badges.map(([id,name])=>`
+    <div class="small"><img src="${src(id)}" alt="${name} badge at small size"><span>${name}</span></div>`).join('');
+</script>
+</body>
+</html>
