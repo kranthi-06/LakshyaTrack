@@ -110,8 +110,7 @@ async def evaluate_screening(
         return result
     except Exception as e:
         logger.error("Screening evaluation error: %s", sanitize_for_logging(str(e)))
-        return {"score": 50, "clarity": 50, "technical_depth": 50, "correctness": 50,
-                "feedback": "Evaluation completed.", "strengths": [], "weaknesses": []}
+        raise RuntimeError("Screening evaluation is temporarily unavailable; retry without losing the interview.") from e
 
 
 # ═══════════════════════════════════════════
@@ -197,9 +196,7 @@ async def evaluate_technical(
         return result
     except Exception as e:
         logger.error("Technical evaluation error: %s", sanitize_for_logging(str(e)))
-        return {"score": 50, "knowledge_depth": 50, "explanation_quality": 50,
-                "problem_solving": 50, "confidence": 50,
-                "feedback": "Evaluation completed.", "strengths": [], "weaknesses": []}
+        raise RuntimeError("Technical evaluation is temporarily unavailable; retry without losing the interview.") from e
 
 
 # ═══════════════════════════════════════════
@@ -260,26 +257,7 @@ async def generate_coding_problem(
         return result
     except Exception as e:
         logger.error("Coding problem generation error: %s", sanitize_for_logging(str(e)))
-        return {
-            "title": "Array Sum Problem",
-            "description": "Given an array of integers, find the two numbers that add up to a target sum. Return their indices.",
-            "examples": [
-                {"input": "nums = [2,7,11,15], target = 9", "output": "[0, 1]"},
-                {"input": "nums = [3,2,4], target = 6", "output": "[1, 2]"}
-            ],
-            "test_cases": [
-                {"input": "[2,7,11,15], 9", "expected_output": "[0,1]", "is_hidden": False},
-                {"input": "[3,2,4], 6", "expected_output": "[1,2]", "is_hidden": True}
-            ],
-            "hints": ["Consider using a hash map", "Think about complement values"],
-            "constraints": "O(n) time complexity preferred",
-            "starter_code": {
-                "python": "def two_sum(nums, target):\n    # Your code here\n    pass",
-                "javascript": "function twoSum(nums, target) {\n    // Your code here\n}"
-            },
-            "difficulty": difficulty,
-            "topics": ["arrays", "hash-map"]
-        }
+        raise RuntimeError("Coding problem generation is temporarily unavailable; retry the stage.") from e
 
 
 async def evaluate_coding(
@@ -338,11 +316,7 @@ async def evaluate_coding(
         return result
     except Exception as e:
         logger.error("Coding evaluation error: %s", sanitize_for_logging(str(e)))
-        # Score based on test results
-        base_score = int((passed_tests / max(total_tests, 1)) * 100)
-        return {"score": base_score, "correctness": base_score, "code_quality": 50,
-                "efficiency": 50, "approach": 50,
-                "feedback": f"Passed {passed_tests}/{total_tests} tests.", "strengths": [], "weaknesses": []}
+        raise RuntimeError("Coding evaluation is temporarily unavailable; retry without losing the code result.") from e
 
 
 # ═══════════════════════════════════════════
@@ -430,9 +404,7 @@ async def evaluate_hr(
         return result
     except Exception as e:
         logger.error("HR evaluation error: %s", sanitize_for_logging(str(e)))
-        return {"score": 50, "communication": 50, "clarity": 50,
-                "confidence": 50, "emotional_intelligence": 50,
-                "feedback": "Evaluation completed.", "strengths": [], "weaknesses": []}
+        raise RuntimeError("HR evaluation is temporarily unavailable; retry without losing the interview.") from e
 
 
 # ═══════════════════════════════════════════
@@ -445,6 +417,7 @@ async def generate_final_analysis(
     technical_eval: dict,
     coding_eval: dict,
     hr_eval: dict,
+    evidence: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Generate comprehensive final analysis across all stages."""
     system_prompt = "You are the final hiring committee producing a comprehensive interview verdict."
@@ -463,14 +436,17 @@ async def generate_final_analysis(
     - Coding: {coding_eval.get('feedback', '')}
     - HR: {hr_eval.get('feedback', '')}
 
+    Candidate answer evidence (use only this material for claims about the candidate):
+    {json.dumps(evidence or {}, ensure_ascii=False)}
+
     Generate a comprehensive final interview verdict.
 
     Return STRICT JSON:
     {{
         "overall_score": <weighted average 0-100>,
         "verdict": "Strong Hire" | "Hire" | "Maybe" | "No Hire",
-        "strengths": ["top 3-5 key strengths across all rounds"],
-        "weaknesses": ["top 3-5 areas for improvement"],
+        "strengths": ["top 3-5 key strengths, each with a short quoted or paraphrased answer evidence"],
+        "weaknesses": ["top 3-5 areas for improvement, each grounded in a specific answer or a clearly stated absence of evidence"],
         "overall_feedback": "Comprehensive hiring committee paragraph",
         "improvement_tips": ["actionable tip 1", "actionable tip 2", "actionable tip 3"],
         "hire_probability": <number 0-100>
@@ -490,21 +466,7 @@ async def generate_final_analysis(
         return result
     except Exception as e:
         logger.error("Final analysis error: %s", sanitize_for_logging(str(e)))
-        avg = (
-            screening_eval.get('score', 0) +
-            technical_eval.get('score', 0) +
-            coding_eval.get('score', 0) +
-            hr_eval.get('score', 0)
-        ) / 4
-        return {
-            "overall_score": round(avg),
-            "verdict": "Hire" if avg >= 60 else "No Hire",
-            "strengths": [],
-            "weaknesses": [],
-            "overall_feedback": "Interview evaluation complete.",
-            "improvement_tips": [],
-            "hire_probability": round(avg)
-        }
+        raise RuntimeError("Final report generation is temporarily unavailable; retry without losing the completed interview.") from e
 
 
 # ═══════════════════════════════════════════

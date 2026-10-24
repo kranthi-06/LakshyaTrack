@@ -1,1222 +1,257 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-    createMultistageSession,
-    getScreeningQuestion,
-    getTechnicalQuestion,
-    getCodingProblem,
-    getHRQuestion,
-    evaluateInterviewStage,
-    getMultistageFinalAnalysis,
-    saveProgressSnapshot
-} from '../services/careerPlatform';
-import { getSavedResumes } from '../services/resumeStorage';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertCircle, ArrowRight, BrainCircuit, CheckCircle2, ChevronDown, Clock3, FileText, Headphones, Loader2, Mic2, Radio, ShieldCheck, Sparkles, Wifi, X } from 'lucide-react';
 import CodingEnvironment from '../components/CodingEnvironment';
-import { Mic2, MessageSquare, Monitor, Send, StopCircle, CheckCircle2, Target, Zap, ArrowRight, BrainCircuit, Award, Loader2, FileText, Code2, UserCircle2, Play, ChevronRight, Lock, Trophy, Star, Heart, Lightbulb, Volume2, VolumeX, Pause, RotateCcw, Gauge, Video, VideoOff, Mic, MicOff, Signal, PhoneOff, Settings, Clock } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import InterviewControls from '../components/InterviewControls';
+import InterviewWebcam from '../components/InterviewWebcam';
+import LiveTranscription, { type TranscriptLine } from '../components/LiveTranscription';
+import { useAudioManager } from '../hooks/useAudioManager';
 import { useFeatureGate } from '../hooks/useFeatureGate';
-import PremiumGate from '../components/PremiumGate';
-import UpgradeModal from '../components/UpgradeModal';
-import { extractLimitExceededError } from '../services/api';
+import { getSavedResumes } from '../services/resumeStorage';
+import { createMultistageSession, evaluateInterviewStage, getCodingProblem, getHRQuestion, getMultistageFinalAnalysis, getScreeningQuestion, getTechnicalQuestion, saveProgressSnapshot } from '../services/careerPlatform';
+import { trackCodeExecuted, trackInterviewCompleted, trackProblemSolved } from '../progress-system/services/eventTracker';
 import { useUsage } from '../context/UsageContext';
-import {
-    trackCodeExecuted,
-    trackInterviewCompleted,
-    trackProblemSolved,
-} from '../progress-system/services/eventTracker';
-import { useTheme } from '../context/ThemeContext';
-type InterviewStep = 'landing' | 'setup' | 'screening' | 'technical' | 'coding' | 'hr' | 'stage_result' | 'final_results';
-type InterviewMode = 'text' | 'voice';
-type InterviewPath = 'resume_screening' | 'direct_skill';
+import { extractLimitExceededError } from '../services/api';
 
-interface StageEval {
-    score: number;
-    feedback: string;
-    strengths: string[];
-    weaknesses: string[];
-    [key: string]: any;
-}
+type RoomPhase = 'lobby' | 'connecting' | 'room' | 'coding' | 'report';
+type StageId = 'screening' | 'technical' | 'coding' | 'hr';
+type InterviewType = 'resume_screening' | 'direct_skill';
+interface Answer { question: string; answer: string }
+interface StageEvaluation { score: number; feedback: string; strengths: string[]; weaknesses: string[]; [key: string]: unknown }
+interface CodingProblem { title: string; description: string; difficulty?: string; examples?: { input: string; output: string; explanation?: string }[]; constraints?: string[]; hints?: string[]; test_cases?: { input: string; expected_output: string; is_hidden?: boolean }[]; starter_code?: Record<string, string> }
+interface RecognitionResult { isFinal: boolean; 0: { transcript: string } }
+interface RecognitionEvent { resultIndex: number; results: ArrayLike<RecognitionResult> }
+interface RecognitionInstance { continuous: boolean; interimResults: boolean; lang: string; onresult: ((event: RecognitionEvent) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; start: () => void; stop: () => void }
+interface RecognitionConstructor { new(): RecognitionInstance }
+type SpeechRecognitionWindow = Window & typeof globalThis & { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
 
-const STAGES = [
-    { id: 'screening', label: 'Resume Screening', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50', qs: 3 },
-    { id: 'technical', label: 'Technical Interview', icon: Monitor, color: 'text-purple-500', bg: 'bg-purple-50', qs: 4 },
-    { id: 'coding', label: 'Coding Round', icon: Code2, color: 'text-emerald-500', bg: 'bg-emerald-50', qs: 1 },
-    { id: 'hr', label: 'HR Interview', icon: Heart, color: 'text-rose-500', bg: 'bg-rose-50', qs: 3 },
+const STAGES: { id: StageId; label: string; detail: string; questions: number }[] = [
+    { id: 'screening', label: 'Background', detail: 'Resume & experience', questions: 2 },
+    { id: 'technical', label: 'Technical', detail: 'Role knowledge', questions: 3 },
+    { id: 'coding', label: 'Problem solving', detail: 'Secure code challenge', questions: 1 },
+    { id: 'hr', label: 'Conversation', detail: 'Working style', questions: 2 },
 ];
 
-export default function Interview() {
-    const { theme } = useTheme();
-    // ── Subscription gate for interview feature ──
-    const { isLocked, guardAction, gateProps } = useFeatureGate(
-        'interview_start',
-        'AI Interview Simulator',
-        2,
-        'Practice with our AI-powered 4-stage interview simulator. Upgrade to Stage 2 or purchase a micro-plan to unlock.',
-    );
-    const { refreshUsage } = useUsage();
+const formatTime = (seconds: number) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (typeof error === 'object' && error && 'response' in error) {
+        const response = (error as { response?: { data?: { detail?: unknown } } }).response;
+        if (typeof response?.data?.detail === 'string') return response.data.detail;
+    }
+    return fallback;
+};
 
-    const [step, setStep] = useState<InterviewStep>('landing');
-    const [mode, setMode] = useState<InterviewMode>('text');
+export default function Interview() {
+    const { isLocked, guardAction } = useFeatureGate('interview_start', 'AI Interview Simulator', 2, 'Practice in a voice-first interview room with your AI interviewer.');
+    const { refreshUsage } = useUsage();
+    const audio = useAudioManager();
+    const [phase, setPhase] = useState<RoomPhase>('lobby');
     const [position, setPosition] = useState('Software Engineer');
-    const [interviewPath, setInterviewPath] = useState<InterviewPath>('resume_screening');
-    const [sessionId, setSessionId] = useState('');
-    const [currentStageIdx, setCurrentStageIdx] = useState(0);
-    const [questionIndex, setQuestionIndex] = useState(0);
-    const [currentQuestion, setCurrentQuestion] = useState('');
-    const [userResponse, setUserResponse] = useState('');
-    const [isListening, setIsListening] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [history, setHistory] = useState<any[]>([]);
-    const [stageEvals, setStageEvals] = useState<Record<string, StageEval>>({});
-    const [currentStageEval, setCurrentStageEval] = useState<StageEval | null>(null);
-    const [finalAnalysis, setFinalAnalysis] = useState<any>(null);
-    // Coding round state
-    const [codingProblem, setCodingProblem] = useState<any>(null);
-    const [codingCode, setCodingCode] = useState('');
-    const [codingLang, setCodingLang] = useState('python');
-    const [codingAttempts, setCodingAttempts] = useState(0);
-    const [codingTestsPassed, setCodingTestsPassed] = useState(0);
-    // Resume data
+    const [interviewType, setInterviewType] = useState<InterviewType>('resume_screening');
+    const [experience, setExperience] = useState('Intermediate');
+    const [duration, setDuration] = useState('30');
+    const [jobDescription, setJobDescription] = useState('');
+    const [resumeName, setResumeName] = useState('No saved resume selected');
     const [resumeSummary, setResumeSummary] = useState('');
     const [skills, setSkills] = useState<string[]>([]);
     const [projects, setProjects] = useState<string[]>([]);
-    // Speech recognition
-    const recognitionRef = useRef<any>(null);
-    // Voice reading state (Web Speech API - speechSynthesis)
-    const [voiceMuted, setVoiceMuted] = useState(false);
-    const [isSpeaking, setIsSpeaking] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
-    const [speechSpeed, setSpeechSpeed] = useState<number>(1);
-    const [limitModal, setLimitModal] = useState<{
-        isOpen: boolean;
-        counter?: string;
-        current?: number;
-        limit?: number;
-        message?: string;
-    }>({ isOpen: false });
-    const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-    const lastSpokenQuestion = useRef<string>('');
-    const solvedProblemTrackedRef = useRef(false);
-    
-    // Zero-cost webcam (browser-native MediaDevices API)
-    const [isCameraOn, setIsCameraOn] = useState(false);
-    const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
-    const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>('');
-    const [isMirrored, setIsMirrored] = useState(true);
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-    
-    // Timer and status
-    const [elapsedTime, setElapsedTime] = useState(0);
-    const timerRef = useRef<NodeJS.Timeout>();
-    
-    // Live transcription (using existing speech recognition output)
-    const [transcript, setTranscript] = useState<Array<{ speaker: 'interviewer' | 'candidate'; text: string; timestamp: number }>>([]);
-    const [showTranscript, setShowTranscript] = useState(true);
-    
-    // TTS voice selection
-    const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-    const [selectedVoice, setSelectedVoice] = useState<string>('');
-    
-    // Mic level detection
-    const [micLevel, setMicLevel] = useState(0);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const analyserRef = useRef<AnalyserNode | null>(null);
+    const [sessionId, setSessionId] = useState('');
+    const [stageIndex, setStageIndex] = useState(0);
+    const [questionIndex, setQuestionIndex] = useState(0);
+    const [question, setQuestion] = useState('');
+    const [answers, setAnswers] = useState<Answer[]>([]);
+    const [evaluations, setEvaluations] = useState<Record<string, StageEvaluation>>({});
+    const [codingProblem, setCodingProblem] = useState<CodingProblem | null>(null);
+    const [codingResult, setCodingResult] = useState({ code: '', language: 'python', passed: 0, total: 0, attempts: 0 });
+    const [report, setReport] = useState<Record<string, unknown> | null>(null);
+    const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
+    const [interim, setInterim] = useState('');
+    const [captionsOpen, setCaptionsOpen] = useState(true);
+    const [cameraOn, setCameraOn] = useState(false);
+    const [listening, setListening] = useState(false);
+    const [paused, setPaused] = useState(false);
+    const [showTextInput, setShowTextInput] = useState(false);
+    const [typedAnswer, setTypedAnswer] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [elapsed, setElapsed] = useState(0);
+    const [micTested, setMicTested] = useState(false);
+    const [endConfirmation, setEndConfirmation] = useState(false);
+    const [limitMessage, setLimitMessage] = useState('');
+    const recognitionRef = useRef<RecognitionInstance | null>(null);
+    const answerRef = useRef('');
+    const discardRecognitionRef = useRef(false);
+    const spokenQuestionRef = useRef('');
+    const stage = STAGES[stageIndex];
+    const speechRecognitionSupported = typeof window !== 'undefined' && Boolean((window as SpeechRecognitionWindow).SpeechRecognition || (window as SpeechRecognitionWindow).webkitSpeechRecognition);
+    const voiceReady = audio.speechSupported && speechRecognitionSupported;
 
-    const currentStage = STAGES[currentStageIdx];
-
-    // Use a ref for speed so the speakText callback always sees the latest value
-    const speechSpeedRef = useRef(speechSpeed);
-    speechSpeedRef.current = speechSpeed;
-
-    // ── Voice reading helpers ─────────────────────────────────────
-    const speakText = useCallback((text: string, rateOverride?: number) => {
-        if (!speechSupported || !text) return;
-        speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = rateOverride ?? speechSpeedRef.current;
-        utterance.pitch = 1;
-        utterance.volume = 1;
-        utterance.lang = 'en-US';
-        if (selectedVoice) {
-            const voice = availableVoices.find(v => v.name === selectedVoice);
-            if (voice) utterance.voice = voice;
-        }
-        utterance.onstart = () => { setIsSpeaking(true); setIsPaused(false); };
-        utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); };
-        utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); };
-        speechSynthesis.speak(utterance);
-    }, [speechSupported, selectedVoice, availableVoices]);
-
-    const pauseSpeech = useCallback(() => {
-        if (speechSupported && speechSynthesis.speaking) {
-            speechSynthesis.pause();
-            setIsPaused(true);
-        }
-    }, [speechSupported]);
-
-    const resumeSpeech = useCallback(() => {
-        if (speechSupported && speechSynthesis.paused) {
-            speechSynthesis.resume();
-            setIsPaused(false);
-        }
-    }, [speechSupported]);
-
-    const stopSpeech = useCallback(() => {
-        if (speechSupported) {
-            speechSynthesis.cancel();
-            setIsSpeaking(false);
-            setIsPaused(false);
-        }
-    }, [speechSupported]);
-
-    // Auto-speak when a new question appears (and not muted)
     useEffect(() => {
-        if (
-            currentQuestion &&
-            !isLoading &&
-            !voiceMuted &&
-            speechSupported &&
-            currentQuestion !== lastSpokenQuestion.current &&
-            (step === 'screening' || step === 'technical' || step === 'hr')
-        ) {
-            lastSpokenQuestion.current = currentQuestion;
-            // Small delay to let the UI animate in first
-            const timer = setTimeout(() => speakText(currentQuestion), 400);
-            return () => clearTimeout(timer);
-        }
-    }, [currentQuestion, isLoading, voiceMuted, speechSupported, step, speakText]);
-
-    // Cancel speech when leaving interview or restarting
-    useEffect(() => {
-        return () => { 
-            if (speechSupported) speechSynthesis.cancel();
-            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
-    }, [speechSupported]);
-
-    // Timer
-    useEffect(() => {
-        if (step === 'screening' || step === 'technical' || step === 'hr' || step === 'coding') {
-            timerRef.current = setInterval(() => setElapsedTime(prev => prev + 1), 1000);
-        } else {
-            if (timerRef.current) clearInterval(timerRef.current);
-        }
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
-    }, [step]);
-
-    // Load resume data on mount
-    useEffect(() => {
-        loadResumeData();
-        // Get video devices for webcam
-        if (typeof window !== 'undefined' && navigator.mediaDevices) {
-            navigator.mediaDevices.enumerateDevices().then(devices => {
-                const videoDevices = devices.filter(d => d.kind === 'videoinput');
-                setVideoDevices(videoDevices);
-                if (videoDevices.length > 0) setSelectedVideoDevice(videoDevices[0].deviceId);
-            }).catch(() => {});
-        }
-        // Get available TTS voices
-        if (speechSupported) {
-            const loadVoices = () => {
-                const voices = speechSynthesis.getVoices();
-                const englishVoices = voices.filter(v => v.lang.startsWith('en'));
-                setAvailableVoices(englishVoices);
-                if (englishVoices.length > 0 && !selectedVoice) {
-                    setSelectedVoice(englishVoices[0].name);
-                }
-            };
-            loadVoices();
-            speechSynthesis.onvoiceschanged = loadVoices;
-        }
-    }, [speechSupported, selectedVoice]);
-
-    // Webcam management (browser-native, zero-cost)
-    useEffect(() => {
-        if (!isCameraOn) {
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-                streamRef.current = null;
-            }
-            if (videoRef.current) videoRef.current.srcObject = null;
-            return;
-        }
-        const startCamera = async () => {
+        const loadResume = async () => {
             try {
-                const constraints: MediaStreamConstraints = selectedVideoDevice
-                    ? { video: { deviceId: { exact: selectedVideoDevice }, width: 1280, height: 720 } }
-                    : { video: { width: 1280, height: 720 } };
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                streamRef.current = stream;
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    videoRef.current.muted = true;
-                }
-            } catch (err) {
-                console.error('Camera error:', err);
-                setIsCameraOn(false);
-            }
+                const response = await getSavedResumes();
+                const resume = response.resumes.find((item) => item.is_primary) || response.resumes[0];
+                if (!resume) return;
+                setResumeName(resume.resume_name);
+                const data = resume.resume_data as { personalInfo?: { summary?: string }; skills?: { categories?: { items?: Array<string | { name?: string }> }[] }; projects?: { title?: string; name?: string }[] };
+                setResumeSummary(data.personalInfo?.summary || '');
+                setSkills(data.skills?.categories?.flatMap((category) => (category.items || []).map((item) => typeof item === 'string' ? item : item.name || '').filter(Boolean)) || []);
+                setProjects((data.projects || []).map((project) => project.title || project.name || '').filter(Boolean));
+            } catch { /* resume context is optional */ }
         };
-        startCamera();
-        return () => {
-            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-        };
-    }, [isCameraOn, selectedVideoDevice]);
+        void loadResume();
+    }, []);
 
-    // Mic level detection
     useEffect(() => {
-        if (!isListening) {
-            setMicLevel(0);
-            return;
-        }
-        const startMicLevelDetection = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const audioContext = new AudioContext();
-                audioContextRef.current = audioContext;
-                const analyser = audioContext.createAnalyser();
-                analyserRef.current = analyser;
-                const source = audioContext.createMediaStreamSource(stream);
-                source.connect(analyser);
-                analyser.fftSize = 256;
-                const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                const updateLevel = () => {
-                    analyser.getByteFrequencyData(dataArray);
-                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                    setMicLevel(average / 255);
-                    if (isListening) requestAnimationFrame(updateLevel);
-                };
-                updateLevel();
-            } catch (err) {
-                console.error('Mic level error:', err);
-            }
-        };
-        startMicLevelDetection();
-        return () => {
-            if (audioContextRef.current) audioContextRef.current.close();
-        };
-    }, [isListening]);
+        if (phase !== 'room' && phase !== 'coding') return;
+        const timer = window.setInterval(() => setElapsed((value) => value + 1), 1000);
+        return () => window.clearInterval(timer);
+    }, [phase]);
 
-    // Timer
-    useEffect(() => {
-        if (step === 'screening' || step === 'technical' || step === 'hr' || step === 'coding') {
-            timerRef.current = setInterval(() => setElapsedTime(prev => prev + 1), 1000);
-        } else {
-            if (timerRef.current) clearInterval(timerRef.current);
-        }
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
-    }, [step]);
+    const stopListening = useCallback((discard = false) => {
+        discardRecognitionRef.current = discard;
+        recognitionRef.current?.stop();
+        recognitionRef.current = null;
+        setListening(false);
+        setInterim('');
+    }, []);
+    const addCaption = useCallback((speaker: TranscriptLine['speaker'], text: string) => setTranscript((items) => [...items, { id: `${Date.now()}-${Math.random()}`, speaker, text }]), []);
 
-    // Add to transcript when question changes
-    useEffect(() => {
-        if (currentQuestion && (step === 'screening' || step === 'technical' || step === 'hr')) {
-            setTranscript(prev => [...prev, { speaker: 'interviewer', text: currentQuestion, timestamp: Date.now() }]);
-        }
-    }, [currentQuestion, step]);
-
-    // Add to transcript when user submits response
-    useEffect(() => {
-        if (userResponse && (step === 'screening' || step === 'technical' || step === 'hr')) {
-            const lastEntry = transcript[transcript.length - 1];
-            if (!lastEntry || lastEntry.speaker !== 'candidate' || lastEntry.text !== userResponse) {
-                setTranscript(prev => [...prev, { speaker: 'candidate', text: userResponse, timestamp: Date.now() }]);
-            }
-        }
-    }, [userResponse, step, transcript]);
-
-    const loadResumeData = async () => {
+    const getNextQuestion = useCallback(async (targetStage: StageId, history: Answer[], activeSessionId: string) => {
+        setLoading(true); setError('');
         try {
-            const data = await getSavedResumes();
-            const resumes = data?.resumes || [];
-            if (resumes.length > 0) {
-                const primary = resumes.find((r: any) => r.is_primary) || resumes[0];
-                const rd = (primary.resume_data || {}) as {
-                    personalInfo?: { summary?: string };
-                    skills?: { categories?: Array<{ items?: Array<string | { name?: string }> }> };
-                    projects?: Array<{ title?: string; name?: string }>;
-                };
-                const pi = rd.personalInfo || {};
-                const summary = pi.summary || '';
-                const sk: string[] = [];
-                const pr: string[] = [];
-                if (rd.skills?.categories) {
-                    rd.skills.categories.forEach((c) => {
-                        (c.items || []).forEach((i) => {
-                            if (typeof i === 'string') sk.push(i);
-                            else if (i.name) sk.push(i.name);
-                        });
-                    });
-                }
-                if (rd.projects) {
-                    rd.projects.forEach((p) => {
-                        const name = p.title || p.name;
-                        if (name) pr.push(name);
-                    });
-                }
-                setResumeSummary(summary);
-                setSkills(sk);
-                setProjects(pr.filter(Boolean));
-            }
-        } catch (e) { console.error('Resume load error:', e); }
-    };
+            let response: { question?: string };
+            const candidateContext = jobDescription.trim()
+                ? `${resumeSummary}\n\nTarget job description:\n${jobDescription.slice(0, 8000)}`
+                : resumeSummary;
+            if (targetStage === 'screening') response = await getScreeningQuestion(activeSessionId, candidateContext, skills, projects, history);
+            else if (targetStage === 'technical') response = await getTechnicalQuestion(activeSessionId, skills, history);
+            else response = await getHRQuestion(activeSessionId, history);
+            if (!response.question?.trim()) throw new Error('The AI provider returned an empty question.');
+            setQuestion(response.question); addCaption('interviewer', response.question); spokenQuestionRef.current = '';
+        } catch (requestError) { setError(getErrorMessage(requestError, 'The interviewer could not create a question. Your progress is safe; please retry.')); }
+        finally { setLoading(false); }
+    }, [addCaption, jobDescription, projects, resumeSummary, skills]);
 
-    const handleStartInterview = async () => {
-        guardAction(async () => {
-            setIsLoading(true);
+    const submitAnswer = useCallback(async (rawAnswer: string) => {
+        const answer = rawAnswer.trim();
+        if (!answer || loading || !question || paused) return;
+        stopListening(true); audio.stopSpeech(); setTypedAnswer(''); addCaption('candidate', answer);
+        const nextAnswers = [...answers, { question, answer }]; setAnswers(nextAnswers);
+        if (questionIndex + 1 < stage.questions) { setQuestionIndex((value) => value + 1); await getNextQuestion(stage.id, nextAnswers, sessionId); return; }
+        setLoading(true); setError('');
+        try {
+            const payload: Parameters<typeof evaluateInterviewStage>[2] = { responses: nextAnswers };
+            if (stage.id === 'screening') payload.resume_summary = resumeSummary;
+            if (stage.id === 'technical') payload.skills = skills;
+            const response = await evaluateInterviewStage(sessionId, stage.id, payload);
+            const nextEvaluations = { ...evaluations, [stage.id]: response.evaluation as StageEvaluation };
+            setEvaluations(nextEvaluations);
+            const nextIndex = stageIndex + 1;
+            if (nextIndex === 2) {
+                setStageIndex(nextIndex); setPhase('coding');
+                const coding = await getCodingProblem(sessionId, skills, experience.toLowerCase());
+                if (!coding.problem) throw new Error('The AI provider returned an empty coding problem.');
+                setCodingProblem(coding.problem as CodingProblem);
+            } else if (nextIndex >= STAGES.length) {
+                const final = await getMultistageFinalAnalysis(sessionId, nextEvaluations.screening || {}, nextEvaluations.technical || {}, nextEvaluations.coding || {}, nextEvaluations.hr || {});
+                const analysis = final.analysis as Record<string, unknown>;
+                setReport(analysis);
+                setPhase('report');
+                trackInterviewCompleted(position, typeof analysis.overall_score === 'number' ? analysis.overall_score : undefined);
+                try { await saveProgressSnapshot(0); } catch { /* report persistence succeeded; a snapshot retry can happen later */ }
+            } else { setStageIndex(nextIndex); setQuestionIndex(0); setAnswers([]); await getNextQuestion(STAGES[nextIndex].id, [], sessionId); }
+        } catch (requestError) { setError(getErrorMessage(requestError, 'We could not save this stage. Please retry; it has not been marked complete.')); }
+        finally { setLoading(false); }
+    }, [addCaption, answers, audio, evaluations, experience, getNextQuestion, loading, paused, position, question, questionIndex, resumeSummary, sessionId, skills, stage, stageIndex, stopListening]);
+
+    const beginListening = useCallback(() => {
+        if (paused || loading || !voiceReady) { if (!voiceReady) setShowTextInput(true); return; }
+        audio.stopSpeech(); stopListening(true);
+        const Recognition = (window as SpeechRecognitionWindow).SpeechRecognition || (window as SpeechRecognitionWindow).webkitSpeechRecognition;
+        if (!Recognition) return;
+        const recognition = new Recognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-US'; answerRef.current = '';
+        recognition.onresult = (event: RecognitionEvent) => {
+            let finalText = ''; let partial = '';
+            for (let index = event.resultIndex; index < event.results.length; index += 1) { const text = event.results[index][0].transcript; if (event.results[index].isFinal) finalText += `${text} `; else partial += text; }
+            if (finalText) answerRef.current = `${answerRef.current} ${finalText}`.trim();
+            setInterim(`${answerRef.current}${partial ? ` ${partial}` : ''}`.trim());
+        };
+        recognition.onerror = (event: { error: string }) => { setListening(false); if (event.error !== 'aborted' && event.error !== 'no-speech') setError(`Speech recognition failed (${event.error}). Use text compatibility mode or try again.`); };
+        recognition.onend = () => { const discard = discardRecognitionRef.current; discardRecognitionRef.current = false; setListening(false); setInterim(''); const spoken = answerRef.current.trim(); answerRef.current = ''; if (spoken && !discard) void submitAnswer(spoken); };
+        recognitionRef.current = recognition; recognition.start(); setListening(true);
+    }, [audio, loading, paused, stopListening, submitAnswer, voiceReady]);
+
+    const askQuestionAloud = useCallback((startAfter = false) => {
+        if (!question || paused) return;
+        if (!audio.speechSupported) { setShowTextInput(true); return; }
+        stopListening(true); audio.speak(question, { onEnd: startAfter && voiceReady ? beginListening : undefined, onError: () => setError('Speech playback failed. You can read the question and answer aloud or use text compatibility mode.') });
+    }, [audio, beginListening, paused, question, stopListening, voiceReady]);
+
+    useEffect(() => {
+        if (phase === 'room' && question && question !== spokenQuestionRef.current && !loading && !paused) {
+            spokenQuestionRef.current = question;
+            const timer = window.setTimeout(() => askQuestionAloud(true), 250);
+            return () => window.clearTimeout(timer);
+        }
+    }, [askQuestionAloud, loading, paused, phase, question]);
+    useEffect(() => () => stopListening(true), [stopListening]);
+
+    const startInterview = async () => {
+        await guardAction(async () => {
+            setPhase('connecting'); setError(''); setLimitMessage('');
             try {
-                const session = await createMultistageSession(position, interviewPath, 'intermediate');
-                await refreshUsage();
-                setSessionId(session.id);
-                setCurrentStageIdx(0);
-                setQuestionIndex(0);
-                setHistory([]);
-                setStageEvals({});
-                setFinalAnalysis(null);
-                setCurrentStageEval(null);
-                solvedProblemTrackedRef.current = false;
-                await fetchQuestion('screening', []);
-                setStep('screening');
-            } catch (e) {
-                const limitInfo = extractLimitExceededError(e);
-                if (limitInfo) {
-                    setLimitModal({
-                        isOpen: true,
-                        counter: limitInfo.counter,
-                        current: limitInfo.current,
-                        limit: limitInfo.limit,
-                        message: limitInfo.message,
-                    });
-                } else {
-                    console.error('Start error:', e);
-                }
-            } finally {
-                setIsLoading(false);
-            }
+                const session = await createMultistageSession(position.trim(), interviewType, experience.toLowerCase()); await refreshUsage();
+                setSessionId(session.id); setStageIndex(0); setQuestionIndex(0); setAnswers([]); setEvaluations({}); setTranscript([]); setElapsed(0); setPhase('room');
+                await getNextQuestion('screening', [], session.id);
+            } catch (requestError) { const limit = extractLimitExceededError(requestError); setLimitMessage(limit?.message || getErrorMessage(requestError, 'Unable to start an interview right now.')); setPhase('lobby'); }
         });
     };
-
-    const fetchQuestion = async (stage: string, hist: any[]) => {
-        setIsLoading(true);
+    const finishCoding = async () => {
+        if (!codingProblem) return;
+        setLoading(true);
         try {
-            let res: any;
-            if (stage === 'screening') {
-                res = await getScreeningQuestion(sessionId || 'temp', resumeSummary, skills, projects, hist);
-            } else if (stage === 'technical') {
-                res = await getTechnicalQuestion(sessionId || 'temp', skills, hist);
-            } else if (stage === 'hr') {
-                res = await getHRQuestion(sessionId || 'temp', hist);
-            }
-            setCurrentQuestion(res?.question || 'Tell me about yourself.');
-        } catch (e) {
-            console.error('Question fetch error:', e);
-            setCurrentQuestion('Tell me about your experience and what makes you a great candidate.');
-        }
-        setIsLoading(false);
+            const result = await evaluateInterviewStage(sessionId, 'coding', { code: codingResult.code, language: codingResult.language, problem: codingProblem, passed_tests: codingResult.passed, total_tests: codingResult.total, attempts: codingResult.attempts, responses: [{ question: codingProblem.title, answer: codingResult.code }] });
+            setEvaluations((current) => ({ ...current, coding: result.evaluation as StageEvaluation })); setStageIndex(3); setQuestionIndex(0); setAnswers([]); setPhase('room'); await getNextQuestion('hr', [], sessionId);
+        } catch (requestError) { setError(getErrorMessage(requestError, 'The code review could not be saved. Please retry.')); }
+        finally { setLoading(false); }
     };
-
-    const fetchCodingProblem = async () => {
-        setIsLoading(true);
+    const finishInterview = async () => {
+        setLoading(true); setError('');
         try {
-            const res = await getCodingProblem(sessionId, skills, 'intermediate');
-            const problem = res?.problem || {};
-            setCodingProblem(problem);
-            setCodingCode(problem.starter_code?.python || '# Write your solution here\n');
-            setCodingLang('python');
-            setCodingAttempts(0);
-            setCodingTestsPassed(0);
-            solvedProblemTrackedRef.current = false;
-        } catch (e) {
-            console.error('Coding problem error:', e);
-            setCodingProblem({
-                title: 'Two Sum', description: 'Find two numbers that add up to a target.',
-                examples: [{ input: '[2,7,11,15], 9', output: '[0,1]' }],
-                test_cases: [{ input: '[2,7,11,15], 9', expected_output: '[0,1]', is_hidden: false }],
-                starter_code: { python: '# Write your solution here\n' }, difficulty: 'intermediate'
-            });
-            setCodingCode('# Write your solution here\n');
-            solvedProblemTrackedRef.current = false;
-        }
-        setIsLoading(false);
+            const result = await getMultistageFinalAnalysis(sessionId, evaluations.screening || {}, evaluations.technical || {}, evaluations.coding || {}, evaluations.hr || {});
+            const analysis = result.analysis as Record<string, unknown>; setReport(analysis); setPhase('report'); trackInterviewCompleted(position, typeof analysis.overall_score === 'number' ? analysis.overall_score : undefined);
+            try { await saveProgressSnapshot(0); } catch { /* report persistence succeeded; a snapshot retry can happen later */ }
+        } catch (requestError) { setError(getErrorMessage(requestError, 'Your interview is complete, but the report could not be generated. Please retry.')); }
+        finally { setLoading(false); }
     };
+    const handlePause = () => { if (paused) { setPaused(false); if (audio.speechState === 'paused') audio.toggleSpeechPause(); } else { setPaused(true); stopListening(true); if (audio.speechState === 'speaking') audio.toggleSpeechPause(); } };
+    const endInterview = () => { if (!endConfirmation) { setEndConfirmation(true); return; } audio.stopSpeech(); stopListening(true); setCameraOn(false); setPhase('lobby'); setEndConfirmation(false); setError('The interview was ended before completion. It will not count toward progress or badges.'); };
 
-    const handleSendResponse = async () => {
-        if (!userResponse.trim() && mode === 'text') return;
-        const stageId = currentStage.id;
-        const responseData = { question: currentQuestion, answer: userResponse };
-        const newHistory = [...history, responseData];
-        setHistory(newHistory);
-        setUserResponse('');
-
-        if (questionIndex < currentStage.qs - 1) {
-            setQuestionIndex(prev => prev + 1);
-            await fetchQuestion(stageId, newHistory);
-        } else {
-            await evaluateCurrentStage(stageId, newHistory);
-        }
-    };
-
-    const evaluateCurrentStage = async (stageId: string, responses: any[]) => {
-        setIsLoading(true);
-        try {
-            const data: any = { responses };
-            if (stageId === 'screening') data.resume_summary = resumeSummary;
-            if (stageId === 'technical') data.skills = skills;
-            const res = await evaluateInterviewStage(sessionId, stageId, data);
-            const ev = res?.evaluation || { score: 50, feedback: 'Stage completed.', strengths: [], weaknesses: [] };
-            setCurrentStageEval(ev);
-            setStageEvals(prev => ({ ...prev, [stageId]: ev }));
-            setStep('stage_result');
-        } catch (e) {
-            console.error('Eval error:', e);
-            const fallback = { score: 50, feedback: 'Evaluation completed.', strengths: [], weaknesses: [] };
-            setCurrentStageEval(fallback);
-            setStageEvals(prev => ({ ...prev, [stageId]: fallback }));
-            setStep('stage_result');
-        }
-        setIsLoading(false);
-    };
-
-    const handleSubmitCode = async (code: string, language: string, passed: number, total: number, attempts: number) => {
-        setCodingCode(code);
-        setCodingLang(language);
-        setCodingAttempts(attempts);
-        setCodingTestsPassed(passed);
-        trackCodeExecuted(language);
-        if (total > 0 && passed === total && !solvedProblemTrackedRef.current) {
-            solvedProblemTrackedRef.current = true;
-            trackProblemSolved(
-                codingProblem?.title || 'Coding Problem',
-                codingProblem?.difficulty === 'easy'
-                    ? 'easy'
-                    : codingProblem?.difficulty === 'hard'
-                        ? 'hard'
-                        : 'medium',
-                skills[0] || position,
-                language,
-            );
-        }
-    };
-
-    const handleFinishCoding = async () => {
-        setIsLoading(true);
-        try {
-            const tc = codingProblem?.test_cases || [];
-            const res = await evaluateInterviewStage(sessionId, 'coding', {
-                code: codingCode, language: codingLang, problem: codingProblem,
-                passed_tests: codingTestsPassed, total_tests: tc.length, attempts: codingAttempts,
-                responses: [{ question: codingProblem?.title || 'Coding Problem', answer: codingCode }]
-            });
-            const ev = res?.evaluation || { score: 50, feedback: 'Coding evaluated.', strengths: [], weaknesses: [] };
-            setCurrentStageEval(ev);
-            setStageEvals(prev => ({ ...prev, coding: ev }));
-            setStep('stage_result');
-        } catch (e) {
-            const fallback = { score: 50, feedback: 'Coding evaluated.', strengths: [], weaknesses: [] };
-            setCurrentStageEval(fallback);
-            setStageEvals(prev => ({ ...prev, coding: fallback }));
-            setStep('stage_result');
-        }
-        setIsLoading(false);
-    };
-
-    const proceedToNextStage = async () => {
-        const nextIdx = currentStageIdx + 1;
-        if (nextIdx >= STAGES.length) {
-            await generateFinalResults();
-            return;
-        }
-        setCurrentStageIdx(nextIdx);
-        setQuestionIndex(0);
-        setHistory([]);
-        setCurrentStageEval(null);
-        const nextStage = STAGES[nextIdx].id;
-        if (nextStage === 'coding') {
-            setStep('coding');
-            await fetchCodingProblem();
-        } else {
-            setStep(nextStage as InterviewStep);
-            await fetchQuestion(nextStage, []);
-        }
-    };
-
-    const generateFinalResults = async () => {
-        setIsLoading(true);
-        setStep('final_results');
-        try {
-            const res = await getMultistageFinalAnalysis(
-                sessionId,
-                stageEvals.screening || {},
-                stageEvals.technical || {},
-                stageEvals.coding || {},
-                stageEvals.hr || {}
-            );
-            const analysis = res?.analysis || {
-                overall_score: 0, verdict: 'Evaluation Complete',
-                strengths: [], weaknesses: [], overall_feedback: '', improvement_tips: []
-            };
-            setFinalAnalysis(analysis);
-            trackInterviewCompleted(position, analysis?.overall_score);
-            try { await saveProgressSnapshot(0); } catch (_) { }
-        } catch (e) {
-            console.error('Final analysis error:', e);
-            const avg = Object.values(stageEvals).reduce((s, e) => s + (e.score || 0), 0) / Math.max(Object.keys(stageEvals).length, 1);
-            setFinalAnalysis({
-                overall_score: Math.round(avg), verdict: avg >= 60 ? 'Hire' : 'Needs Improvement',
-                strengths: [], weaknesses: [], overall_feedback: 'Interview complete.', improvement_tips: []
-            });
-        }
-        setIsLoading(false);
-    };
-
-    const toggleListening = () => {
-        if (isListening) {
-            recognitionRef.current?.stop();
-            setIsListening(false);
-            return;
-        }
-        const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SR) {
-            setUserResponse('Speech recognition is not supported in this browser.');
-            return;
-        }
-        const recognition = new SR();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-        recognition.onresult = (event: any) => {
-            const transcript = event.results[0][0].transcript;
-            setUserResponse(prev => prev ? prev + ' ' + transcript : transcript);
-        };
-        recognition.onend = () => setIsListening(false);
-        recognition.onerror = () => setIsListening(false);
-        recognitionRef.current = recognition;
-        recognition.start();
-        setIsListening(true);
-    };
-
-    const restartInterview = () => {
-        stopSpeech();
-        setStep('landing');
-        setSessionId('');
-        setCurrentStageIdx(0);
-        setQuestionIndex(0);
-        setHistory([]);
-        setStageEvals({});
-        setFinalAnalysis(null);
-        setCurrentStageEval(null);
-        solvedProblemTrackedRef.current = false;
-    };
-
-    // ═══════════════════════════════════════
-    // RENDER
-    // ═══════════════════════════════════════
-    return (
-        <div className="min-h-screen font-sans pb-20 overflow-x-hidden relative bg-slate-50 dark:bg-[#050510]">
-<main className={`mx-auto px-3 sm:px-6 pt-8 sm:pt-16 ${step === 'coding' ? 'max-w-[1400px]' : 'max-w-5xl'}`}>
-                    <AnimatePresence mode="wait">
-                        {/* ═══ LANDING ═══ */}
-                        {step === 'landing' && (
-                            <motion.div key="landing" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-12">
-                                <div className="text-center space-y-4">
-                                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.2 }}
-                                        className="w-24 h-24 bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] rounded-[2rem] flex items-center justify-center mx-auto shadow-xl shadow-purple-200"
-                                    >
-                                        <BrainCircuit className="w-12 h-12 text-white" />
-                                    </motion.div>
-                                    <h1 className="text-3xl sm:text-5xl font-[900] text-slate-800 tracking-tight">Start Your AI Interview</h1>
-                                    <p className="text-slate-400 text-lg font-medium max-w-xl mx-auto">Experience a complete AI-powered hiring simulation with 4 stages</p>
-                                </div>
-
-                                {/* Stage Pipeline */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 max-w-3xl mx-auto">
-                                    {STAGES.map((s, i) => (
-                                        <motion.div key={s.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * 0.1 }}
-                                            className="relative p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-white/90 backdrop-blur-sm border-2 border-white/20 shadow-lg text-center space-y-2 sm:space-y-3 group hover:shadow-xl transition-all"
-                                        >
-                                            {i < 3 && <ChevronRight className="hidden md:block absolute -right-4 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-200 z-10" />}
-                                            <div className={`w-14 h-14 ${s.bg} rounded-2xl flex items-center justify-center mx-auto`}>
-                                                <s.icon className={`w-7 h-7 ${s.color}`} />
-                                            </div>
-                                            <h4 className="text-sm font-black text-slate-900 leading-tight">{s.label}</h4>
-                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Stage {i + 1}</span>
-                                        </motion.div>
-                                    ))}
-                                </div>
-
-                                {/* Path Selection */}
-                                <Card className="p-6 sm:p-10 border-none shadow-xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3rem] space-y-6 sm:space-y-8 max-w-2xl mx-auto border border-white/20">
-                                    <div className="space-y-4">
-                                        <label className="text-sm font-black text-slate-900 uppercase tracking-widest px-1">Choose Your Path</label>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <button onClick={() => setInterviewPath('resume_screening')}
-                                                className={`p-6 rounded-2xl border-2 text-left space-y-2 transition-all ${interviewPath === 'resume_screening' ? 'border-[#5c52d2] bg-purple-50/60 shadow-lg' : 'border-slate-100 hover:border-slate-200'}`}
-                                            >
-                                                <FileText className={`w-8 h-8 ${interviewPath === 'resume_screening' ? 'text-[#5c52d2]' : 'text-slate-300'}`} />
-                                                <h4 className="text-sm font-black text-slate-900">Resume Screening</h4>
-                                                <p className="text-[10px] font-bold text-slate-400">AI analyzes your resume, projects & skills</p>
-                                            </button>
-                                            <button onClick={() => setInterviewPath('direct_skill')}
-                                                className={`p-6 rounded-2xl border-2 text-left space-y-2 transition-all ${interviewPath === 'direct_skill' ? 'border-[#5c52d2] bg-purple-50/60 shadow-lg' : 'border-slate-100 hover:border-slate-200'}`}
-                                            >
-                                                <Zap className={`w-8 h-8 ${interviewPath === 'direct_skill' ? 'text-[#5c52d2]' : 'text-slate-300'}`} />
-                                                <h4 className="text-sm font-black text-slate-900">Direct Skill Interview</h4>
-                                                <p className="text-[10px] font-bold text-slate-400">Jump straight to skill-based questions</p>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <label className="text-sm font-black text-slate-900 uppercase tracking-widest px-1">Target Position</label>
-                                        <Input placeholder="e.g., Software Engineer" value={position} onChange={(e) => setPosition(e.target.value)}
-                                            className="h-14 px-6 rounded-2xl border-slate-100 bg-slate-50/50 font-bold focus:bg-white transition-all" />
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <label className="text-sm font-black text-slate-900 uppercase tracking-widest px-1">Interview Mode</label>
-                                        <div className="flex p-1 bg-slate-50/80 rounded-2xl">
-                                            <button onClick={() => setMode('text')}
-                                                className={`flex-1 h-14 rounded-xl font-black text-sm flex items-center justify-center gap-3 transition-all ${mode === 'text' ? 'bg-[#5c52d2] text-white shadow-lg' : 'text-slate-500'}`}
-                                            ><MessageSquare className="w-5 h-5" /> Text</button>
-                                            <button onClick={() => setMode('voice')}
-                                                className={`flex-1 h-14 rounded-xl font-black text-sm flex items-center justify-center gap-3 transition-all ${mode === 'voice' ? 'bg-[#5c52d2] text-white shadow-lg' : 'text-slate-500'}`}
-                                            ><Mic2 className="w-5 h-5" /> Voice</button>
-                                        </div>
-                                    </div>
-
-                                    {skills.length > 0 && (
-                                        <div className="p-5 rounded-2xl bg-emerald-50/60 border-2 border-emerald-100 flex items-center gap-4">
-                                            <CheckCircle2 className="w-6 h-6 text-emerald-500 shrink-0" />
-                                            <div>
-                                                <p className="text-sm font-black text-slate-900">Resume Detected</p>
-                                                <p className="text-[10px] font-bold text-slate-400">{skills.length} skills • {projects.length} projects loaded</p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <Button onClick={handleStartInterview} disabled={isLoading}
-                                        className={`w-full h-20 rounded-[2rem] bg-[#b195ff] hover:bg-[#a284ff] text-white font-black text-xl shadow-xl shadow-purple-100 transition-all group ${isLocked ? 'opacity-80' : ''}`}
-                                    >
-                                        {isLoading ? <><Loader2 className="w-6 h-6 animate-spin mr-3" /> Preparing...</> : isLocked ? <><Lock className="w-6 h-6 mr-3" /> Unlock Interview <ArrowRight className="ml-3 w-6 h-6" /></> : <>Begin Interview <ArrowRight className="ml-3 w-6 h-6 group-hover:translate-x-1 transition-transform" /></>}
-                                    </Button>
-                                </Card>
-
-                                {/* Premium Gate Modal */}
-                                <PremiumGate {...gateProps} />
-                                <UpgradeModal
-                                    isOpen={limitModal.isOpen}
-                                    onClose={() => setLimitModal({ isOpen: false })}
-                                    counter={limitModal.counter}
-                                    current={limitModal.current}
-                                    limit={limitModal.limit}
-                                    message={limitModal.message}
-                                />
-                            </motion.div>
-                        )}
-
-                        {/* ═══ ACTIVE Q&A STAGES (screening, technical, hr) ═══ */}
-                        {(step === 'screening' || step === 'technical' || step === 'hr') && (
-                            <motion.div key="active-qa" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
-                                {/* Stage Progress Bar */}
-                                <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 -mx-3 sm:-mx-6 px-3 sm:px-6">
-                                    {STAGES.map((s, i) => (
-                                        <div key={s.id} className={`flex-1 min-w-[100px] sm:min-w-[140px] p-3 sm:p-5 rounded-xl sm:rounded-[2rem] border-2 transition-all backdrop-blur-sm ${i === currentStageIdx ? 'border-[#5c52d2] bg-blue-50/80 shadow-lg' : i < currentStageIdx ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-100 bg-white/40'}`}>
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${i === currentStageIdx ? 'bg-white shadow-sm' : i < currentStageIdx ? 'bg-emerald-100' : ''}`}>
-                                                {i < currentStageIdx ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <s.icon className={`w-5 h-5 ${i === currentStageIdx ? 'text-[#5c52d2]' : 'text-slate-300'}`} />}
-                                            </div>
-                                            <h4 className={`text-xs font-black ${i === currentStageIdx ? 'text-slate-900' : i < currentStageIdx ? 'text-emerald-600' : 'text-slate-400'}`}>{s.label}</h4>
-                                            {i === currentStageIdx && <span className="px-3 py-1 bg-[#5c52d2] text-white text-[8px] font-black uppercase rounded-full mt-2 inline-block">Active</span>}
-                                            {i < currentStageIdx && <span className="px-3 py-1 bg-emerald-500 text-white text-[8px] font-black uppercase rounded-full mt-2 inline-block">✓ Done</span>}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Question Header */}
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-12 h-12 ${currentStage.bg} shadow-sm rounded-2xl flex items-center justify-center`}>
-                                        <currentStage.icon className={`w-6 h-6 ${currentStage.color}`} />
-                                    </div>
-                                    <h2 className="text-2xl font-black text-slate-900 tracking-tight">{currentStage.label}</h2>
-                                    <div className="ml-auto flex items-center gap-4">
-                                        <div className="flex items-center gap-2 text-sm font-black text-slate-600">
-                                            <Clock className="w-4 h-4" />
-                                            {Math.floor(elapsedTime / 60)}:{(elapsedTime % 60).toString().padStart(2, '0')}
-                                        </div>
-                                        <Signal className="w-4 h-4 text-emerald-500" />
-                                        <span className="text-sm font-black text-[#5c52d2] tracking-widest uppercase">Q {questionIndex + 1}/{currentStage.qs}</span>
-                                    </div>
-                                </div>
-
-                                {/* Question Card */}
-                                <Card className="p-5 sm:p-10 border-none shadow-2xl bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-[3rem] space-y-6 sm:space-y-8 min-h-[300px] sm:min-h-[400px] flex flex-col border border-white/20">
-                                    <AnimatePresence mode="wait">
-                                        {isLoading ? (
-                                            <div key="loading" className="flex-1 flex flex-col items-center justify-center space-y-6">
-                                                <Loader2 className="w-12 h-12 text-[#5c52d2] animate-spin" />
-                                                <p className="text-lg font-black text-slate-400 animate-pulse">AI is thinking...</p>
-                                            </div>
-                                        ) : (
-                                            <motion.div key={`q-${questionIndex}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col">
-                                                {/* HR Avatar */}
-                                                {step === 'hr' && (
-                                                    <div className="flex items-center gap-4 mb-6">
-                                                        <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 2 }}
-                                                            className="w-16 h-16 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center shadow-lg shadow-rose-200">
-                                                            <UserCircle2 className="w-10 h-10 text-white" />
-                                                        </motion.div>
-                                                        <div>
-                                                            <p className="text-sm font-black text-slate-900">Sarah Mitchell</p>
-                                                            <p className="text-[10px] font-bold text-slate-400">Senior HR Manager</p>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="p-8 bg-slate-50/80 rounded-[2.5rem] border-2 border-slate-100 relative z-10">
-                                                    <p className="text-xl font-bold text-slate-700 leading-relaxed italic">
-                                                        <span className="text-[#5c52d2] font-black not-italic block mb-3 uppercase text-xs tracking-[0.2em]">Interviewer:</span>
-                                                        "{currentQuestion}"
-                                                    </p>
-
-                                                    {/* ── Voice Controls ── */}
-                                                    {speechSupported && (
-                                                        <div className="mt-5 flex items-center gap-2 flex-wrap">
-                                                            {/* Speak / Replay */}
-                                                            <button
-                                                                onClick={() => speakText(currentQuestion)}
-                                                                title="Speak Question"
-                                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-[#5c52d2]/10 text-[#5c52d2] hover:bg-[#5c52d2]/20 transition-all"
-                                                            >
-                                                                <Volume2 className="w-3.5 h-3.5" />
-                                                                {isSpeaking ? 'Replay' : 'Speak'}
-                                                            </button>
-
-                                                            {/* Pause */}
-                                                            {isSpeaking && !isPaused && (
-                                                                <button
-                                                                    onClick={pauseSpeech}
-                                                                    title="Pause"
-                                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-amber-50 text-amber-600 hover:bg-amber-100 transition-all"
-                                                                >
-                                                                    <Pause className="w-3.5 h-3.5" />
-                                                                    Pause
-                                                                </button>
-                                                            )}
-
-                                                            {/* Resume */}
-                                                            {isPaused && (
-                                                                <button
-                                                                    onClick={resumeSpeech}
-                                                                    title="Resume"
-                                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all"
-                                                                >
-                                                                    <Play className="w-3.5 h-3.5" />
-                                                                    Resume
-                                                                </button>
-                                                            )}
-
-                                                            {/* Repeat */}
-                                                            <button
-                                                                onClick={() => speakText(currentQuestion)}
-                                                                title="Repeat Question"
-                                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all"
-                                                            >
-                                                                <RotateCcw className="w-3.5 h-3.5" />
-                                                                Repeat
-                                                            </button>
-
-                                                            {/* Divider */}
-                                                            <div className="w-px h-5 bg-slate-200 mx-1" />
-
-                                                            {/* Speed Control */}
-                                                            <div className="flex items-center gap-1">
-                                                                <Gauge className="w-3.5 h-3.5 text-slate-400" />
-                                                                {[
-                                                                    { label: '0.8×', value: 0.8 },
-                                                                    { label: '1×', value: 1 },
-                                                                    { label: '1.2×', value: 1.2 },
-                                                                ].map(s => (
-                                                                    <button
-                                                                        key={s.value}
-                                                                        onClick={() => {
-                                                                            setSpeechSpeed(s.value);
-                                                                            // Re-speak at the new speed immediately if currently speaking
-                                                                            if (isSpeaking || isPaused) {
-                                                                                speakText(currentQuestion, s.value);
-                                                                            }
-                                                                        }}
-                                                                        className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${speechSpeed === s.value
-                                                                                ? 'bg-[#5c52d2] text-white shadow-sm'
-                                                                                : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                                                                            }`}
-                                                                    >
-                                                                        {s.label}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-
-                                                            {/* Divider */}
-                                                            <div className="w-px h-5 bg-slate-200 mx-1" />
-
-                                                            {/* Mute toggle */}
-                                                            <button
-                                                                onClick={() => { setVoiceMuted(m => !m); if (!voiceMuted) stopSpeech(); }}
-                                                                title={voiceMuted ? 'Unmute Auto-Read' : 'Mute Auto-Read'}
-                                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all ${voiceMuted
-                                                                    ? 'bg-rose-50 text-rose-500 hover:bg-rose-100'
-                                                                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                                                                    }`}
-                                                            >
-                                                                {voiceMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                                                                {voiceMuted ? 'Muted' : 'Auto'}
-                                                            </button>
-
-                                                            {/* Voice selection */}
-                                                            {availableVoices.length > 1 && (
-                                                                <select
-                                                                    value={selectedVoice}
-                                                                    onChange={(e) => setSelectedVoice(e.target.value)}
-                                                                    className="h-8 px-3 rounded-xl text-[11px] font-black bg-slate-50 border-2 border-slate-200 focus:border-[#5c52d2] focus:outline-none"
-                                                                >
-                                                                    {availableVoices.map(voice => (
-                                                                        <option key={voice.name} value={voice.name}>
-                                                                            {voice.name}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Zero-Cost Webcam Preview */}
-                                                <div className={`rounded-2xl overflow-hidden shadow-lg ${theme === 'dark' ? 'bg-[#0a0a1a]' : 'bg-slate-900'}`}>
-                                                    <div className="relative aspect-video">
-                                                        {isCameraOn ? (
-                                                            <video ref={videoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${isMirrored ? 'scale-x-[-1]' : ''}`} />
-                                                        ) : (
-                                                            <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
-                                                                <div className="text-center space-y-3">
-                                                                    <VideoOff className="w-12 h-12 text-slate-500 mx-auto" />
-                                                                    <p className="text-sm font-bold text-slate-400">Camera Off</p>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                        {isCameraOn && (
-                                                            <div className="absolute top-3 left-3 flex items-center gap-2 bg-red-600 text-white px-3 py-1.5 rounded-full text-xs font-black">
-                                                                <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                                                                REC
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className={`p-3 flex items-center justify-between ${theme === 'dark' ? 'bg-[#0a0a1a]' : 'bg-slate-900'}`}>
-                                                        <Button onClick={() => setIsCameraOn(!isCameraOn)} variant={isCameraOn ? 'default' : 'outline'} className={`h-8 px-3 rounded-lg font-black text-xs transition-all ${isCameraOn ? 'bg-red-500 hover:bg-red-600 text-white' : theme === 'dark' ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-600 text-slate-300 hover:bg-slate-800'}`}>
-                                                            {isCameraOn ? <VideoOff className="w-3 h-3 mr-2" /> : <Video className="w-3 h-3 mr-2" />}
-                                                            {isCameraOn ? 'Stop' : 'Start'}
-                                                        </Button>
-                                                        {isCameraOn && videoDevices.length > 1 && (
-                                                            <select value={selectedVideoDevice} onChange={(e) => setSelectedVideoDevice(e.target.value)} className={`h-8 px-3 rounded-lg font-black text-xs bg-transparent border-2 transition-all focus:outline-none ${theme === 'dark' ? 'border-slate-700 text-white focus:border-[#5c52d2]' : 'border-slate-600 text-white focus:border-[#5c52d2]'}`}>
-                                                                {videoDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${videoDevices.indexOf(device) + 1}`}</option>))}
-                                                            </select>
-                                                        )}
-                                                        {isCameraOn && (
-                                                            <button onClick={() => setIsMirrored(!isMirrored)} className="h-8 px-3 rounded-lg font-black text-xs border-2 transition-all">
-                                                                {isMirrored ? 'Mirrored' : 'Normal'}
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {/* Live Transcript Display */}
-                                                {showTranscript && (
-                                                    <div className={`rounded-2xl shadow-lg overflow-hidden ${theme === 'dark' ? 'bg-[#0a0a1a]' : 'bg-white'}`}>
-                                                        <div className={`p-3 border-b-2 flex items-center justify-between ${theme === 'dark' ? 'border-slate-800' : 'border-slate-100'}`}>
-                                                            <div className="flex items-center gap-2">
-                                                                <MessageSquare className={`w-4 h-4 ${theme === 'dark' ? 'text-[#5c52d2]' : 'text-[#5c52d2]'}`} />
-                                                                <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">Live Transcript</span>
-                                                            </div>
-                                                            <Button onClick={() => setShowTranscript(!showTranscript)} variant="ghost" size="sm" className={`h-6 px-2 rounded-lg ${theme === 'dark' ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}>
-                                                                <ChevronRight className="w-4 h-4" />
-                                                            </Button>
-                                                        </div>
-                                                        <div className="p-3 space-y-3 max-h-48 overflow-y-auto">
-                                                            {transcript.length === 0 ? (
-                                                                <div className="text-center py-4">
-                                                                    <MessageSquare className={`w-8 h-8 mx-auto mb-2 ${theme === 'dark' ? 'text-slate-700' : 'text-slate-300'}`} />
-                                                                    <p className={`text-xs font-bold ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>Transcript will appear here</p>
-                                                                </div>
-                                                            ) : (
-                                                                transcript.map((entry, i) => (
-                                                                    <div key={i} className={`flex gap-2 ${entry.speaker === 'candidate' ? 'flex-row-reverse' : ''}`}>
-                                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${entry.speaker === 'interviewer' ? 'bg-gradient-to-br from-[#5c52d2] to-[#7c3aed]' : 'bg-gradient-to-br from-emerald-400 to-emerald-600'}`}>
-                                                                            <span className="text-white text-[10px] font-black">{entry.speaker === 'interviewer' ? 'AI' : 'You'}</span>
-                                                                        </div>
-                                                                        <div className={`flex-1 max-w-[80%] ${entry.speaker === 'candidate' ? 'text-right' : ''}`}>
-                                                                            <div className={`inline-block px-3 py-2 rounded-xl text-xs font-bold leading-relaxed ${entry.speaker === 'interviewer' ? theme === 'dark' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900' : 'bg-[#5c52d2] text-white'}`}>{entry.text}</div>
-                                                                        </div>
-                                                                    </div>
-                                                                ))
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="flex-1" />
-
-                                                {mode === 'text' ? (
-                                                    <div className="relative z-10 mt-6">
-                                                        <Input placeholder="Type your response..." value={userResponse} onChange={(e) => setUserResponse(e.target.value)}
-                                                            onKeyDown={(e) => e.key === 'Enter' && handleSendResponse()}
-                                                            className="h-20 px-8 pr-32 rounded-[2rem] border-2 border-slate-100 bg-white font-bold text-lg focus:border-[#5c52d2] transition-all shadow-lg" />
-                                                        <button onClick={handleSendResponse}
-                                                            className="absolute right-3 top-3 bottom-3 px-8 bg-[#b195ff] text-white rounded-xl font-black hover:scale-105 transition-all flex items-center gap-2 shadow-lg shadow-purple-100">
-                                                            Send <Send className="w-5 h-5" />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="relative z-10 flex flex-col items-center gap-6 py-4 mt-6">
-                                                        <div className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${isListening ? 'bg-rose-500 shadow-[0_0_40px_rgba(244,63,94,0.3)]' : 'bg-slate-100 text-slate-400'}`}>
-                                                            <Mic2 className={`w-10 h-10 ${isListening ? 'text-white animate-pulse' : ''}`} />
-                                                        </div>
-                                                        {userResponse && <p className="text-sm text-slate-600 font-medium bg-slate-50 p-4 rounded-2xl max-w-md text-center">"{userResponse}"</p>}
-                                                        <div className="flex gap-4">
-                                                            <button onClick={toggleListening}
-                                                                className={`h-16 px-10 rounded-2xl font-black flex items-center gap-3 transition-all ${isListening ? 'bg-rose-500 text-white shadow-xl shadow-rose-200' : 'bg-white border-2 border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
-                                                                {isListening ? 'Stop' : 'Speak'}
-                                                            </button>
-                                                            <button onClick={handleSendResponse}
-                                                                className="h-16 px-10 bg-emerald-500 text-white rounded-2xl font-black shadow-xl shadow-emerald-200 hover:scale-105 transition-all flex items-center gap-3">
-                                                                Submit <Send className="w-5 h-5" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </Card>
-
-                                <div className="flex justify-center">
-                                    <button onClick={restartInterview} className="text-slate-400 font-black uppercase text-xs tracking-widest hover:text-rose-500 transition-all flex items-center gap-2">
-                                        <StopCircle className="w-4 h-4" /> End Interview
-                                    </button>
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {/* ═══ CODING ROUND — LeetCode-Style Environment ═══ */}
-                        {step === 'coding' && (
-                            <motion.div key="coding" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-                                {/* Stage Progress Bar */}
-                                <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 -mx-3 sm:-mx-6 px-3 sm:px-6">
-                                    {STAGES.map((s, i) => (
-                                        <div key={s.id} className={`flex-1 min-w-[100px] sm:min-w-[140px] p-3 sm:p-5 rounded-xl sm:rounded-[2rem] border-2 transition-all backdrop-blur-sm ${i === currentStageIdx ? 'border-[#5c52d2] bg-blue-50/80 shadow-lg' : i < currentStageIdx ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-100 bg-white/40'}`}>
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${i === currentStageIdx ? 'bg-white shadow-sm' : i < currentStageIdx ? 'bg-emerald-100' : ''}`}>
-                                                {i < currentStageIdx ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <s.icon className={`w-5 h-5 ${i === currentStageIdx ? 'text-[#5c52d2]' : 'text-slate-300'}`} />}
-                                            </div>
-                                            <h4 className={`text-xs font-black ${i === currentStageIdx ? 'text-slate-900' : i < currentStageIdx ? 'text-emerald-600' : 'text-slate-400'}`}>{s.label}</h4>
-                                            {i === currentStageIdx && <span className="px-3 py-1 bg-[#5c52d2] text-white text-[8px] font-black uppercase rounded-full mt-2 inline-block">Active</span>}
-                                            {i < currentStageIdx && <span className="px-3 py-1 bg-emerald-500 text-white text-[8px] font-black uppercase rounded-full mt-2 inline-block">✓ Done</span>}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {isLoading ? (
-                                    <div className="text-center py-20 space-y-6">
-                                        <Loader2 className="w-12 h-12 text-[#5c52d2] animate-spin mx-auto" />
-                                        <p className="text-lg font-black text-slate-400 animate-pulse">Generating coding challenge...</p>
-                                    </div>
-                                ) : codingProblem ? (
-                                    <CodingEnvironment
-                                        problem={codingProblem}
-                                        onSubmitSolution={handleSubmitCode}
-                                        onFinish={handleFinishCoding}
-                                        isLoading={isLoading}
-                                    />
-                                ) : null}
-
-                                <div className="flex justify-center">
-                                    <button onClick={restartInterview} className="text-slate-400 font-black uppercase text-xs tracking-widest hover:text-rose-500 transition-all flex items-center gap-2">
-                                        <StopCircle className="w-4 h-4" /> End Interview
-                                    </button>
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {/* ═══ STAGE RESULT ═══ */}
-                        {step === 'stage_result' && currentStageEval && (
-                            <motion.div key="stage-result" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="space-y-10">
-                                <div className="text-center space-y-4">
-                                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }}
-                                        className={`w-20 h-20 ${currentStage.bg} rounded-[2rem] flex items-center justify-center mx-auto shadow-xl ring-8 ring-white/50`}>
-                                        <currentStage.icon className={`w-10 h-10 ${currentStage.color}`} />
-                                    </motion.div>
-                                    <h2 className="text-4xl font-[900] text-slate-900 tracking-tight">{currentStage.label} Complete</h2>
-                                    <p className="text-slate-400 font-medium">Stage {currentStageIdx + 1} of 4</p>
-                                </div>
-
-                                <div className="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto">
-                                    <Card className="p-8 border-none shadow-lg bg-white/90 backdrop-blur-sm rounded-[2.5rem] text-center space-y-3 border border-white/20">
-                                        <Trophy className="w-8 h-8 text-amber-500 mx-auto" />
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Score</p>
-                                        <p className="text-5xl font-[900] text-slate-900 tracking-tighter">{currentStageEval.score}</p>
-                                    </Card>
-                                    <Card className="p-8 border-none shadow-lg bg-white/90 backdrop-blur-sm rounded-[2.5rem] text-center space-y-3 border border-white/20">
-                                        <Star className="w-8 h-8 text-emerald-500 mx-auto" />
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Strengths</p>
-                                        <p className="text-3xl font-[900] text-slate-900">{currentStageEval.strengths?.length || 0}</p>
-                                    </Card>
-                                    <Card className="p-8 border-none shadow-lg bg-white/90 backdrop-blur-sm rounded-[2.5rem] text-center space-y-3 border border-white/20">
-                                        <Target className="w-8 h-8 text-orange-500 mx-auto" />
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">To Improve</p>
-                                        <p className="text-3xl font-[900] text-slate-900">{currentStageEval.weaknesses?.length || 0}</p>
-                                    </Card>
-                                </div>
-
-                                <Card className="p-8 border-none shadow-lg bg-white/90 backdrop-blur-sm rounded-[2.5rem] space-y-4 max-w-3xl mx-auto border border-white/20">
-                                    <h3 className="text-xl font-[900] text-slate-900">AI Feedback</h3>
-                                    <p className="text-slate-600 font-medium leading-relaxed italic">"{currentStageEval.feedback}"</p>
-                                </Card>
-
-                                <div className="flex justify-center">
-                                    <Button onClick={proceedToNextStage}
-                                        className="h-20 px-16 rounded-[2rem] bg-[#b195ff] hover:bg-[#a284ff] text-white font-black text-xl shadow-xl shadow-purple-100 group">
-                                        {currentStageIdx < STAGES.length - 1
-                                            ? <>Next: {STAGES[currentStageIdx + 1].label} <ArrowRight className="ml-3 w-6 h-6 group-hover:translate-x-1 transition-transform" /></>
-                                            : <>View Final Results <Award className="ml-3 w-6 h-6" /></>}
-                                    </Button>
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {/* ═══ FINAL RESULTS ═══ */}
-                        {step === 'final_results' && (
-                            <motion.div key="final" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-10">
-                                {isLoading ? (
-                                    <div className="text-center py-20 space-y-8">
-                                        <div className="w-24 h-24 bg-white shadow-xl rounded-[3rem] flex items-center justify-center mx-auto ring-8 ring-purple-50">
-                                            <Loader2 className="w-12 h-12 text-[#5c52d2] animate-spin" />
-                                        </div>
-                                        <h2 className="text-4xl font-black text-slate-900 tracking-tight">Generating Final Report...</h2>
-                                        <p className="text-lg font-medium text-slate-400">The hiring committee is reviewing all stages.</p>
-                                    </div>
-                                ) : finalAnalysis && (
-                                    <>
-                                        <div className="text-center space-y-6">
-                                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }}
-                                                className="w-24 h-24 bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] rounded-[3rem] flex items-center justify-center mx-auto shadow-2xl shadow-purple-200 ring-8 ring-purple-50">
-                                                <Award className="w-12 h-12 text-white" />
-                                            </motion.div>
-                                            <h1 className="text-5xl font-[900] text-slate-900 tracking-tight">Interview Complete</h1>
-                                            <div className="flex items-center justify-center gap-3">
-                                                <span className={`px-6 py-2 rounded-full text-sm font-black uppercase tracking-widest ${finalAnalysis.verdict?.includes('Hire') || finalAnalysis.verdict?.includes('Strong') ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
-                                                    {finalAnalysis.verdict}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {/* Score Cards */}
-                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                                            {STAGES.map((s) => (
-                                                <Card key={s.id} className="p-6 border-none shadow-lg bg-white/90 backdrop-blur-sm rounded-[2rem] text-center space-y-3 border border-white/20">
-                                                    <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center mx-auto`}>
-                                                        <s.icon className={`w-5 h-5 ${s.color}`} />
-                                                    </div>
-                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{s.label}</p>
-                                                    <p className="text-3xl font-[900] text-slate-900 tracking-tighter">{stageEvals[s.id]?.score || 0}</p>
-                                                </Card>
-                                            ))}
-                                            <Card className="p-6 border-none shadow-xl bg-gradient-to-br from-[#5c52d2] to-[#7c3aed] rounded-[2rem] text-center space-y-3 text-white">
-                                                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center mx-auto">
-                                                    <Trophy className="w-5 h-5 text-white" />
-                                                </div>
-                                                <p className="text-[9px] font-black uppercase tracking-widest text-white/70">Overall</p>
-                                                <p className="text-3xl font-[900] tracking-tighter">{finalAnalysis.overall_score}</p>
-                                            </Card>
-                                        </div>
-
-                                        {/* Strengths & Weaknesses */}
-                                        <div className="grid lg:grid-cols-2 gap-8">
-                                            <Card className="p-10 border-none shadow-lg bg-white/90 backdrop-blur-sm rounded-[3rem] space-y-6 border border-white/20">
-                                                <h3 className="text-2xl font-black text-slate-900 border-b pb-6 border-slate-50">Key Strengths</h3>
-                                                <div className="space-y-5">
-                                                    {(finalAnalysis.strengths || []).map((s: string, i: number) => (
-                                                        <div key={i} className="flex items-start gap-4">
-                                                            <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center shrink-0 mt-0.5">
-                                                                <CheckCircle2 className="w-4 h-4" />
-                                                            </div>
-                                                            <p className="text-slate-600 font-bold leading-relaxed">{s}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </Card>
-                                            <Card className="p-10 border-none shadow-lg bg-white/90 backdrop-blur-sm rounded-[3rem] space-y-6 border border-white/20">
-                                                <h3 className="text-2xl font-black text-slate-900 border-b pb-6 border-slate-50">Areas for Growth</h3>
-                                                <div className="space-y-5">
-                                                    {(finalAnalysis.weaknesses || []).map((s: string, i: number) => (
-                                                        <div key={i} className="flex items-start gap-4">
-                                                            <div className="w-7 h-7 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 mt-0.5">
-                                                                <Target className="w-4 h-4" />
-                                                            </div>
-                                                            <p className="text-slate-600 font-bold leading-relaxed">{s}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </Card>
-                                        </div>
-
-                                        {/* Overall Feedback */}
-                                        <Card className="p-10 border-none shadow-lg bg-slate-50/90 backdrop-blur-sm rounded-[3rem] space-y-4">
-                                            <h3 className="text-xl font-black text-slate-900">Hiring Committee Feedback</h3>
-                                            <p className="text-lg text-slate-600 font-medium leading-relaxed italic">"{finalAnalysis.overall_feedback}"</p>
-                                        </Card>
-
-                                        {/* Improvement Tips */}
-                                        {finalAnalysis.improvement_tips?.length > 0 && (
-                                            <Card className="p-10 border-none shadow-lg bg-purple-50/50 rounded-[3rem] space-y-6 border border-purple-100">
-                                                <div className="flex items-center gap-3">
-                                                    <Lightbulb className="w-6 h-6 text-amber-500" />
-                                                    <h3 className="text-xl font-[900] text-slate-900">Improvement Tips</h3>
-                                                </div>
-                                                <div className="space-y-4">
-                                                    {finalAnalysis.improvement_tips.map((tip: string, i: number) => (
-                                                        <div key={i} className="p-5 bg-white rounded-2xl flex items-start gap-4">
-                                                            <span className="w-8 h-8 bg-purple-100 text-[#5c52d2] rounded-lg flex items-center justify-center shrink-0 font-black text-sm">{i + 1}</span>
-                                                            <p className="text-slate-600 font-bold">{tip}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </Card>
-                                        )}
-
-                                        {/* CTA */}
-                                        <div className="bg-slate-900 rounded-[3rem] p-14 text-white text-center space-y-8 relative overflow-hidden">
-                                            <div className="relative z-10 space-y-6">
-                                                <h3 className="text-3xl font-black tracking-tight">Ready to Level Up?</h3>
-                                                <p className="text-slate-400 text-lg font-medium max-w-2xl mx-auto">Use your interview insights to improve and practice again.</p>
-                                                <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4 w-full">
-                                                    <Button onClick={() => window.location.href = '/career'}
-                                                        className="h-16 w-full sm:w-auto px-12 bg-[#b195ff] text-white rounded-2xl font-black text-lg hover:bg-[#a284ff] shadow-2xl">
-                                                        View Roadmap
-                                                    </Button>
-                                                    <Button onClick={restartInterview} variant="ghost"
-                                                        className="h-16 w-full sm:w-auto px-12 border-2 border-white/10 text-white rounded-2xl font-black hover:bg-white/5">
-                                                        Practice Again
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </main>
-        </div>
-    );
+    if (phase === 'lobby' || phase === 'connecting') return <Lobby {...{ position, setPosition, interviewType, setInterviewType, experience, setExperience, duration, setDuration, jobDescription, setJobDescription, resumeName, micTested, setMicTested, audio, speechRecognitionSupported, isLocked, phase, startInterview, limitMessage, error }} />;
+    if (phase === 'coding') return <main className="min-h-screen bg-slate-950 px-3 py-4 sm:px-6"><header className="mx-auto mb-4 flex max-w-[1400px] items-center justify-between text-slate-100"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-cyan-300">Stage 3 of 4</p><h1 className="text-xl font-semibold">Problem-solving assessment</h1></div><span className="flex items-center gap-2 text-sm text-slate-400"><Clock3 className="h-4 w-4" />{formatTime(elapsed)}</span></header>{error && <p className="mx-auto mb-3 max-w-[1400px] rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-200">{error}</p>}{codingProblem ? <CodingEnvironment problem={codingProblem} onSubmitSolution={(code, language, passed, total, attempts) => { setCodingResult({ code, language, passed, total, attempts }); trackCodeExecuted(language); if (total > 0 && passed === total) trackProblemSolved(codingProblem.title, codingProblem.difficulty === 'easy' ? 'easy' : codingProblem.difficulty === 'hard' ? 'hard' : 'medium', skills[0] || position, language); }} onFinish={() => void finishCoding()} /> : <div className="grid min-h-80 place-items-center text-slate-300"><Loader2 className="h-7 w-7 animate-spin" /></div>}</main>;
+    if (phase === 'report') return <Report report={report} transcript={transcript} onRestart={() => { setPhase('lobby'); setReport(null); setSessionId(''); }} />;
+    return <Room {...{ stage, stageIndex, questionIndex, audio, listening, paused, loading, question, position, duration, elapsed, cameraOn, setCameraOn, transcript, interim, captionsOpen, setCaptionsOpen, error, answers, sessionId, getNextQuestion, setError, showTextInput, setShowTextInput, typedAnswer, setTypedAnswer, submitAnswer, stopListening, voiceReady, beginListening, handlePause, askQuestionAloud, endInterview, endConfirmation, setEndConfirmation, finishInterview }} />;
 }
+
+type LobbyProps = { position: string; setPosition: (value: string) => void; interviewType: InterviewType; setInterviewType: (value: InterviewType) => void; experience: string; setExperience: (value: string) => void; duration: string; setDuration: (value: string) => void; jobDescription: string; setJobDescription: (value: string) => void; resumeName: string; micTested: boolean; setMicTested: (value: boolean) => void; audio: ReturnType<typeof useAudioManager>; speechRecognitionSupported: boolean; isLocked: boolean; phase: RoomPhase; startInterview: () => Promise<void>; limitMessage: string; error: string };
+function Lobby(props: LobbyProps) {
+    const { audio } = props;
+    return <main className="min-h-screen bg-[#f6f7fb] px-4 py-8 text-slate-900 dark:bg-[#090c14] dark:text-slate-100 sm:px-8"><div className="mx-auto max-w-5xl"><header className="mb-10 flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-500 text-slate-950"><BrainCircuit className="h-6 w-6" /></div><div><p className="text-sm font-bold tracking-tight">LakshyaTrack</p><p className="text-xs text-slate-500">Interview practice</p></div></div><span className="hidden rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 sm:block">Private by design · no audio recorded</span></header><section className="grid gap-8 lg:grid-cols-[1.15fr_.85fr]"><div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_20px_70px_-45px_rgba(15,23,42,.45)] dark:border-white/10 dark:bg-slate-950 sm:p-9"><div className="mb-7"><p className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[.16em] text-cyan-700 dark:text-cyan-300"><Radio className="h-3.5 w-3.5" />Voice-first practice</p><h1 className="max-w-lg text-4xl font-semibold tracking-[-.045em] sm:text-5xl">Enter prepared. Speak naturally.</h1><p className="mt-4 max-w-xl leading-7 text-slate-600 dark:text-slate-300">Maya asks role-aware questions, listens for your answer, and continues without a Send button. Text is available only as a compatibility option.</p></div><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Target role<input value={props.position} onChange={(event) => props.setPosition(event.target.value)} maxLength={160} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none ring-cyan-500 focus:ring-2 dark:border-white/10 dark:bg-white/5" /></label><label className="text-sm font-medium">Experience<select value={props.experience} onChange={(event) => props.setExperience(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none ring-cyan-500 focus:ring-2 dark:border-white/10 dark:bg-white/5"><option>Entry level</option><option>Intermediate</option><option>Senior</option></select></label><label className="text-sm font-medium">Interview type<select value={props.interviewType} onChange={(event) => props.setInterviewType(event.target.value as InterviewType)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none ring-cyan-500 focus:ring-2 dark:border-white/10 dark:bg-white/5"><option value="resume_screening">Resume-based</option><option value="direct_skill">Direct skill interview</option></select></label><label className="text-sm font-medium">Planned duration<select value={props.duration} onChange={(event) => props.setDuration(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none ring-cyan-500 focus:ring-2 dark:border-white/10 dark:bg-white/5"><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="45">45 minutes</option></select></label></div><details className="mt-5 rounded-xl border border-slate-200 p-3 dark:border-white/10"><summary className="cursor-pointer text-sm font-medium">Optional job description</summary><textarea value={props.jobDescription} onChange={(event) => props.setJobDescription(event.target.value)} placeholder="Paste the role description. It is used as context for resume-screening questions." className="mt-3 min-h-24 w-full resize-y rounded-lg bg-slate-50 p-3 text-sm outline-none dark:bg-white/5" /></details>{props.limitMessage && <p className="mt-4 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">{props.limitMessage}</p>}<button type="button" onClick={() => void props.startInterview()} disabled={props.phase === 'connecting' || !props.position.trim()} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-5 py-3.5 font-semibold text-slate-950 transition hover:bg-cyan-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-500 disabled:cursor-wait disabled:opacity-60">{props.phase === 'connecting' ? <><Loader2 className="h-5 w-5 animate-spin" />Preparing your room</> : <><Mic2 className="h-5 w-5" />{props.isLocked ? 'Unlock interview access' : 'Enter interview room'}<ArrowRight className="h-4 w-4" /></>}</button></div><aside className="space-y-4"><div className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><div className="mb-6 flex items-center justify-between"><div><p className="text-sm font-semibold">Room check</p><p className="mt-1 text-xs text-slate-400">Use free browser capabilities</p></div><ShieldCheck className="h-6 w-6 text-emerald-300" /></div><div className="space-y-3 text-sm"><Status label="Speech playback" ready={audio.speechSupported} note={audio.speechSupported ? `${audio.voices.length || 'Loading'} English voices available` : 'Unavailable in this browser'} /><Status label="Voice recognition" ready={props.speechRecognitionSupported} note={props.speechRecognitionSupported ? 'Browser-native; your words are not audio-recorded' : 'Text compatibility mode will be available'} /><Status label="Microphone" ready={audio.mediaSupported} note={props.micTested ? 'Permission granted for test' : 'Test before you enter'} /></div><button type="button" onClick={() => { if (audio.micLevel > 0) audio.stopMeter(); else void audio.testMicrophone().then(() => props.setMicTested(true)).catch(() => undefined); }} disabled={!audio.mediaSupported} className="mt-6 flex w-full items-center justify-between rounded-xl border border-white/15 px-3 py-3 text-sm font-medium hover:bg-white/10 disabled:opacity-50"><span className="flex items-center gap-2"><Headphones className="h-4 w-4" />{audio.micLevel > 0 ? 'Stop microphone test' : 'Test microphone'}</span><span className="flex h-1.5 w-16 overflow-hidden rounded-full bg-white/15"><span style={{ width: `${audio.micLevel * 100}%` }} className="bg-emerald-300 transition-all" /></span></button></div><div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-slate-950"><p className="text-sm font-semibold">Your interview context</p><p className="mt-2 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><FileText className="h-4 w-4 text-cyan-600" />{props.resumeName}</p><p className="mt-3 text-xs leading-5 text-slate-500">Camera is optional. The platform does not retain raw camera or microphone media.</p></div></aside></section></div>{props.error && <p className="mx-auto mt-5 max-w-5xl text-sm text-rose-600 dark:text-rose-300">{props.error}</p>}</main>;
+}
+
+type RoomProps = {
+    stage: typeof STAGES[number]; stageIndex: number; questionIndex: number; audio: ReturnType<typeof useAudioManager>; listening: boolean; paused: boolean; loading: boolean; question: string; position: string; duration: string; elapsed: number; cameraOn: boolean; setCameraOn: (value: boolean) => void; transcript: TranscriptLine[]; interim: string; captionsOpen: boolean; setCaptionsOpen: (value: boolean | ((current: boolean) => boolean)) => void; error: string; answers: Answer[]; sessionId: string; getNextQuestion: (stage: StageId, history: Answer[], sessionId: string) => Promise<void>; setError: (value: string) => void; showTextInput: boolean; setShowTextInput: (value: boolean) => void; typedAnswer: string; setTypedAnswer: (value: string) => void; submitAnswer: (value: string) => Promise<void>; stopListening: () => void; voiceReady: boolean; beginListening: () => void; handlePause: () => void; askQuestionAloud: (startAfter?: boolean) => void; endInterview: () => void; endConfirmation: boolean; setEndConfirmation: (value: boolean) => void; finishInterview: () => Promise<void>;
+};
+function Room(props: RoomProps) {
+    return <main className="min-h-screen overflow-hidden bg-[#edf1f6] text-slate-900 dark:bg-[#070a11] dark:text-slate-100"><div className="mx-auto flex min-h-screen max-w-[1500px] flex-col px-3 py-3 sm:px-6 sm:py-5"><header className="mb-3 flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-500 text-slate-950"><BrainCircuit className="h-5 w-5" /></div><div><p className="text-sm font-bold">LakshyaTrack</p><p className="text-xs text-slate-500">Live interview room</p></div></div><div className="flex items-center gap-3 text-xs font-medium text-slate-500"><span className="hidden items-center gap-1.5 sm:flex"><Wifi className="h-3.5 w-3.5 text-emerald-500" />Connected</span><span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{formatTime(props.elapsed)} / {props.duration}:00</span></div></header><div className="mb-3 grid grid-cols-4 gap-1.5" aria-label="Interview stages">{STAGES.map((item, index) => <div key={item.id} className={`rounded-lg px-2 py-2 ${index === props.stageIndex ? 'bg-cyan-500 text-slate-950' : index < props.stageIndex ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-slate-200/70 text-slate-500 dark:bg-white/5'}`}><p className="text-[10px] font-bold uppercase tracking-wider">{index < props.stageIndex ? 'Complete' : `Stage ${index + 1}`}</p><p className="truncate text-xs font-semibold">{item.label}</p></div>)}</div><section className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px]"><div className="relative flex min-h-[560px] flex-col overflow-hidden rounded-[1.75rem] bg-[radial-gradient(circle_at_50%_0%,#1b3856_0%,#0b1423_42%,#090d16_100%)] p-4 shadow-2xl sm:p-7"><div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/80 to-transparent" /><div className="flex items-center justify-between text-slate-300"><span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium">{props.stage.label} · Question {props.questionIndex + 1}/{props.stage.questions}</span><span className="flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${props.audio.speechState === 'speaking' ? 'animate-pulse bg-cyan-300' : props.listening ? 'animate-pulse bg-emerald-300' : props.loading ? 'animate-pulse bg-amber-300' : 'bg-slate-500'}`} />{props.loading ? 'Maya is thinking' : props.audio.speechState === 'speaking' ? 'Maya is speaking' : props.listening ? 'Maya is listening' : props.paused ? 'Interview paused' : 'Ready'}</span></div><div className="flex flex-1 flex-col items-center justify-center py-7 text-center"><motion.div animate={props.audio.speechState === 'speaking' ? { scale: [1, 1.035, 1], boxShadow: ['0 0 0 0 rgba(103,232,249,.16)', '0 0 0 26px rgba(103,232,249,0)', '0 0 0 0 rgba(103,232,249,0)'] } : { scale: 1 }} transition={{ duration: 1.8, repeat: Infinity }} className="relative mb-6 grid h-32 w-32 place-items-center rounded-full border border-cyan-200/30 bg-[linear-gradient(145deg,#79dce9,#2773a8_56%,#152c50)] shadow-[0_18px_60px_rgba(0,0,0,.45)]"><div className="grid h-24 w-24 place-items-center rounded-full border border-white/25 bg-slate-950/30"><Sparkles className="h-10 w-10 text-cyan-100" /></div></motion.div><p className="text-xl font-semibold text-white">Maya</p><p className="mt-1 text-sm text-slate-400">AI interviewer · {props.position}</p><div className="mt-7 max-w-3xl"><p className="text-xs font-bold uppercase tracking-[.18em] text-cyan-300">{props.loading ? 'Preparing your next question' : props.audio.speechState === 'speaking' ? 'Speaking' : props.listening ? 'Listening' : 'Question'}</p><h1 className="mt-3 text-xl font-medium leading-8 text-white sm:text-3xl sm:leading-10">{props.question || 'Connecting you to Maya…'}</h1></div></div><div className="mt-auto text-center text-xs text-slate-400">Click <span className="font-semibold text-slate-200">Answer aloud</span> to interrupt playback. Reliable automatic barge-in differs by browser, so it is not enabled silently.</div></div><aside className="flex flex-col gap-3"><InterviewWebcam enabled={props.cameraOn} onEnabledChange={props.setCameraOn} /><LiveTranscription lines={props.transcript} interim={props.interim} open={props.captionsOpen} onOpenChange={props.setCaptionsOpen} /><div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm dark:border-white/10 dark:bg-slate-950"><div className="flex items-center justify-between"><p className="font-semibold">Voice settings</p><ChevronDown className="h-4 w-4 text-slate-400" /></div>{props.audio.speechSupported ? <label className="mt-3 block text-xs text-slate-500">Interviewer voice<select value={props.audio.selectedVoice} onChange={(event) => props.audio.setSelectedVoice(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">{props.audio.voices.map((voice) => <option key={voice.name} value={voice.name}>{voice.name}</option>)}</select></label> : <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-200">Speech playback is unavailable. You can read questions and use the explicit text mode.</p>}<p className="mt-3 text-xs leading-5 text-slate-500">Voice recognition uses your browser. No raw microphone media is stored.</p></div></aside></section>{props.error && <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{props.error}<button type="button" onClick={() => { props.setError(''); if (props.question) void props.getNextQuestion(props.stage.id, props.answers, props.sessionId); }} className="ml-auto font-semibold underline">Retry</button></div>}{props.showTextInput && <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950"><label className="text-xs font-bold uppercase tracking-wider text-slate-500">Text compatibility mode</label><div className="mt-2 flex gap-2"><input value={props.typedAnswer} onChange={(event) => props.setTypedAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void props.submitAnswer(props.typedAnswer); }} placeholder="Type an answer only when voice recognition is unavailable" className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-500 dark:border-white/10 dark:bg-white/5" /><button type="button" onClick={() => void props.submitAnswer(props.typedAnswer)} className="rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-cyan-500 dark:text-slate-950">Send</button></div></div>}<div className="mx-auto mt-3 w-full max-w-xl"><InterviewControls listening={props.listening} paused={props.paused} captionsOpen={props.captionsOpen} canListen={props.voiceReady} onMic={() => props.listening ? props.stopListening() : props.beginListening()} onPause={props.handlePause} onCaptions={() => props.setCaptionsOpen((open) => !open)} onRepeat={() => props.askQuestionAloud(false)} onEnd={props.endInterview} /></div><AnimatePresence>{props.endConfirmation && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4"><div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900"><button type="button" onClick={() => props.setEndConfirmation(false)} className="float-right text-slate-500"><X className="h-5 w-5" /></button><h2 className="text-lg font-semibold">End this interview?</h2><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">It will be discarded from progress and badges because the required stages were not finalized.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => props.setEndConfirmation(false)} className="rounded-lg px-3 py-2 text-sm font-semibold">Keep practicing</button><button type="button" onClick={props.endInterview} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">End interview</button></div></div></motion.div>}</AnimatePresence></div></main>;
+}
+
+function Status({ label, ready, note }: { label: string; ready: boolean; note: string }) { return <div className="flex gap-3"><span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ready ? 'bg-emerald-300' : 'bg-amber-300'}`} /><div><p className="font-medium">{label}</p><p className="mt-0.5 text-xs leading-5 text-slate-400">{note}</p></div></div>; }
+function Report({ report, transcript, onRestart }: { report: Record<string, unknown> | null; transcript: TranscriptLine[]; onRestart: () => void }) {
+    const score = typeof report?.overall_score === 'number' ? Math.round(report.overall_score) : null;
+    const strengths = Array.isArray(report?.strengths) ? report.strengths : [];
+    const weaknesses = Array.isArray(report?.weaknesses) ? report.weaknesses : [];
+    return <main className="min-h-screen bg-[#f6f7fb] px-4 py-10 dark:bg-[#090c14] sm:px-8"><section className="mx-auto max-w-4xl"><div className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-xl shadow-slate-950/5 dark:border-white/10 dark:bg-slate-950 sm:p-10"><p className="text-xs font-bold uppercase tracking-[.18em] text-cyan-700 dark:text-cyan-300">Finalized interview report</p><div className="mt-5 flex flex-wrap items-end justify-between gap-5"><div><h1 className="text-4xl font-semibold tracking-[-.04em]">{String(report?.verdict || 'Interview complete')}</h1><p className="mt-3 max-w-xl leading-7 text-slate-600 dark:text-slate-300">{String(report?.overall_feedback || 'Your evidence-based report has been saved.')}</p></div>{score !== null && <div className="grid h-24 w-24 place-items-center rounded-full border-8 border-cyan-400 bg-cyan-50 text-2xl font-semibold text-slate-900 dark:bg-cyan-400/10 dark:text-white">{score}</div>}</div><div className="mt-8 grid gap-4 md:grid-cols-2"><Evidence title="Strengths" items={strengths} positive /><Evidence title="Develop next" items={weaknesses} /><div className="rounded-2xl border border-slate-200 p-5 dark:border-white/10"><h2 className="font-semibold">Interview record</h2><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{transcript.filter((line) => line.speaker === 'candidate').length} candidate answers were captured as text. No raw media was stored.</p></div><div className="rounded-2xl border border-slate-200 p-5 dark:border-white/10"><h2 className="font-semibold">Next practice</h2><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Use the recommendations in the saved report before taking another attempt.</p></div></div><button type="button" onClick={onRestart} className="mt-8 inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 font-semibold text-slate-950"><Mic2 className="h-5 w-5" />Start another interview</button></div></section></main>;
+}
+function Evidence({ title, items, positive = false }: { title: string; items: unknown[]; positive?: boolean }) { return <div className="rounded-2xl border border-slate-200 p-5 dark:border-white/10"><h2 className="font-semibold">{title}</h2>{items.length ? <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{items.map((item, index) => <li key={index} className="flex gap-2"><CheckCircle2 className={`mt-1 h-3.5 w-3.5 shrink-0 ${positive ? 'text-emerald-500' : 'text-amber-500'}`} />{String(item)}</li>)}</ul> : <p className="mt-3 text-sm text-slate-500">No evidence was returned for this section.</p>}</div>; }

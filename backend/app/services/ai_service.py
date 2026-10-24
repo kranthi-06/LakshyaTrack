@@ -372,7 +372,7 @@ class AIService:
         
         if missing_providers:
             raise RuntimeError(
-                f"AI service is unavailable. No AI providers are configured. "
+                f"AI service is temporarily unavailable because no AI providers are configured. "
                 f"Missing API keys for: {', '.join(missing_providers)}. "
                 f"Please configure at least one of: GROQ_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY."
             )

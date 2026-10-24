@@ -4,6 +4,14 @@
 
 The LakshyaTrack Interview Simulator has a solid foundation with a multi-stage interview system, AI integration, and progress tracking. However, it lacks the real-time, immersive, voice-first experience required to compete with platforms like Intensa. The current implementation is text-dominant with basic browser-native speech features.
 
+## Verification update — 2026-10-24
+
+The original report described several proposed files as if they existed. A source-tree check found that `InterviewHall.tsx`, `InterviewWebcam.tsx`, `LiveTranscription.tsx`, `InterviewControls.tsx`, `useAudioManager.ts`, `speech_service.py`, `interview_orchestration_service.py`, and `interview_realtime.py` were **not present**. The live implementation was a single text-first `frontend/src/pages/Interview.tsx` page.
+
+The old page did invoke browser speech synthesis and browser speech recognition, but recognition only filled a text field; the candidate still had to submit manually. Its question endpoint calls did not validate session ownership or use the saved role: each backend question route supplied `"Software Engineer"` directly. The frontend also substituted made-up generic questions and stage evaluations after failures, which was not a valid representation of an AI-backed interview.
+
+The upgraded flow deliberately uses browser `speechSynthesis`, `getUserMedia`, and Web Speech recognition only. There is no paid STT/TTS/avatar fallback, no raw media storage, and no fabricated question/evaluation when the provider fails. Browser support is checked in the lobby and the text option is an explicit compatibility mode.
+
 ---
 
 ## Existing Capabilities
