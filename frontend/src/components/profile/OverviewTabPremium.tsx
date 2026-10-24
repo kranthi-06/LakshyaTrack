@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom';
-import { Award, FolderKanban, History, ScrollText, TrendingUp, Zap, Target } from 'lucide-react';
+import { Award, FolderKanban, History, ScrollText, TrendingUp } from 'lucide-react';
 import type { Badge } from '../../progress-system/types';
 import type { ProfileProject } from './profileUtils';
 import type { SavedResumeRecord } from '../../services/resumeStorage';
 import { formatResumeDate } from './profileUtils';
+import BadgeArtwork from '../../badges/BadgeArtwork';
 
 interface Props {
     bio: string;
@@ -82,8 +83,15 @@ export function OverviewTabPremium({ bio, projects, recentBadges, skills, resume
                 ) : (
                     <ul className="mt-4 space-y-3">
                         {recentBadges.slice(0, 4).map((badge) => (
-                            <li key={badge.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800/30 bg-slate-50 dark:bg-slate-900/30">
-                                <span className="text-2xl" aria-hidden>{badge.icon}</span>
+                            <li key={badge.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800/30 bg-slate-50 dark:bg-slate-900/30">
+                                <BadgeArtwork
+                                    badgeId={badge.id}
+                                    name={badge.name}
+                                    rarity={badge.rarity}
+                                    isUnlocked
+                                    size={44}
+                                    decorative
+                                />
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{badge.name}</p>
                                     <p className="truncate text-xs text-slate-500 dark:text-slate-400">{badge.description}</p>

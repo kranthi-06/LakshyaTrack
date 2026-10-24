@@ -1,42 +1,9 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
-import { Award, Lock, ChevronLeft, ChevronRight, Share2, Calendar, TrendingUp } from 'lucide-react';
+import { useMemo, useState, useCallback } from 'react';
+import { Award, ChevronLeft, ChevronRight, Share2, Calendar, TrendingUp } from 'lucide-react';
 import type { Badge, BadgeSystemData } from '../../progress-system/types';
 import { Link } from 'react-router-dom';
-
-const RARITY_COLOR: Record<string, { bg: string; border: string; glow: string; bgLight: string; borderLight: string; glowLight: string }> = {
-    common: { 
-        bg: 'from-slate-600 to-slate-700', 
-        border: 'border-slate-500', 
-        glow: 'shadow-slate-500/20',
-        bgLight: 'from-slate-300 to-slate-400',
-        borderLight: 'border-slate-400',
-        glowLight: 'shadow-slate-400/20'
-    },
-    rare: { 
-        bg: 'from-blue-600 to-cyan-600', 
-        border: 'border-blue-400', 
-        glow: 'shadow-blue-500/30',
-        bgLight: 'from-blue-300 to-cyan-300',
-        borderLight: 'border-blue-400',
-        glowLight: 'shadow-blue-400/30'
-    },
-    epic: { 
-        bg: 'from-violet-600 to-purple-600', 
-        border: 'border-violet-400', 
-        glow: 'shadow-violet-500/30',
-        bgLight: 'from-violet-300 to-purple-300',
-        borderLight: 'border-violet-400',
-        glowLight: 'shadow-violet-400/30'
-    },
-    legendary: { 
-        bg: 'from-amber-500 to-orange-500', 
-        border: 'border-amber-400', 
-        glow: 'shadow-amber-500/40',
-        bgLight: 'from-amber-300 to-orange-300',
-        borderLight: 'border-amber-400',
-        glowLight: 'shadow-amber-400/40'
-    },
-};
+import BadgeArtwork from '../../badges/BadgeArtwork';
+import { getBadgeRarityTheme } from '../../badges/badgeRegistry';
 
 interface Props {
     data: BadgeSystemData;
@@ -48,7 +15,6 @@ interface Props {
 export function AchievementGalleryPremium({ data, loading, error = null, onRetry }: Props) {
     const unlocked = data.recentlyUnlocked[0] || data.badges.find((badge) => badge.isUnlocked) || null;
     const [selectedId, setSelectedId] = useState<string | null>(unlocked?.id ?? null);
-    const [currentIndex, setCurrentIndex] = useState(0);
     
     const selected = useMemo(
         () => data.badges.find((badge) => badge.id === selectedId) || unlocked,
@@ -67,21 +33,17 @@ export function AchievementGalleryPremium({ data, loading, error = null, onRetry
         return sortedBadges.findIndex(b => b.id === selected?.id);
     }, [sortedBadges, selected]);
 
-    useEffect(() => {
-        if (selectedIndex >= 0) {
-            setCurrentIndex(selectedIndex);
-        }
-    }, [selectedIndex]);
+    const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
 
     const handlePrevious = useCallback(() => {
+        if (sortedBadges.length === 0) return;
         const newIndex = currentIndex > 0 ? currentIndex - 1 : sortedBadges.length - 1;
-        setCurrentIndex(newIndex);
         setSelectedId(sortedBadges[newIndex].id);
     }, [currentIndex, sortedBadges]);
 
     const handleNext = useCallback(() => {
+        if (sortedBadges.length === 0) return;
         const newIndex = currentIndex < sortedBadges.length - 1 ? currentIndex + 1 : 0;
-        setCurrentIndex(newIndex);
         setSelectedId(sortedBadges[newIndex].id);
     }, [currentIndex, sortedBadges]);
 
@@ -92,8 +54,7 @@ export function AchievementGalleryPremium({ data, loading, error = null, onRetry
 
     const getVisibleBadges = useCallback(() => {
         const visible: (Badge | null)[] = [];
-        const count = 5;
-        
+
         for (let i = -2; i <= 2; i++) {
             const index = (currentIndex + i + sortedBadges.length) % sortedBadges.length;
             visible.push(sortedBadges[index]);
@@ -185,7 +146,8 @@ export function AchievementGalleryPremium({ data, loading, error = null, onRetry
                         if (!badge) return null;
                         const offset = index - 2;
                         const isSelected = offset === 0;
-                        const rarityStyle = RARITY_COLOR[badge.rarity] || RARITY_COLOR.common;
+                        const theme = getBadgeRarityTheme(badge.rarity);
+                        const artSize = isSelected ? 104 : offset === -1 || offset === 1 ? 64 : 48;
                         
                         return (
                             <button
@@ -196,33 +158,35 @@ export function AchievementGalleryPremium({ data, loading, error = null, onRetry
                                 className={`
                                     relative flex-shrink-0 rounded-2xl border p-4 text-left transition-all duration-300
                                     ${isSelected 
-                                        ? `w-48 h-56 ${rarityStyle.border} dark:${rarityStyle.border} bg-gradient-to-br ${rarityStyle.bgLight} dark:${rarityStyle.bg} shadow-2xl ${rarityStyle.glowLight} dark:${rarityStyle.glow} scale-100 z-10` 
+                                        ? 'w-48 h-56 shadow-2xl scale-100 z-10'
                                         : offset === -1 || offset === 1
                                             ? 'hidden sm:block w-36 h-44 border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-900/50 scale-90 opacity-60 hover:opacity-80'
                                             : 'hidden lg:block w-28 h-32 border-slate-200 dark:border-slate-800/30 bg-slate-50 dark:bg-slate-900/30 scale-75 opacity-40'
                                     }
                                 `}
+                                style={isSelected ? {
+                                    borderColor: theme.color,
+                                    background: `linear-gradient(135deg, ${theme.soft}, transparent)`,
+                                    boxShadow: `0 24px 48px ${theme.glow}`,
+                                } : undefined}
                             >
-                                {/* Glow effect for selected */}
-                                {isSelected && (
-                                    <div className={`absolute -inset-1 rounded-2xl bg-gradient-to-br ${rarityStyle.bgLight} dark:${rarityStyle.bg} opacity-30 blur-xl`} />
-                                )}
-                                
                                 <div className="relative">
-                                    <div className="flex items-start justify-between">
-                                        <span className={`text-4xl ${badge.isUnlocked ? '' : 'grayscale opacity-50'}`}>
-                                            {badge.icon}
-                                        </span>
-                                        {!badge.isUnlocked && (
-                                            <Lock className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                                        )}
-                                    </div>
-                                    <p className={`mt-4 truncate font-bold text-slate-800 dark:text-white ${isSelected ? 'text-base' : 'text-sm'}`}>
+                                    <BadgeArtwork
+                                        badgeId={badge.id}
+                                        name={badge.name}
+                                        rarity={badge.rarity}
+                                        isUnlocked={badge.isUnlocked}
+                                        size={artSize}
+                                        progress={badge.progress}
+                                        decorative
+                                        className="mx-auto"
+                                    />
+                                    <p className={`mt-3 truncate font-bold text-slate-800 dark:text-white ${isSelected ? 'text-base' : 'text-sm'}`}>
                                         {badge.name}
                                     </p>
                                     {isSelected && (
-                                        <p className="mt-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-white/80">
-                                            {badge.rarity}
+                                        <p className="mt-1 text-xs font-bold uppercase tracking-wider" style={{ color: theme.color }}>
+                                            {theme.label}
                                         </p>
                                     )}
                                 </div>
@@ -257,7 +221,7 @@ function SelectedBadgePanel({
     recent: Badge[];
     next: Badge | null;
 }) {
-    const rarityStyle = badge ? RARITY_COLOR[badge.rarity] || RARITY_COLOR.common : null;
+    const theme = badge ? getBadgeRarityTheme(badge.rarity) : null;
 
     return (
         <aside className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -266,20 +230,37 @@ function SelectedBadgePanel({
                 {badge ? (
                     <>
                         {/* Background gradient */}
-                        <div className={`absolute -right-20 -top-20 h-64 w-64 rounded-full bg-gradient-to-br ${rarityStyle?.bgLight} dark:${rarityStyle?.bg} opacity-10 blur-3xl`} />
+                        <div
+                            className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full blur-3xl"
+                            style={{ background: theme ? `radial-gradient(circle, ${theme.soft}, transparent 70%)` : undefined }}
+                        />
                         
                         <div className="relative">
                             <div className="flex items-center justify-between">
                                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Selected badge</p>
-                                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-gradient-to-r ${rarityStyle?.bgLight} dark:${rarityStyle?.bg} text-white`}>
-                                    {badge.rarity}
+                                <span
+                                    className="rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wider"
+                                    style={theme ? {
+                                        borderColor: theme.border,
+                                        backgroundColor: theme.soft,
+                                        color: theme.color,
+                                    } : undefined}
+                                >
+                                    {theme?.label ?? badge.rarity}
                                 </span>
                             </div>
                             
-                            <div className="mt-6 flex items-center gap-6">
-                                <div className={`relative h-24 w-24 rounded-2xl bg-gradient-to-br ${rarityStyle?.bgLight} dark:${rarityStyle?.bg} flex items-center justify-center shadow-xl ${rarityStyle?.glowLight} dark:${rarityStyle?.glow}`}>
-                                    <span className="text-6xl">{badge.icon}</span>
-                                </div>
+                            <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
+                                <BadgeArtwork
+                                    badgeId={badge.id}
+                                    name={badge.name}
+                                    rarity={badge.rarity}
+                                    isUnlocked={badge.isUnlocked}
+                                    size={148}
+                                    progress={badge.progress}
+                                    priority
+                                    className="mx-auto sm:mx-0"
+                                />
                                 <div className="min-w-0 flex-1">
                                     <h4 className="break-words text-2xl font-black text-slate-900 dark:text-white">{badge.name}</h4>
                                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{badge.description}</p>
@@ -331,15 +312,20 @@ function SelectedBadgePanel({
                 ) : (
                     <ul className="mt-4 space-y-3">
                         {recent.slice(0, 5).map((item) => {
-                            const itemRarity = RARITY_COLOR[item.rarity] || RARITY_COLOR.common;
+                            const itemTheme = getBadgeRarityTheme(item.rarity);
                             return (
-                                <li key={item.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800/30 bg-slate-50 dark:bg-slate-900/30">
-                                    <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${itemRarity.bgLight} dark:${itemRarity.bg} flex items-center justify-center`}>
-                                        <span className="text-xl">{item.icon}</span>
-                                    </div>
+                                <li key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800/30 bg-slate-50 dark:bg-slate-900/30">
+                                    <BadgeArtwork
+                                        badgeId={item.id}
+                                        name={item.name}
+                                        rarity={item.rarity}
+                                        isUnlocked
+                                        size={42}
+                                        decorative
+                                    />
                                     <div className="min-w-0 flex-1">
                                         <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{item.name}</p>
-                                        <p className="truncate text-xs text-slate-500 dark:text-slate-400">{item.rarity}</p>
+                                        <p className="truncate text-xs" style={{ color: itemTheme.color }}>{itemTheme.label}</p>
                                     </div>
                                 </li>
                             );
@@ -347,7 +333,16 @@ function SelectedBadgePanel({
                     </ul>
                 )}
                 {next && (
-                    <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/50">
+                    <div className="mt-6 flex items-center gap-3 border-t border-slate-200 dark:border-slate-800/50 pt-4">
+                        <BadgeArtwork
+                            badgeId={next.id}
+                            name={next.name}
+                            rarity={next.rarity}
+                            isUnlocked={next.isUnlocked}
+                            size={40}
+                            progress={next.progress}
+                            decorative
+                        />
                         <p className="text-xs text-slate-500 dark:text-slate-400">
                             Next to unlock: <span className="font-semibold text-slate-800 dark:text-white">{next.name}</span> ({next.progress}%)
                         </p>
